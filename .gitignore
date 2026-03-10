@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+.coverage
+dist/
+build/
+*.egg-info/
+tasks.yml
+*.swp
