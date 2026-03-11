@@ -19,7 +19,7 @@ class TestTasksLocation(unittest.TestCase):
             # Run lemming info, it should default to fake_home/.local/lemming/tasks.yml
             # But currently it defaults to ./tasks.yml
             
-            result = self.runner.invoke(cli, ["-v", "info"])
+            result = self.runner.invoke(cli, ["-v", "status"])
             # In the current implementation, it will look for tasks.yml in the current directory.
             # If it doesn't find it, load_tasks returns default data.
             # ctx.obj["TASKS_FILE"] will be Path("tasks.yml")
@@ -54,7 +54,7 @@ class TestTasksLocation(unittest.TestCase):
             global_tasks = global_dir / "tasks.yml"
             global_tasks.write_text("context: Global Context\ntasks: []", encoding="utf-8")
             
-            result = self.runner.invoke(cli, ["-v", "info"])
+            result = self.runner.invoke(cli, ["-v", "status"])
             self.assertIn("Local Context", result.output)
             self.assertNotIn("Global Context", result.output)
 

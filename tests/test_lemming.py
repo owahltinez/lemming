@@ -105,7 +105,7 @@ class TestLemming(unittest.TestCase):
             )
 
     def test_info_no_args(self):
-        result = self.runner.invoke(cli, self.base_args + ["info"])
+        result = self.runner.invoke(cli, self.base_args + ["status"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("=== Project Context ===", result.output)
         self.assertIn("Initial context", result.output)
@@ -113,7 +113,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("(12345678) Initial Task", result.output)
 
     def test_info_with_id(self):
-        result = self.runner.invoke(cli, self.base_args + ["info", "12345678"])
+        result = self.runner.invoke(cli, self.base_args + ["status", "12345678"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Task ID:     12345678", result.output)
         self.assertIn("Status:      pending", result.output)
@@ -212,7 +212,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
     def test_info_task_not_found(self):
-        result = self.runner.invoke(cli, self.base_args + ["info", "nonexistent"])
+        result = self.runner.invoke(cli, self.base_args + ["status", "nonexistent"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
@@ -225,7 +225,7 @@ class TestLemming(unittest.TestCase):
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
             
-        result = self.runner.invoke(cli, self.base_args + ["info", "12345678"])
+        result = self.runner.invoke(cli, self.base_args + ["status", "12345678"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Custom Agent: special-agent", result.output)
         self.assertIn("--- Lessons Learned ---", result.output)
@@ -239,7 +239,7 @@ class TestLemming(unittest.TestCase):
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
             
-        result = self.runner.invoke(cli, self.base_args + ["info", "12345678"])
+        result = self.runner.invoke(cli, self.base_args + ["status", "12345678"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("--- Lessons Learned ---", result.output)
         self.assertIn("- Outcome 1", result.output)
@@ -300,7 +300,7 @@ class TestLemming(unittest.TestCase):
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             f.write("invalid: yaml: :")
         
-        result = self.runner.invoke(cli, self.base_args + ["info"])
+        result = self.runner.invoke(cli, self.base_args + ["status"])
         self.assertNotEqual(result.exit_code, 0)
 
 
