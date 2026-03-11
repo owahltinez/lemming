@@ -82,7 +82,7 @@ class TestLemming(unittest.TestCase):
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             self.assertEqual(data["tasks"][0]["status"], "completed")
-            self.assertIn("Did the thing", data["tasks"][0]["outcomes"])
+            self.assertIn("Did the thing", data["tasks"][0]["lessons"])
 
     def test_task_fail(self):
         result = self.runner.invoke(
@@ -232,16 +232,16 @@ class TestLemming(unittest.TestCase):
         self.assertIn("- Lesson 1", result.output)
 
     def test_info_with_outcomes(self):
-        # Setup task with outcomes
+        # Setup task with outcomes (now lessons)
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-            data["tasks"][0]["outcomes"] = ["Outcome 1"]
+            data["tasks"][0]["lessons"] = ["Outcome 1"]
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
             
         result = self.runner.invoke(cli, self.base_args + ["info", "12345678"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("--- Outcomes ---", result.output)
+        self.assertIn("--- Lessons Learned ---", result.output)
         self.assertIn("- Outcome 1", result.output)
 
     def test_task_complete_not_found(self):
@@ -270,6 +270,29 @@ class TestLemming(unittest.TestCase):
 
     def test_task_fail_not_found(self):
         result = self.runner.invoke(cli, self.base_args + ["fail", "nonexistent", "--lesson", "why"])
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Task nonexistent not found.", result.output)
+
+    def test_reset_task(self):
+        # Setup task with attempts and lessons
+        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            data["tasks"][0]["attempts"] = 2
+            data["tasks"][0]["lessons"] = ["Lesson 1"]
+        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f)
+
+        result = self.runner.invoke(cli, self.base_args + ["reset", "12345678"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("attempts and lessons cleared", result.output)
+
+        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            self.assertEqual(data["tasks"][0]["attempts"], 0)
+            self.assertEqual(data["tasks"][0]["lessons"], [])
+
+    def test_reset_task_not_found(self):
+        result = self.runner.invoke(cli, self.base_args + ["reset", "nonexistent"])
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
