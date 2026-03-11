@@ -37,13 +37,13 @@ lemming add "Write unit tests"
 Check the current status and context of your project:
 ```bash
 # Show pending tasks and context summary
-lemming info
+lemming status
 
 # Show all tasks (including completed ones) and full context
-lemming info --verbose
+lemming status --verbose
 
 # Show details for a specific task
-lemming info <task_id>
+lemming status <task_id>
 ```
 
 ### 3. Run the Autonomous Loop
@@ -63,7 +63,8 @@ lemming run --max-attempts 3 --retry-delay 10
 *   **`delete <task_id>`**: Remove a task from the queue.
 *   **`reset <task_id>`**: Clear a task's attempts and lessons.
 *   **`clear`**: Clear the task queue (default). Use `--context` to clear only context, or `--all` for both.
-*   **`info [<task_id>]`**: Show roadmap overview or specific task details.
+*   **`status [<task_id>]`**: Show roadmap overview or specific task details.
+*   **`serve`**: Launch the web interface (defaults to http://127.0.0.1:8000).
 
 ### Task Status (used by agents or humans)
 *   **`complete <task_id> --outcome <text>`**: Mark a task as completed with a summary of the work.
