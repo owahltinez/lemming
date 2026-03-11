@@ -1,6 +1,6 @@
-import hashlib
 import os
 import pathlib
+import secrets
 import shlex
 import subprocess
 import time
@@ -8,12 +8,19 @@ import time
 import click
 import yaml
 
-DEFAULT_TASKS_FILE = pathlib.Path("tasks.yml")
+
+def _get_default_tasks_file() -> pathlib.Path:
+    """Determine the default tasks file location."""
+    local_tasks = pathlib.Path("tasks.yml")
+    if local_tasks.exists():
+        return local_tasks
+    return pathlib.Path.home() / ".local" / "lemming" / "tasks.yml"
 
 
-def _get_task_id(description: str) -> str:
-    """Generates a stable short hash based on the task description."""
-    return hashlib.md5(description.encode("utf-8")).hexdigest()[:8]
+def _get_task_id() -> str:
+    """Generates a random short hex string for the task ID."""
+    return secrets.token_hex(4)
+
 
 
 def load_tasks(tasks_file: pathlib.Path) -> dict:
@@ -51,10 +58,16 @@ def get_pending_task(data: dict) -> dict | None:
 @click.option(
     "--tasks-file",
     type=click.Path(path_type=pathlib.Path),
-    help="Path to the tasks file (defaults to tasks.yml).",
+    help="Path to the tasks file (defaults to ./tasks.yml or ~/.local/lemming/tasks.yml).",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show verbose output.",
 )
 @click.pass_context
-def cli(ctx: click.Context, tasks_file: pathlib.Path | None):
+def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     """Lemming: An autonomous, iterative task runner for AI agents.
 
     Lemming orchestrates AI coding agents by walking through a structured `tasks.yml` file.
@@ -62,64 +75,119 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None):
     """
     ctx.ensure_object(dict)
     if tasks_file is None:
-        tasks_file = DEFAULT_TASKS_FILE
-    ctx.obj["TASKS_FILE"] = tasks_file
+        tasks_file = _get_default_tasks_file()
+    ctx.obj["TASKS_FILE"] = tasks_file.resolve()
+    ctx.obj["VERBOSE"] = verbose
 
 
-@cli.command()
+@cli.command(short_help="<description> Add a new task to the queue")
 @click.argument("description")
+@click.option(
+    "--index",
+    default=-1,
+    help="Index to insert the task at (defaults to -1, the end).",
+)
+@click.option(
+    "--agent",
+    help="Custom agent to use for this task (overrides the default run agent).",
+)
 @click.pass_context
-def add(ctx: click.Context, description: str):
-    """Add a new pending task to the roadmap."""
+def add(ctx: click.Context, description: str, index: int, agent: str | None):
+    """Add a new task to the queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
     data = load_tasks(tasks_file)
 
-    task_id = _get_task_id(description)
+    task_id = _get_task_id()
+    existing_ids = {t["id"] for t in data["tasks"]}
+    while task_id in existing_ids:
+        task_id = _get_task_id()
 
-    # Check if exists
-    for t in data["tasks"]:
-        if t["id"] == task_id:
-            click.echo(f"Task already exists: {task_id}")
-            return
+    new_task = {
+        "id": task_id,
+        "description": description,
+        "status": "pending",
+        "attempts": 0,
+        "lessons": [],
+    }
+    if agent:
+        new_task["agent"] = agent
 
-    data["tasks"].append(
-        {
-            "id": task_id,
-            "description": description,
-            "status": "pending",
-            "attempts": 0,
-            "lessons": [],
-        }
-    )
+    if index == -1:
+        data["tasks"].append(new_task)
+    else:
+        data["tasks"].insert(index, new_task)
 
     save_tasks(tasks_file, data)
-    click.echo(f"Added task {task_id}: {description}")
+    if verbose:
+        click.echo(f"Added task {task_id}: {description}")
+    else:
+        click.echo(task_id)
 
 
-@cli.command("list")
+@cli.command(short_help="<taskid> Edit an existing task's details")
+@click.argument("task_id")
+@click.option("--description", help="New description for the task.")
+@click.option("--agent", help="New custom agent for the task.")
+@click.option("--index", type=int, help="New index in the task queue.")
 @click.pass_context
-def list_tasks(ctx: click.Context):
-    """List all tasks and their current status."""
+def edit(
+    ctx: click.Context,
+    task_id: str,
+    description: str | None,
+    agent: str | None,
+    index: int | None,
+):
+    """Edit an existing task's details."""
+    verbose = ctx.obj["VERBOSE"]
+    if description is None and agent is None and index is None:
+        click.echo(
+            "Error: At least one of --description, --agent, or --index must be provided."
+        )
+        ctx.exit(1)
+
     tasks_file = ctx.obj["TASKS_FILE"]
     data = load_tasks(tasks_file)
 
-    if not data["tasks"]:
-        click.echo("No tasks found.")
-        return
+    # Find the task
+    task_idx = -1
+    target_task = None
+    for i, t in enumerate(data["tasks"]):
+        if t["id"].startswith(task_id):
+            task_idx = i
+            target_task = t
+            break
 
-    for t in data["tasks"]:
-        marker = "[x]" if t["status"] == "completed" else "[ ]"
-        status_color = "green" if t["status"] == "completed" else "yellow"
-        click.secho(f"{marker} ", fg=status_color, nl=False)
-        click.echo(f"({t['id']}) {t['description']}")
+    if target_task is None:
+        click.echo(f"Error: Task {task_id} not found.")
+        ctx.exit(1)
+
+    # Apply changes
+    if description is not None:
+        target_task["description"] = description
+    if agent is not None:
+        target_task["agent"] = agent
+
+    if index is not None:
+        # Move the task to the new index
+        task_to_move = data["tasks"].pop(task_idx)
+        if index == -1:
+            data["tasks"].append(task_to_move)
+        else:
+            data["tasks"].insert(index, task_to_move)
+
+    save_tasks(tasks_file, data)
+    if verbose:
+        click.echo(f"Task {target_task['id']} updated.")
 
 
-@cli.command()
+@cli.command(name="delete", short_help="<taskid> Delete a task from the queue")
 @click.argument("task_id")
 @click.pass_context
-def rm(ctx: click.Context, task_id: str):
-    """Remove a task by its ID."""
+def delete_task(ctx: click.Context, task_id: str):
+    """Delete a task from the queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
     data = load_tasks(tasks_file)
 
     initial_count = len(data["tasks"])
@@ -127,30 +195,44 @@ def rm(ctx: click.Context, task_id: str):
 
     if len(data["tasks"]) < initial_count:
         save_tasks(tasks_file, data)
-        click.echo(f"Removed task(s) matching {task_id}")
+        if verbose:
+            click.echo(f"Removed task(s) matching {task_id}")
     else:
         click.echo(f"Error: Task {task_id} not found.")
 
 
-@cli.command()
+@cli.command(short_help="<taskid> Show context and task details")
 @click.argument("task_id", required=False)
 @click.pass_context
 def info(ctx: click.Context, task_id: str | None):
-    """Show project context, or detailed metadata for a specific task."""
+    """Show context or task details."""
     tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
     data = load_tasks(tasks_file)
 
     if not task_id:
-        click.secho("=== Project Context ===", fg="cyan", bold=True)
-        click.echo(data.get("context") or "No context set.")
-        click.secho("\n=== Tasks ===", fg="cyan", bold=True)
+        if verbose:
+            click.secho("=== Project Context ===", fg="cyan", bold=True)
+            click.echo(data.get("context") or "No context set.")
+            click.secho("\n=== Tasks ===", fg="cyan", bold=True)
+        
         if not data.get("tasks"):
-            click.echo("No tasks found.")
+            if verbose:
+                click.echo("No tasks found.")
+            return
+
         for t in data.get("tasks", []):
+            if not verbose and t["status"] == "completed":
+                continue
             marker = "[x]" if t["status"] == "completed" else "[ ]"
             status_color = "green" if t["status"] == "completed" else "yellow"
             click.secho(f"{marker} ", fg=status_color, nl=False)
             click.echo(f"({t['id']}) {t['description']}")
+        
+        if not verbose:
+            completed_count = sum(1 for t in data["tasks"] if t["status"] == "completed")
+            if completed_count > 0:
+                click.echo(f"({completed_count} completed tasks hidden)")
         return
 
     target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
@@ -162,7 +244,14 @@ def info(ctx: click.Context, task_id: str | None):
     click.secho(f"Task ID:     {target['id']}", bold=True)
     click.echo(f"Status:      {target['status']}")
     click.echo(f"Description: {target['description']}")
+    if target.get("agent"):
+        click.echo(f"Custom Agent: {target['agent']}")
     click.echo(f"Attempts:    {target['attempts']}")
+
+    if target.get("outcomes"):
+        click.secho("\n--- Outcomes ---", fg="green", bold=True)
+        for outcome in target["outcomes"]:
+            click.echo(f"- {outcome}")
 
     if target.get("lessons"):
         click.secho("\n--- Lessons Learned ---", fg="magenta", bold=True)
@@ -170,7 +259,7 @@ def info(ctx: click.Context, task_id: str | None):
             click.echo(f"- {lesson}")
 
 
-@cli.command()
+@cli.command(short_help="[<text>] View or set the project context")
 @click.argument("context_text", required=False)
 @click.option(
     "--file",
@@ -180,37 +269,69 @@ def info(ctx: click.Context, task_id: str | None):
 )
 @click.pass_context
 def context(ctx: click.Context, context_text: str | None, file: pathlib.Path | None):
-    """View or set the global context/architectural rules for the project."""
+    """View or set the project context."""
     tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
     data = load_tasks(tasks_file)
 
     if file:
         data["context"] = file.read_text(encoding="utf-8")
         save_tasks(tasks_file, data)
-        click.echo("Project context updated.")
+        if verbose:
+            click.echo("Project context updated.")
     elif context_text:
         data["context"] = context_text
         save_tasks(tasks_file, data)
-        click.echo("Project context updated.")
+        if verbose:
+            click.echo("Project context updated.")
     else:
         click.echo(data.get("context") or "No context set.")
 
 
-@cli.group()
-def task():
-    """Commands for agents to report task status."""
-    pass
-
-
-cli.add_command(task)
-
-
-@task.command()
-@click.argument("task_id")
+@cli.command(short_help="Clear the project context or task queue")
+@click.option("--all", is_flag=True, help="Clear both context and tasks.")
+@click.option("--tasks", is_flag=True, help="Clear tasks only.")
+@click.option("--context", "clear_context", is_flag=True, help="Clear context only.")
 @click.pass_context
-def complete(ctx: click.Context, task_id: str):
-    """Mark a task as completed successfully."""
+def clear(ctx: click.Context, all: bool, tasks: bool, clear_context: bool):
+    """Clear the project context or task queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
+    data = load_tasks(tasks_file)
+
+    do_clear_tasks = tasks
+    do_clear_context = clear_context
+
+    if all:
+        do_clear_tasks = True
+        do_clear_context = True
+    elif not tasks and not clear_context:
+        do_clear_tasks = True
+
+    if do_clear_tasks:
+        data["tasks"] = []
+    if do_clear_context:
+        data["context"] = ""
+
+    save_tasks(tasks_file, data)
+
+    if verbose:
+        if do_clear_tasks and do_clear_context:
+            click.echo("Cleared all context and tasks.")
+        elif do_clear_tasks:
+            click.echo("Cleared task queue.")
+        elif do_clear_context:
+            click.echo("Cleared project context.")
+
+
+@cli.command(short_help="<taskid> Mark a task as completed and save an outcome")
+@click.argument("task_id")
+@click.option("--outcome", help="A short summary of the work completed.")
+@click.pass_context
+def complete(ctx: click.Context, task_id: str, outcome: str | None):
+    """Mark a task as completed."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
     data = load_tasks(tasks_file)
 
     target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
@@ -219,17 +340,44 @@ def complete(ctx: click.Context, task_id: str):
         ctx.exit(1)
 
     target["status"] = "completed"
+    if outcome:
+        if "outcomes" not in target:
+            target["outcomes"] = []
+        target["outcomes"].append(outcome)
+
     save_tasks(tasks_file, data)
-    click.echo(f"Task {target['id']} marked as completed.")
+    if verbose:
+        click.echo(f"Task {target['id']} marked as completed.")
 
 
-@task.command()
+@cli.command(short_help="<taskid> Mark a completed task as pending")
+@click.argument("task_id")
+@click.pass_context
+def uncomplete(ctx: click.Context, task_id: str):
+    """Mark a completed task as pending."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
+    data = load_tasks(tasks_file)
+
+    target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
+    if not target:
+        click.echo(f"Error: Task {task_id} not found.")
+        ctx.exit(1)
+
+    target["status"] = "pending"
+    save_tasks(tasks_file, data)
+    if verbose:
+        click.echo(f"Task {target['id']} marked as pending.")
+
+
+@cli.command(short_help="<taskid> Record a task failure and save a lesson")
 @click.argument("task_id")
 @click.option("--lesson", required=True, help="Technical explanation of the failure.")
 @click.pass_context
 def fail(ctx: click.Context, task_id: str, lesson: str):
-    """Record a task failure and save a technical lesson."""
+    """Record a task failure and save a lesson."""
     tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
     data = load_tasks(tasks_file)
 
     target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
@@ -241,7 +389,8 @@ def fail(ctx: click.Context, task_id: str, lesson: str):
         target["lessons"] = []
     target["lessons"].append(lesson)
     save_tasks(tasks_file, data)
-    click.echo(f"Failure recorded for task {target['id']}. Lesson saved.")
+    if verbose:
+        click.echo(f"Failure recorded for task {target['id']}. Lesson saved.")
 
 
 def build_agent_command(
@@ -251,6 +400,7 @@ def build_agent_command(
     prompt_flag: str | None = None,
     agent_args: tuple | None = None,
     no_defaults: bool = False,
+    verbose: bool = False,
 ) -> list[str]:
     """Constructs the CLI command for the specified agent."""
     cmd = [agent_name]
@@ -266,6 +416,8 @@ def build_agent_command(
         elif agent_base.startswith("aider"):
             if yolo:
                 cmd.append("--yes")
+            if not verbose:
+                cmd.append("--quiet")
             default_prompt_flag = "--message"
         elif agent_base.startswith("claude"):
             if yolo:
@@ -291,7 +443,7 @@ def build_agent_command(
     return cmd
 
 
-@cli.command(context_settings=dict(ignore_unknown_options=True))
+@cli.command(context_settings=dict(ignore_unknown_options=True), short_help="Run the autonomous task execution loop")
 @click.option(
     "--max-attempts", default=3, help="Maximum number of retries for a single task."
 )
@@ -330,15 +482,17 @@ def run(
     prompt_flag: str | None,
     agent_args: tuple,
 ):
-    """Run the loop to complete all tasks sequentially."""
+    """Run the autonomous task execution loop."""
     tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
 
     while True:
         data = load_tasks(tasks_file)
         current_task = get_pending_task(data)
 
         if not current_task:
-            click.echo("All tasks completed!")
+            if verbose:
+                click.echo("All tasks completed!")
             break
 
         task_id = current_task["id"]
@@ -354,10 +508,13 @@ def run(
             )
             break
 
-        click.echo(
-            f"\n--- Task {task_id} (Attempt {current_task['attempts']}/{max_attempts}) ---"
-        )
-        click.echo(f"Working on: {current_task['description']}")
+        if verbose:
+            click.echo(
+                f"\n--- Task {task_id} (Attempt {current_task['attempts']}/{max_attempts}) ---"
+            )
+            click.echo(f"Working on: {current_task['description']}")
+        else:
+            click.echo(f"[{task_id}] Attempt {current_task['attempts']}/{max_attempts}: {current_task['description']}")
 
         # Build context for prompt
         completed_tasks = [t for t in data["tasks"] if t["status"] == "completed"]
@@ -371,8 +528,13 @@ def run(
 
         if completed_tasks:
             roadmap_str += "## Completed Tasks (Historical context)\n"
-            for t in completed_tasks:
+            for i, t in enumerate(completed_tasks):
                 roadmap_str += f"- [x] {t['description']}\n"
+                if t.get("outcomes"):
+                    # Only show outcomes for the last 5 completed tasks to keep the prompt concise
+                    if len(completed_tasks) - i <= 5:
+                        for outcome in t["outcomes"]:
+                            roadmap_str += f"  - {outcome}\n"
             roadmap_str += "\n"
 
         if future_tasks:
@@ -388,6 +550,7 @@ def run(
                 lessons_str += f"- {lesson}\n"
             lessons_str += "\n"
 
+        tasks_file_str = shlex.quote(str(tasks_file))
         prompt = (
             f"You are an autonomous AI coding agent managed by the 'Lemming' orchestrator.\n\n"
             f"### The Project Roadmap\n"
@@ -399,23 +562,30 @@ def run(
             "1. **Execute:** Write the code to fulfill the current task. Run any necessary tests.\n"
             f"2. **DO NOT edit `{tasks_file.name}` directly.** You must use the Lemming CLI API.\n"
             f"3. **Success:** When you have completely finished and verified the task, you MUST run this shell command to report success:\n"
-            f"   `lemming task complete {task_id}`\n"
-            f"4. **Failure/Blocker:** If you hit a technical roadblock, cannot fix a bug, or are unable to complete the task, you MUST run this shell command to report failure and save your findings for the next iteration:\n"
-            f'   `lemming task fail {task_id} --lesson "<Brief technical explanation of what went wrong>"`\n'
+            f"   `lemming --tasks-file {tasks_file_str} complete {task_id} --outcome \"<brief summary of your work>\"`\n"
+            "4. **Failure/Blocker:** If you hit a technical roadblock, cannot fix a bug, or are unable to complete the task, you MUST run this shell command to report failure and save your findings for the next iteration:\n"
+            f'   `lemming --tasks-file {tasks_file_str} fail {task_id} --lesson "<Brief technical explanation of what went wrong>"`\n'
+
             "5. Stop and exit after running either the complete or fail command."
         )
 
-        cmd = build_agent_command(
-            agent, prompt, yolo, prompt_flag, agent_args, no_defaults
-        )
-        cmd_str = shlex.join(cmd)
-        user_shell = os.environ.get("SHELL", "/bin/sh")
+        if verbose:
+            click.secho("\n=== Agent Prompt ===", fg="blue", bold=True)
+            click.echo(prompt)
+            click.secho("====================\n", fg="blue", bold=True)
 
+        cmd = build_agent_command(
+            current_task.get("agent") or agent,
+            prompt,
+            yolo,
+            prompt_flag,
+            agent_args,
+            no_defaults,
+            verbose=verbose,
+        )
         try:
-            # Standard shell execution. Does not load interactive aliases.
-            subprocess.run(
-                cmd_str, shell=True, check=True, executable=user_shell, env=os.environ
-            )
+            # Execute agent directly without a shell to avoid verbosity and shell-related issues.
+            subprocess.run(cmd, check=True, env=os.environ)
         except subprocess.CalledProcessError as e:
             click.echo(
                 f"\n{agent.capitalize()} execution failed with exit code {e.returncode}"
@@ -440,15 +610,18 @@ def run(
             break
 
         if post_task["status"] == "completed":
-            click.echo("Agent successfully reported task completion.")
+            if verbose:
+                click.echo("Agent successfully reported task completion.")
         else:
-            click.echo(
-                "Agent finished execution but did NOT report completion. Retrying..."
-            )
-            if current_task["attempts"] < max_attempts and retry_delay > 0:
+            if verbose:
                 click.echo(
-                    f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
+                    "Agent finished execution but did NOT report completion. Retrying..."
                 )
+            if current_task["attempts"] < max_attempts and retry_delay > 0:
+                if verbose:
+                    click.echo(
+                        f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
+                    )
                 time.sleep(retry_delay)
 
 
