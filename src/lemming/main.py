@@ -248,11 +248,6 @@ def info(ctx: click.Context, task_id: str | None):
         click.echo(f"Custom Agent: {target['agent']}")
     click.echo(f"Attempts:    {target['attempts']}")
 
-    if target.get("outcomes"):
-        click.secho("\n--- Outcomes ---", fg="green", bold=True)
-        for outcome in target["outcomes"]:
-            click.echo(f"- {outcome}")
-
     if target.get("lessons"):
         click.secho("\n--- Lessons Learned ---", fg="magenta", bold=True)
         for lesson in target["lessons"]:
@@ -341,9 +336,9 @@ def complete(ctx: click.Context, task_id: str, outcome: str | None):
 
     target["status"] = "completed"
     if outcome:
-        if "outcomes" not in target:
-            target["outcomes"] = []
-        target["outcomes"].append(outcome)
+        if "lessons" not in target:
+            target["lessons"] = []
+        target["lessons"].append(outcome)
 
     save_tasks(tasks_file, data)
     if verbose:
@@ -391,6 +386,27 @@ def fail(ctx: click.Context, task_id: str, lesson: str):
     save_tasks(tasks_file, data)
     if verbose:
         click.echo(f"Failure recorded for task {target['id']}. Lesson saved.")
+
+
+@cli.command(short_help="<taskid> Clear a task's attempts and lessons")
+@click.argument("task_id")
+@click.pass_context
+def reset(ctx: click.Context, task_id: str):
+    """Clear a task's attempts and lessons."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    verbose = ctx.obj["VERBOSE"]
+    data = load_tasks(tasks_file)
+
+    target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
+    if not target:
+        click.echo(f"Error: Task {task_id} not found.")
+        ctx.exit(1)
+
+    target["attempts"] = 0
+    target["lessons"] = []
+    save_tasks(tasks_file, data)
+    if verbose:
+        click.echo(f"Task {target['id']} attempts and lessons cleared.")
 
 
 def build_agent_command(
@@ -530,11 +546,11 @@ def run(
             roadmap_str += "## Completed Tasks (Historical context)\n"
             for i, t in enumerate(completed_tasks):
                 roadmap_str += f"- [x] {t['description']}\n"
-                if t.get("outcomes"):
-                    # Only show outcomes for the last 5 completed tasks to keep the prompt concise
+                if t.get("lessons"):
+                    # Only show lessons for the last 5 completed tasks to keep the prompt concise
                     if len(completed_tasks) - i <= 5:
-                        for outcome in t["outcomes"]:
-                            roadmap_str += f"  - {outcome}\n"
+                        for lesson in t["lessons"]:
+                            roadmap_str += f"  - {lesson}\n"
             roadmap_str += "\n"
 
         if future_tasks:
@@ -583,10 +599,21 @@ def run(
             no_defaults,
             verbose=verbose,
         )
+        result = None
         try:
             # Execute agent directly without a shell to avoid verbosity and shell-related issues.
-            subprocess.run(cmd, check=True, env=os.environ)
+            if verbose:
+                subprocess.run(cmd, check=True, env=os.environ)
+            else:
+                result = subprocess.run(
+                    cmd, check=True, env=os.environ, capture_output=True, text=True
+                )
         except subprocess.CalledProcessError as e:
+            if not verbose and (getattr(e, "stdout", None) or getattr(e, "stderr", None)):
+                if e.stdout:
+                    click.echo(e.stdout, err=True)
+                if e.stderr:
+                    click.echo(e.stderr, err=True)
             click.echo(
                 f"\n{agent.capitalize()} execution failed with exit code {e.returncode}"
             )
@@ -613,6 +640,11 @@ def run(
             if verbose:
                 click.echo("Agent successfully reported task completion.")
         else:
+            if not verbose and result is not None:
+                if result.stdout:
+                    click.echo(result.stdout)
+                if result.stderr:
+                    click.echo(result.stderr, err=True)
             if verbose:
                 click.echo(
                     "Agent finished execution but did NOT report completion. Retrying..."

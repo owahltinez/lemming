@@ -61,6 +61,7 @@ lemming run --max-attempts 3 --retry-delay 10
 *   **`add <description>`**: Add a new task. Use `--index <n>` to insert at a specific position, or `--agent <name>` to specify a custom agent for just this task.
 *   **`edit <task_id>`**: Edit an existing task. Supports `--description`, `--agent`, and `--index`.
 *   **`delete <task_id>`**: Remove a task from the queue.
+*   **`reset <task_id>`**: Clear a task's attempts and lessons.
 *   **`clear`**: Clear the task queue (default). Use `--context` to clear only context, or `--all` for both.
 *   **`info [<task_id>]`**: Show roadmap overview or specific task details.
 
