@@ -64,10 +64,10 @@ test.describe("Environment Overrides UI", () => {
     await keyInput.fill("MY_MOCK_KEY");
     await valueInput.fill("MY_MOCK_VALUE");
 
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
 
     const localStorageData = await page.evaluate(() =>
-      localStorage.getItem("lemming_env_overrides"),
+      localStorage.getItem("lemming_env_overrides")
     );
     expect(localStorageData).toContain("MY_MOCK_KEY");
     expect(localStorageData).toContain("MY_MOCK_VALUE");
@@ -107,8 +107,10 @@ test.describe("Environment Overrides UI", () => {
     await expect(keyInputs).toHaveCount(1);
     await expect(keyInputs.nth(0)).toHaveValue("KEY2");
 
+    await page.waitForTimeout(600);
+
     const localStorageData = await page.evaluate(() =>
-      localStorage.getItem("lemming_env_overrides"),
+      localStorage.getItem("lemming_env_overrides")
     );
     expect(localStorageData).toContain("KEY2");
     expect(localStorageData).not.toContain("KEY1");
@@ -131,6 +133,8 @@ test.describe("Environment Overrides UI", () => {
     await page.getByRole("button", { name: "Add override" }).click();
     const keyInputs = page.getByPlaceholder("KEY (e.g. OPENAI_API_KEY)");
     await expect(keyInputs).toHaveCount(1);
+
+    await page.waitForTimeout(600);
 
     const runResponsePromise = page.waitForResponse("**/api/run");
     await page.getByRole("button", { name: "Run Loop" }).click();
