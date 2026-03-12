@@ -143,4 +143,32 @@ test.describe("Environment Overrides UI", () => {
     expect(runRequestPayload).not.toBeNull();
     expect(runRequestPayload.env).toBeUndefined();
   });
+
+  test('persists overrides across page reloads', async ({ page }) => {
+    await page.goto('http://localhost:8000/');
+    await page.evaluate(() => localStorage.clear());
+    await page.goto('http://localhost:8000/');
+
+    // Add override
+    await page.getByRole('button', { name: 'Add override' }).click();
+    await page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)').fill('TEST_KEY');
+    await page.getByPlaceholder('VALUE').fill('TEST_VAL');
+    
+    // Wait for save debounce
+    await page.waitForTimeout(600);
+    
+    // Reload page
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    
+    // Check that we're dealing with Mancha actually being ready
+    await expect(page.getByRole('heading', { name: 'Lemming Task Runner' })).toBeVisible();
+
+    // Give render time
+    await page.waitForTimeout(500);
+
+    // Verify values restored
+    await expect(page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)')).toHaveValue('TEST_KEY');
+    await expect(page.getByPlaceholder('VALUE')).toHaveValue('TEST_VAL');
+  });
 });

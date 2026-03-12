@@ -6,8 +6,21 @@
     <title>Lemming</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
     <script src="https://unpkg.com/mancha@0.21.3" css="basic+utils+custom" init></script>
+    <script>
+        let initialEnvOverrides = [];
+        try {
+            const saved = localStorage.getItem('lemming_env_overrides');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                initialEnvOverrides = parsed.map((o, i) => ({ ...o, id: 'env-' + i }));
+            }
+        } catch (e) {
+            console.error('Failed to parse initial env overrides', e);
+        }
+        window.__INITIAL_ENV__ = initialEnvOverrides;
+    </script>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans" :data="{ tasks: [], context: '', cwd: '', newTask: '', loading: true, agents: [], selectedAgent: 'gemini', envOverrides: [], hideCompleted: false, toasts: [], expanded: {}, loopRunning: false, completedCount: $computed(() => tasks.filter((t) => t.status === 'completed').length), filteredTasks: $computed(() => tasks.filter((t) => (t.status === 'in_progress')).concat(tasks.filter((t) => (t.status === 'pending'))).concat(tasks.filter((t) => (t.status === 'completed' && !hideCompleted)).sort((a, b) => ((b.completed_at || 0) - (a.completed_at || 0))))) }">
+<body class="bg-gray-50 text-gray-900 font-sans" :data="{ tasks: [], context: '', cwd: '', newTask: '', loading: true, agents: [], selectedAgent: 'gemini', envOverrides: window.__INITIAL_ENV__, hideCompleted: false, toasts: [], expanded: {}, loopRunning: false, completedCount: $computed(() => tasks.filter((t) => t.status === 'completed').length), filteredTasks: $computed(() => tasks.filter((t) => (t.status === 'in_progress')).concat(tasks.filter((t) => (t.status === 'pending'))).concat(tasks.filter((t) => (t.status === 'completed' && !hideCompleted)).sort((a, b) => ((b.completed_at || 0) - (a.completed_at || 0))))) }">
     <div class="max-w-3xl mx-auto p-4">
         <header class="mb-4" role="banner">
             <h1 class="text-2xl font-bold text-indigo-600" title="Lemming Task Runner">Lemming Task Runner</h1>
@@ -396,8 +409,9 @@
             localStorage.setItem('lemming_hide_completed', this.hideCompleted);
         };
 
+        let uuidCounter = 1000; // start higher to avoid collision with initial ones
         $.addEnvOverride = function() {
-            this.envOverrides = [...this.envOverrides, { id: crypto.randomUUID(), key: '', value: '' }];
+            this.envOverrides.push({ id: 'env-' + (uuidCounter++), key: '', value: '' });
             this.saveEnvOverrides();
         };
 
@@ -413,22 +427,6 @@
                 const dataToSave = this.envOverrides.map(({ id, key, value }) => ({ key, value }));
                 localStorage.setItem('lemming_env_overrides', JSON.stringify(dataToSave));
             }, 300);
-        };
-
-        $.loadEnvOverrides = function() {
-            const saved = localStorage.getItem('lemming_env_overrides');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    this.envOverrides = parsed.map(o => ({
-                        ...o,
-                        id: crypto.randomUUID()
-                    }));
-                } catch (e) {
-                    console.error('Failed to parse env overrides', e);
-                    this.envOverrides = [];
-                }
-            }
         };
 
         $.addTask = async function() {
@@ -538,13 +536,13 @@
             }
         };
 
-        // Initial fetch
-        $.fetchData();
-        $.fetchAgents();
-        $.loadEnvOverrides();
+        document.addEventListener('DOMContentLoaded', () => {
+            $.fetchData();
+            $.fetchAgents();
 
-        // Auto-refresh every 3 seconds
-        setInterval(() => ($.fetchData()), 3000);
+            // Auto-refresh every 3 seconds
+            setInterval(() => ($.fetchData()), 3000);
+        });
     </script>
 </body>
 </html>
