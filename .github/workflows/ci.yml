@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.13"
+
+    - name: Install Python dependencies
+      run: uv sync
+
+    - name: Run Python linting
+      run: uv run ruff check .
+
+    - name: Run Python formatting check
+      run: uv run ruff format --check .
+
+    - name: Run Python tests
+      run: uv run pytest
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Node.js dependencies
+      run: npm install
+
+    - name: Run Web linting
+      run: npm run lint
+
+    - name: Run Web check
+      run: npm run check
+
+    - name: Run Web tests
+      run: npm test

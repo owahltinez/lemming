@@ -1,0 +1,17 @@
+{
+  "name": "lemming",
+  "version": "0.1.0",
+  "description": "Autonomous AI coding agent orchestrator",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/web/*.test.js",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "check": "mancha check src/lemming/web/*.html"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "mancha": "latest",
+    "jsdom": "latest"
+  }
+}

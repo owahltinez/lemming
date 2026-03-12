@@ -25,7 +25,7 @@ class TestLemming(unittest.TestCase):
                     "description": "Initial Task",
                     "status": "pending",
                     "attempts": 0,
-                    "lessons": [],
+                    "outcomes": [],
                 }
             ],
         }
@@ -64,9 +64,7 @@ class TestLemming(unittest.TestCase):
             self.assertNotIn("To be removed", task_descs)
 
     def test_task_complete(self):
-        result = self.runner.invoke(
-            cli, self.base_args + ["complete", "12345678"]
-        )
+        result = self.runner.invoke(cli, self.base_args + ["complete", "12345678"])
         self.assertEqual(result.exit_code, 0)
 
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
@@ -82,7 +80,7 @@ class TestLemming(unittest.TestCase):
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             self.assertEqual(data["tasks"][0]["status"], "completed")
-            self.assertIn("Did the thing", data["tasks"][0]["lessons"])
+            self.assertIn("Did the thing", data["tasks"][0]["outcomes"])
 
     def test_task_fail(self):
         result = self.runner.invoke(
@@ -91,7 +89,7 @@ class TestLemming(unittest.TestCase):
             + [
                 "fail",
                 "12345678",
-                "--lesson",
+                "--outcome",
                 "Failed due to missing dependency",
             ],
         )
@@ -101,7 +99,7 @@ class TestLemming(unittest.TestCase):
             data = yaml.safe_load(f)
             self.assertEqual(data["tasks"][0]["status"], "pending")
             self.assertIn(
-                "Failed due to missing dependency", data["tasks"][0]["lessons"]
+                "Failed due to missing dependency", data["tasks"][0]["outcomes"]
             )
 
     def test_info_no_args(self):
@@ -125,7 +123,9 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Initial context", result.output)
 
     def test_set_context(self):
-        result = self.runner.invoke(cli, self.base_args + ["context", "Updated context via CLI"])
+        result = self.runner.invoke(
+            cli, self.base_args + ["context", "Updated context via CLI"]
+        )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Project context updated.", result.output)
 
@@ -137,7 +137,9 @@ class TestLemming(unittest.TestCase):
         context_file = pathlib.Path(self.test_dir) / "context.txt"
         context_file.write_text("Context from file content", encoding="utf-8")
 
-        result = self.runner.invoke(cli, self.base_args + ["context", "--file", str(context_file)])
+        result = self.runner.invoke(
+            cli, self.base_args + ["context", "--file", str(context_file)]
+        )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Project context updated.", result.output)
 
@@ -169,12 +171,12 @@ class TestLemming(unittest.TestCase):
     def test_edit_task_index(self):
         # Add another task
         self.runner.invoke(cli, self.base_args + ["add", "Second Task"])
-        
+
         # Get the ID of the second task
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             second_task_id = data["tasks"][1]["id"]
-        
+
         # Move second task to index 0
         result = self.runner.invoke(
             cli, self.base_args + ["edit", second_task_id, "--index", "0"]
@@ -189,26 +191,47 @@ class TestLemming(unittest.TestCase):
     def test_edit_task_no_args(self):
         result = self.runner.invoke(cli, self.base_args + ["edit", "12345678"])
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: At least one of --description, --agent, or --index must be provided.", result.output)
-
+        self.assertIn(
+            "Error: At least one of --description, --agent, or --index must be provided.",
+            result.output,
+        )
 
     def test_add_task_with_options(self):
-        result = self.runner.invoke(cli, self.base_args + ["add", "Agent Task", "--agent", "test-agent", "--index", "0"])
+        result = self.runner.invoke(
+            cli,
+            self.base_args
+            + ["add", "Agent Task", "--agent", "test-agent", "--index", "0"],
+        )
         self.assertEqual(result.exit_code, 0)
-        
+
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             self.assertEqual(data["tasks"][0]["description"], "Agent Task")
             self.assertEqual(data["tasks"][0]["agent"], "test-agent")
 
     def test_edit_task_not_found(self):
-        result = self.runner.invoke(cli, self.base_args + ["edit", "nonexistent", "--description", "New"])
+        result = self.runner.invoke(
+            cli, self.base_args + ["edit", "nonexistent", "--description", "New"]
+        )
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
+    def test_edit_completed_task(self):
+        # Mark a task as completed first
+        self.runner.invoke(cli, self.base_args + ["complete", "12345678"])
+
+        # Try to edit it
+        result = self.runner.invoke(
+            cli, self.base_args + ["edit", "12345678", "--description", "Should fail"]
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Cannot edit completed task 12345678.", result.output)
+
     def test_delete_task_not_found(self):
         result = self.runner.invoke(cli, self.base_args + ["delete", "nonexistent"])
-        self.assertEqual(result.exit_code, 0) # Current implementation doesn't exit with 1
+        self.assertEqual(
+            result.exit_code, 0
+        )  # Current implementation doesn't exit with 1
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
     def test_info_task_not_found(self):
@@ -216,32 +239,32 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
-    def test_info_with_lessons_and_agent(self):
-        # Setup task with lessons and agent
+    def test_info_with_outcomes_and_agent(self):
+        # Setup task with outcomes and agent
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-            data["tasks"][0]["lessons"] = ["Lesson 1"]
+            data["tasks"][0]["outcomes"] = ["Outcome 1"]
             data["tasks"][0]["agent"] = "special-agent"
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
-            
+
         result = self.runner.invoke(cli, self.base_args + ["status", "12345678"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Custom Agent: special-agent", result.output)
-        self.assertIn("--- Lessons Learned ---", result.output)
-        self.assertIn("- Lesson 1", result.output)
+        self.assertIn("--- Outcomes ---", result.output)
+        self.assertIn("- Outcome 1", result.output)
 
     def test_info_with_outcomes(self):
-        # Setup task with outcomes (now lessons)
+        # Setup task with outcomes
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-            data["tasks"][0]["lessons"] = ["Outcome 1"]
+            data["tasks"][0]["outcomes"] = ["Outcome 1"]
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
-            
+
         result = self.runner.invoke(cli, self.base_args + ["status", "12345678"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("--- Lessons Learned ---", result.output)
+        self.assertIn("--- Outcomes ---", result.output)
         self.assertIn("- Outcome 1", result.output)
 
     def test_task_complete_not_found(self):
@@ -252,10 +275,8 @@ class TestLemming(unittest.TestCase):
     def test_task_uncomplete(self):
         # First mark as complete
         self.runner.invoke(cli, self.base_args + ["complete", "12345678"])
-        
-        result = self.runner.invoke(
-            cli, self.base_args + ["uncomplete", "12345678"]
-        )
+
+        result = self.runner.invoke(cli, self.base_args + ["uncomplete", "12345678"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("marked as pending", result.output)
 
@@ -269,27 +290,40 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
     def test_task_fail_not_found(self):
-        result = self.runner.invoke(cli, self.base_args + ["fail", "nonexistent", "--lesson", "why"])
+        result = self.runner.invoke(
+            cli, self.base_args + ["fail", "nonexistent", "--outcome", "why"]
+        )
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
+    def test_outcome_command(self):
+        result = self.runner.invoke(
+            cli, self.base_args + ["outcome", "12345678", "New Outcome"]
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Outcome added to task 12345678", result.output)
+
+        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            self.assertIn("New Outcome", data["tasks"][0]["outcomes"])
+
     def test_reset_task(self):
-        # Setup task with attempts and lessons
+        # Setup task with attempts and outcomes
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             data["tasks"][0]["attempts"] = 2
-            data["tasks"][0]["lessons"] = ["Lesson 1"]
+            data["tasks"][0]["outcomes"] = ["Outcome 1"]
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
 
         result = self.runner.invoke(cli, self.base_args + ["reset", "12345678"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("attempts and lessons cleared", result.output)
+        self.assertIn("attempts and outcomes cleared", result.output)
 
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             self.assertEqual(data["tasks"][0]["attempts"], 0)
-            self.assertEqual(data["tasks"][0]["lessons"], [])
+            self.assertEqual(data["tasks"][0]["outcomes"], [])
 
     def test_reset_task_not_found(self):
         result = self.runner.invoke(cli, self.base_args + ["reset", "nonexistent"])
@@ -299,7 +333,7 @@ class TestLemming(unittest.TestCase):
     def test_invalid_yaml(self):
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             f.write("invalid: yaml: :")
-        
+
         result = self.runner.invoke(cli, self.base_args + ["status"])
         self.assertNotEqual(result.exit_code, 0)
 

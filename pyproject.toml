@@ -20,5 +20,12 @@ dependencies = [
     "uvicorn>=0.33.0",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.9.9",
+    "httpx>=0.28.1",
+    "pytest",
+]
+
 [project.scripts]
 lemming = "lemming.main:cli"

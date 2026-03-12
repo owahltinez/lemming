@@ -1,6 +1,7 @@
 import unittest
 from lemming.main import build_agent_command
 
+
 class TestAgentCommand(unittest.TestCase):
     def test_gemini_full_path(self):
         cmd = build_agent_command("/usr/bin/gemini", "hello", yolo=True)
@@ -45,20 +46,27 @@ class TestAgentCommand(unittest.TestCase):
         self.assertEqual(cmd, ["gemini", "hello"])
 
     def test_custom_prompt_flag(self):
-        cmd = build_agent_command("custom-agent", "hello", yolo=True, prompt_flag="--input")
+        cmd = build_agent_command(
+            "custom-agent", "hello", yolo=True, prompt_flag="--input"
+        )
         self.assertEqual(cmd, ["custom-agent", "--input", "hello"])
 
     def test_custom_prompt_flag_no_dash(self):
-        cmd = build_agent_command("custom-agent", "hello", yolo=True, prompt_flag="input")
+        cmd = build_agent_command(
+            "custom-agent", "hello", yolo=True, prompt_flag="input"
+        )
         self.assertEqual(cmd, ["custom-agent", "--input", "hello"])
 
     def test_agent_args(self):
-        cmd = build_agent_command("gemini", "hello", yolo=True, agent_args=("--model", "flash"))
+        cmd = build_agent_command(
+            "gemini", "hello", yolo=True, agent_args=("--model", "flash")
+        )
         self.assertEqual(cmd[0], "gemini")
         self.assertIn("--model", cmd)
         self.assertIn("flash", cmd)
         self.assertIn("hello", cmd)
         self.assertEqual(cmd[-1], "hello")
+
 
 if __name__ == "__main__":
     unittest.main()
