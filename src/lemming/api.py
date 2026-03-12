@@ -26,6 +26,12 @@ app = FastAPI()
 TASKS_FILE = get_default_tasks_file()
 
 
+def set_tasks_file(path: pathlib.Path):
+    """Sets the tasks file to use for the API."""
+    global TASKS_FILE
+    TASKS_FILE = path
+
+
 class Task(BaseModel):
     id: Optional[str] = None
     description: str

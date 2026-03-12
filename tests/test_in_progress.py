@@ -103,6 +103,11 @@ class TestInProgress(unittest.TestCase):
         with open(self.test_tasks_file, "w") as f:
             yaml.dump(data, f)
 
+        # Record outcome first
+        runner.invoke(
+            cli, ["--tasks-file", str(self.test_tasks_file), "outcome", "t1", "Done"]
+        )
+
         result = runner.invoke(
             cli, ["--tasks-file", str(self.test_tasks_file), "complete", "t1"]
         )
@@ -124,6 +129,19 @@ class TestInProgress(unittest.TestCase):
         with open(self.test_tasks_file, "w") as f:
             yaml.dump(data, f)
 
+        # Record outcome first
+        runner.invoke(
+            cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "outcome",
+                "t1",
+                "failed",
+            ],
+        )
+
+        # Then fail
         result = runner.invoke(
             cli,
             [
@@ -131,8 +149,6 @@ class TestInProgress(unittest.TestCase):
                 str(self.test_tasks_file),
                 "fail",
                 "t1",
-                "--outcome",
-                "failed",
             ],
         )
         self.assertEqual(result.exit_code, 0)

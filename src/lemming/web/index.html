@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lemming</title>
-    <script src="https://unpkg.com/mancha" css="basic+utils+custom" init></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
+    <script src="https://unpkg.com/mancha@0.21.3" css="basic+utils+custom" init></script>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans" :data="{ tasks: [], context: '', cwd: '', newTask: '', loading: true, agents: [], selectedAgent: 'gemini', hideCompleted: false, toasts: [], expanded: {}, loopRunning: false, completedCount: $computed(() => tasks.filter((t) => t.status === 'completed').length), filteredTasks: $computed(() => (hideCompleted ? tasks.filter((t) => (t.status !== 'completed')) : tasks)) }">
+<body class="bg-gray-50 text-gray-900 font-sans" :data="{ tasks: [], context: '', cwd: '', newTask: '', loading: true, agents: [], selectedAgent: 'gemini', hideCompleted: false, toasts: [], expanded: {}, loopRunning: false, completedCount: $computed(() => tasks.filter((t) => t.status === 'completed').length), filteredTasks: $computed(() => tasks.filter((t) => (t.status === 'in_progress')).concat(tasks.filter((t) => (t.status === 'pending'))).concat(tasks.filter((t) => (t.status === 'completed' && !hideCompleted)).sort((a, b) => ((b.completed_at || 0) - (a.completed_at || 0))))) }">
     <div class="max-w-3xl mx-auto p-4">
         <header class="mb-4" role="banner">
             <h1 class="text-2xl font-bold text-indigo-600" title="Lemming Task Runner">Lemming Task Runner</h1>
@@ -119,7 +120,7 @@
             <div class="divide-y divide-gray-200" role="list">
                 <div :for="task in filteredTasks" :key="task.id" class="flex flex-col hover:bg-gray-50/50 transition-colors" role="listitem">
                     <div class="py-1 px-4 flex items-center justify-between" :attr:aria-label="'Task: ' + task.description" :attr:title="'Task: ' + task.description">
-                        <div class="flex items-center gap-2 overflow-hidden">
+                        <div class="flex items-center gap-2 overflow-hidden flex-grow min-w-0">
                             <button 
                                 type="button"
                                 role="button"
@@ -133,22 +134,26 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                                 </svg>
                             </button>
-                            <span 
-                                role="img"
-                                :attr:class="'w-2.5 h-2.5 rounded-full flex-shrink-0 ' + (task.status === 'completed' ? 'bg-green-500' : (task.status === 'in_progress' ? 'bg-blue-500 animate-pulse' : 'bg-yellow-400'))"
-                                :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'In Progress' : 'Pending')"
-                                :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'in_progress' ? 'Status: In Progress' : 'Status: Pending')"
-                            ></span>
-                            <div class="overflow-hidden">
-                                <p :attr:class="'text-sm font-medium truncate ' + (task.status === 'completed' ? 'text-gray-400 line-through' : (task.status === 'in_progress' ? 'text-blue-600' : 'text-gray-900'))" :attr:title="task.description">
-                                    {{ trim(task.description, 80) }}
+                            <div class="overflow-hidden flex-grow min-w-0">
+                                <p :attr:class="'text-sm font-medium truncate ' + (task.status === 'completed' ? 'text-gray-400 line-through' : (task.status === 'in_progress' ? 'text-blue-600' : (task.attempts > 0 ? 'text-red-600' : 'text-gray-900')))" :attr:title="task.description">
+                                    {{ task.description }}
                                 </p>
-                                <p class="text-gray-400 font-mono uppercase" style="font-size: 10px" :attr:aria-label="'Task ID ' + task.id + ', ' + task.attempts + ' attempts'" title="Task ID and number of attempts">
-                                    {{ task.id }} &middot; Attempts: {{ task.attempts }}
-                                </p>
+                                <div class="flex items-center gap-2">
+                                    <span 
+                                        role="status"
+                                        :attr:class="'px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ' + (task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500')))"
+                                        :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending'))"
+                                        :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'in_progress' ? 'Status: Running' : (task.attempts > 0 ? 'Status: Failed' : 'Status: Pending'))"
+                                    >
+                                        {{ task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending')) }}
+                                    </span>
+                                    <p class="text-gray-400 font-mono uppercase" style="font-size: 10px" :attr:aria-label="'Task ID ' + task.id + ', ' + task.attempts + ' attempts'" title="Task ID and number of attempts">
+                                        {{ task.id }} &middot; Attempts: {{ task.attempts }}
+                                    </p>
+                                </div>
                             </div>
                         </div>
-                        <div class="flex gap-1">
+                        <div class="flex gap-1 flex-shrink-0">
                             <button 
                                 type="button"
                                 role="button"

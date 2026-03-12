@@ -1,3 +1,4 @@
+import hashlib
 import pathlib
 import secrets
 import time
@@ -29,7 +30,20 @@ def get_default_tasks_file() -> pathlib.Path:
     local_tasks = pathlib.Path("tasks.yml")
     if local_tasks.exists():
         return local_tasks
-    return pathlib.Path.home() / ".local" / "lemming" / "tasks.yml"
+
+    # If no local tasks.yml, create a subdirectory under ~/.local/lemming/
+    # using a hash of the current working directory path.
+    cwd_path = str(pathlib.Path.cwd().resolve())
+    path_hash = hashlib.sha256(cwd_path.encode()).hexdigest()[:12]
+
+    return (
+        pathlib.Path.home()
+        / ".local"
+        / "lemming"
+        / "projects"
+        / path_hash
+        / "tasks.yml"
+    )
 
 
 def load_prompt(name: str) -> str:
