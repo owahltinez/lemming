@@ -51,13 +51,13 @@ def test_tasks():
         yaml.dump(data, f)
 
     # Override the TASKS_FILE in the api module
-    original_tasks_file = api.TASKS_FILE
-    api.TASKS_FILE = test_tasks_file
+    original_tasks_file = app.state.tasks_file
+    app.state.tasks_file = test_tasks_file
 
     yield test_tasks_file
 
     # Restore the original TASKS_FILE
-    api.TASKS_FILE = original_tasks_file
+    app.state.tasks_file = original_tasks_file
     shutil.rmtree(test_dir)
 
 

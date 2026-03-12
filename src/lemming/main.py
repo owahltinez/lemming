@@ -782,11 +782,10 @@ def run(
 def serve(ctx: click.Context, port: int, host: str):
     """Launch the web interface."""
     import uvicorn
-    from .api import app, set_tasks_file
+    from .api import app
 
     # We pass the TASKS_FILE from context to the API
-    tasks_file = ctx.obj["TASKS_FILE"]
-    set_tasks_file(tasks_file)
+    app.state.tasks_file = ctx.obj["TASKS_FILE"]
 
     click.echo(f"Launching Lemming UI at http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
