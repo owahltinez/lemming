@@ -15,6 +15,7 @@ from .core import (
     load_tasks,
     save_tasks,
     lock_tasks,
+    update_run_time,
     cancel_task,
     STALE_THRESHOLD,
     is_pid_alive,
@@ -42,6 +43,8 @@ class Task(BaseModel):
     last_heartbeat: Optional[float] = None
     pid: Optional[int] = None
     completed_at: Optional[float] = None
+    run_time: Optional[float] = None
+    started_at: Optional[float] = None
 
 
 class ProjectData(BaseModel):
@@ -83,6 +86,8 @@ async def get_data():
             last_heartbeat=t.get("last_heartbeat"),
             pid=t.get("pid"),
             completed_at=t.get("completed_at"),
+            run_time=t.get("run_time"),
+            started_at=t.get("started_at"),
         )
         tasks.append(task_obj)
 
@@ -143,12 +148,17 @@ async def update_task(task_id: str, update: TaskUpdate):
             )
 
         if update.status:
-            if update.status == "completed" and target.get("status") != "completed":
-                target["completed_at"] = time.time()
-            elif update.status != "completed" and target.get("status") == "completed":
-                if "completed_at" in target:
-                    del target["completed_at"]
-            target["status"] = update.status
+            if update.status != target.get("status"):
+                if target.get("status") == "in_progress":
+                    update_run_time(target)
+
+                if update.status == "completed":
+                    target["completed_at"] = time.time()
+                elif target.get("status") == "completed":
+                    if "completed_at" in target:
+                        del target["completed_at"]
+
+                target["status"] = update.status
         if update.description:
             target["description"] = update.description
 

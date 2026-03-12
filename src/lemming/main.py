@@ -13,6 +13,7 @@ from .core import (
     get_pending_task,
     mark_task_in_progress,
     update_heartbeat,
+    update_run_time,
     lock_tasks,
     load_prompt,
 )
@@ -245,6 +246,16 @@ def status(ctx: click.Context, task_id: str | None):
             "%Y-%m-%d %H:%M:%S", time.localtime(target["completed_at"])
         )
         click.echo(f"Completed At: {comp_time}")
+    run_time = target.get("run_time", 0)
+    if target.get("status") == "in_progress" and target.get("started_at"):
+        run_time += time.time() - target["started_at"]
+
+    if run_time > 0:
+        if run_time < 60:
+            rt_str = f"{run_time:.1f}s"
+        else:
+            rt_str = f"{int(run_time // 60)}m {int(run_time % 60)}s"
+        click.echo(f"Run Time:     {rt_str}")
 
     if target.get("outcomes"):
         click.secho("\n--- Outcomes ---", fg="magenta", bold=True)
@@ -352,7 +363,9 @@ def complete(ctx: click.Context, task_id: str):
             ctx.exit(1)
 
         target["status"] = "completed"
-        target["completed_at"] = time.time()
+        now = time.time()
+        target["completed_at"] = now
+        update_run_time(target, end_time=now)
 
         save_tasks(tasks_file, data)
     click.echo(f"Task {target['id']} marked as completed.")
@@ -427,6 +440,7 @@ def fail(ctx: click.Context, task_id: str):
             )
             ctx.exit(1)
 
+        update_run_time(target)
         target["status"] = "pending"
         save_tasks(tasks_file, data)
 
@@ -452,8 +466,11 @@ def reset(ctx: click.Context, task_id: str):
         target["status"] = "pending"
         target["attempts"] = 0
         target["outcomes"] = []
+        target["run_time"] = 0
         if "completed_at" in target:
             del target["completed_at"]
+        if "started_at" in target:
+            del target["started_at"]
         save_tasks(tasks_file, data)
     click.echo(f"Task {target['id']} attempts and outcomes cleared.")
 
@@ -614,9 +631,12 @@ def run(
             click.echo(
                 f"\nTask {task_id} failed after {max_attempts} attempts. Aborting run."
             )
-            click.echo(
-                "Please review the code, examine `lemming status <id>`, and adjust the roadmap."
-            )
+            with lock_tasks(tasks_file):
+                data = load_tasks(tasks_file)
+                task = next(t for t in data["tasks"] if t["id"] == task_id)
+                update_run_time(task)
+                task["status"] = "pending"
+                save_tasks(tasks_file, data)
             break
 
         if verbose:
@@ -728,6 +748,7 @@ def run(
 
             if post_task["status"] == "in_progress":
                 # Reset to pending if it's still in_progress but the process finished
+                update_run_time(post_task)
                 post_task["status"] = "pending"
                 save_tasks(tasks_file, post_data)
 

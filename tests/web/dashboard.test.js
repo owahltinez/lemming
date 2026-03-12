@@ -22,6 +22,20 @@ const createInitialState = (overrides = {}) => {
     trim: (s, l = 60) =>
       s && s.length > l ? `${s.substring(0, l - 3)}...` : s,
     formatDate: (ts) => (ts ? new Date(ts * 1000).toLocaleString() : ""),
+    formatDuration: (seconds) => {
+      if (!seconds) return "0.0s";
+      if (seconds < 60) return `${seconds.toFixed(1)}s`;
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = Math.floor(seconds % 60);
+      return `${minutes}m ${remainingSeconds}s`;
+    },
+    formatTaskRunTime: function (task) {
+      let total = task.run_time || 0;
+      if (task.status === "in_progress" && task.started_at) {
+        total += Date.now() / 1000 - task.started_at;
+      }
+      return this.formatDuration(total);
+    },
     filteredTasks: $computed(() => {
       const ts = hideCompleted
         ? tasks.filter((t) => t.status !== "completed")
@@ -656,5 +670,42 @@ describe("Lemming Web Dashboard", () => {
     assert.strictEqual(completedChip.textContent.trim(), "Completed");
     assert.ok(completedChip.classList.contains("bg-green-100"));
     assert.ok(completedChip.classList.contains("text-green-700"));
+  });
+
+  test("displays real-time run time for in-progress tasks", async () => {
+    const now = Date.now() / 1000;
+    const tasks = [
+      {
+        id: "r1",
+        description: "Running Task",
+        status: "in_progress",
+        attempts: 1,
+        run_time: 50.0,
+        started_at: now - 20, // Started 20 seconds ago
+      },
+    ];
+
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+        expanded: { r1: true },
+        filteredTasks: tasks,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    const root =
+      fragment.querySelector("body") || fragment.firstElementChild || fragment;
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    await renderer.mount(fragment);
+
+    const taskItem = fragment.querySelector('[role="listitem"]');
+    const runTimeValue = Array.from(taskItem.querySelectorAll("span")).find(
+      (s) => s.previousElementSibling?.textContent?.includes("Run Time:"),
+    );
+    assert.ok(runTimeValue, "Run Time value should be present");
+    // Should be around 70s (50 + 20)
+    assert.ok(runTimeValue.textContent.includes("1m 10s"));
   });
 });
