@@ -6,21 +6,23 @@
     <title>Lemming</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
     <script src="https://unpkg.com/mancha@0.21.3" css="basic+utils+custom" init></script>
-    <script>
-        let initialEnvOverrides = [];
-        try {
-            const saved = localStorage.getItem('lemming_env_overrides');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                initialEnvOverrides = parsed.map((o, i) => ({ ...o, id: 'env-' + i }));
-            }
-        } catch (e) {
-            console.error('Failed to parse initial env overrides', e);
-        }
-        window.__INITIAL_ENV__ = initialEnvOverrides;
-    </script>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans" :data="{ tasks: [], context: '', cwd: '', newTask: '', loading: true, agents: [], selectedAgent: 'gemini', envOverrides: window.__INITIAL_ENV__, hideCompleted: false, toasts: [], expanded: {}, loopRunning: false, completedCount: $computed(() => tasks.filter((t) => t.status === 'completed').length), filteredTasks: $computed(() => tasks.filter((t) => (t.status === 'in_progress')).concat(tasks.filter((t) => (t.status === 'pending'))).concat(tasks.filter((t) => (t.status === 'completed' && !hideCompleted)).sort((a, b) => ((b.completed_at || 0) - (a.completed_at || 0))))) }">
+<body class="bg-gray-50 text-gray-900 font-sans" :data="{ 
+    tasks: [], 
+    context: '', 
+    cwd: '', 
+    newTask: '', 
+    loading: true, 
+    agents: [], 
+    selectedAgent: localStorage.getItem('lemming_selected_agent') || 'gemini', 
+    envOverrides: JSON.parse(localStorage.getItem('lemming_env_overrides') || '[]').map((o, i) => ({...o, id: 'env-' + i})), 
+    hideCompleted: localStorage.getItem('lemming_hide_completed') === 'true', 
+    toasts: [], 
+    expanded: {}, 
+    loopRunning: false, 
+    completedCount: $computed(() => tasks.filter((t) => t.status === 'completed').length), 
+    filteredTasks: $computed(() => tasks.filter((t) => (t.status === 'in_progress')).concat(tasks.filter((t) => (t.status === 'pending'))).concat(tasks.filter((t) => (t.status === 'completed' && !hideCompleted)).sort((a, b) => ((b.completed_at || 0) - (a.completed_at || 0))))) 
+}">
     <div class="max-w-3xl mx-auto p-4">
         <header class="mb-4" role="banner">
             <h1 class="text-2xl font-bold text-indigo-600" title="Lemming Task Runner">Lemming Task Runner</h1>
@@ -94,7 +96,7 @@
                             <button 
                                 type="button" 
                                 role="button"
-                                :on:click="removeEnvOverride(override)"
+                                :on:click="removeEnvOverride($index)"
                                 class="px-2 py-1 text-red-500 hover:bg-red-50 transition duration-200 rounded-md border-none bg-transparent cursor-pointer font-bold"
                                 title="Remove override"
                                 aria-label="Remove override"
@@ -415,8 +417,8 @@
             this.saveEnvOverrides();
         };
 
-        $.removeEnvOverride = function(overrideToRemove) {
-            this.envOverrides = this.envOverrides.filter(o => o !== overrideToRemove);
+        $.removeEnvOverride = function(index) {
+            this.envOverrides.splice(index, 1);
             this.saveEnvOverrides();
         };
 
