@@ -2,7 +2,7 @@
 
 An autonomous, iterative task runner for AI coding agents.
 
-Lemming orchestrates AI coding agents by walking through a structured `tasks.yml` project roadmap **sequentially**. It manages the project context, tracks task attempts, and records technical lessons learned directly in the roadmap file, ensuring transparency and zero context drift.
+Lemming orchestrates AI coding agents by walking through a structured `tasks.yml` project roadmap **sequentially**. It manages the project context, tracks task attempts, and records technical outcomes directly in the roadmap file, ensuring transparency and zero context drift.
 
 It is tool-agnostic and works out-of-the-box with agentic CLIs like `gemini` (default), `aider`, `claude`, and `codex`.
 
@@ -61,14 +61,15 @@ lemming run --max-attempts 3 --retry-delay 10
 *   **`add <description>`**: Add a new task. Use `--index <n>` to insert at a specific position, or `--agent <name>` to specify a custom agent for just this task.
 *   **`edit <task_id>`**: Edit an existing task. Supports `--description`, `--agent`, and `--index`.
 *   **`delete <task_id>`**: Remove a task from the queue.
-*   **`reset <task_id>`**: Clear a task's attempts and lessons.
-*   **`clear`**: Clear the task queue (default). Use `--context` to clear only context, or `--all` for both.
+*   **`reset <task_id>`**: Clear a task's attempts and outcomes.
+*   **`clear`**: Clear the task queue (default). Use `--completed` to clear only completed tasks, `--context` to clear only context, or `--all` for both.
 *   **`status [<task_id>]`**: Show roadmap overview or specific task details.
-*   **`serve`**: Launch the web interface (defaults to http://127.0.0.1:8000).
+*   **`serve`**: Launch the web interface (defaults to http://127.0.0.1:8000). Includes a built-in file browser to navigate the project workspace while respecting `.gitignore`.
 
 ### Task Status (used by agents or humans)
-*   **`complete <task_id> --outcome <text>`**: Mark a task as completed with a summary of the work.
-*   **`fail <task_id> --lesson <text>`**: Record a failure and a technical lesson for the next attempt.
+*   **`outcome <task_id> <text>`**: Record a technical outcome or finding as a bullet point. Agents are encouraged to call this multiple times to provide structured summaries.
+*   **`complete <task_id>`**: Mark a task as completed. Supports an optional `--outcome <text>` for a final summary.
+*   **`fail <task_id>`**: Record a failure. Supports an optional `--outcome <text>` for a technical explanation.
 *   **`uncomplete <task_id>`**: Mark a completed task as pending again.
 
 ### Global Options
@@ -99,4 +100,4 @@ lemming run --agent my-custom-agent --no-defaults --prompt-flag message -- --ver
 ### How Agents Interact with Lemming
 When `lemming run` invokes an agent, it strictly instructs the agent **not** to edit the `tasks.yml` file manually. Instead, the agent is instructed to use Lemming's internal API (`complete` or `fail`).
 
-This guarantees that your project state, outcomes, and lessons learned are recorded perfectly every time.
+This guarantees that your project state, outcomes, and technical findings are recorded perfectly every time.

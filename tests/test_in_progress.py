@@ -4,7 +4,8 @@ import tempfile
 import time
 import unittest
 import yaml
-from lemming.core import get_pending_task, load_tasks, save_tasks, STALE_THRESHOLD, is_pid_alive
+from lemming.core import get_pending_task, STALE_THRESHOLD
+
 
 class TestInProgress(unittest.TestCase):
     def setUp(self):
@@ -15,11 +16,7 @@ class TestInProgress(unittest.TestCase):
         shutil.rmtree(self.test_dir)
 
     def test_get_pending_task_normal(self):
-        data = {
-            "tasks": [
-                {"id": "t1", "description": "Task 1", "status": "pending"}
-            ]
-        }
+        data = {"tasks": [{"id": "t1", "description": "Task 1", "status": "pending"}]}
         task = get_pending_task(data)
         self.assertIsNotNone(task)
         self.assertEqual(task["id"], "t1")
@@ -28,10 +25,10 @@ class TestInProgress(unittest.TestCase):
         data = {
             "tasks": [
                 {
-                    "id": "t1", 
-                    "description": "Task 1", 
-                    "status": "in_progress", 
-                    "last_heartbeat": time.time()
+                    "id": "t1",
+                    "description": "Task 1",
+                    "status": "in_progress",
+                    "last_heartbeat": time.time(),
                 }
             ]
         }
@@ -42,10 +39,10 @@ class TestInProgress(unittest.TestCase):
         data = {
             "tasks": [
                 {
-                    "id": "t1", 
-                    "description": "Task 1", 
-                    "status": "in_progress", 
-                    "last_heartbeat": time.time() - (STALE_THRESHOLD + 1)
+                    "id": "t1",
+                    "description": "Task 1",
+                    "status": "in_progress",
+                    "last_heartbeat": time.time() - (STALE_THRESHOLD + 1),
                 }
             ]
         }
@@ -55,6 +52,7 @@ class TestInProgress(unittest.TestCase):
 
     def test_get_pending_task_dead_pid(self):
         import subprocess
+
         p = subprocess.Popen(["true"])
         p.wait()
         dead_pid = p.pid
@@ -62,11 +60,11 @@ class TestInProgress(unittest.TestCase):
         data = {
             "tasks": [
                 {
-                    "id": "t1", 
-                    "description": "Task 1", 
-                    "status": "in_progress", 
+                    "id": "t1",
+                    "description": "Task 1",
+                    "status": "in_progress",
                     "last_heartbeat": time.time(),
-                    "pid": dead_pid
+                    "pid": dead_pid,
                 }
             ]
         }
@@ -76,16 +74,17 @@ class TestInProgress(unittest.TestCase):
 
     def test_get_pending_task_alive_pid(self):
         import os
+
         alive_pid = os.getpid()
 
         data = {
             "tasks": [
                 {
-                    "id": "t1", 
-                    "description": "Task 1", 
-                    "status": "in_progress", 
+                    "id": "t1",
+                    "description": "Task 1",
+                    "status": "in_progress",
                     "last_heartbeat": time.time(),
-                    "pid": alive_pid
+                    "pid": alive_pid,
                 }
             ]
         }
@@ -95,19 +94,20 @@ class TestInProgress(unittest.TestCase):
     def test_complete_in_progress(self):
         from click.testing import CliRunner
         from lemming.main import cli
+
         runner = CliRunner()
-        
+
         data = {
-            "tasks": [
-                {"id": "t1", "description": "Task 1", "status": "in_progress"}
-            ]
+            "tasks": [{"id": "t1", "description": "Task 1", "status": "in_progress"}]
         }
         with open(self.test_tasks_file, "w") as f:
             yaml.dump(data, f)
-            
-        result = runner.invoke(cli, ["--tasks-file", str(self.test_tasks_file), "complete", "t1"])
+
+        result = runner.invoke(
+            cli, ["--tasks-file", str(self.test_tasks_file), "complete", "t1"]
+        )
         self.assertEqual(result.exit_code, 0)
-        
+
         with open(self.test_tasks_file, "r") as f:
             new_data = yaml.safe_load(f)
         self.assertEqual(new_data["tasks"][0]["status"], "completed")
@@ -115,22 +115,33 @@ class TestInProgress(unittest.TestCase):
     def test_fail_in_progress(self):
         from click.testing import CliRunner
         from lemming.main import cli
+
         runner = CliRunner()
-        
+
         data = {
-            "tasks": [
-                {"id": "t1", "description": "Task 1", "status": "in_progress"}
-            ]
+            "tasks": [{"id": "t1", "description": "Task 1", "status": "in_progress"}]
         }
         with open(self.test_tasks_file, "w") as f:
             yaml.dump(data, f)
-            
-        result = runner.invoke(cli, ["--tasks-file", str(self.test_tasks_file), "fail", "t1", "--lesson", "failed"])
+
+        result = runner.invoke(
+            cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "fail",
+                "t1",
+                "--outcome",
+                "failed",
+            ],
+        )
         self.assertEqual(result.exit_code, 0)
-        
+
         with open(self.test_tasks_file, "r") as f:
             new_data = yaml.safe_load(f)
         self.assertEqual(new_data["tasks"][0]["status"], "pending")
+        self.assertIn("failed", new_data["tasks"][0]["outcomes"])
+
 
 if __name__ == "__main__":
     unittest.main()

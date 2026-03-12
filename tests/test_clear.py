@@ -25,7 +25,7 @@ class TestLemmingClear(unittest.TestCase):
                     "description": "Initial Task",
                     "status": "pending",
                     "attempts": 0,
-                    "lessons": [],
+                    "outcomes": [],
                 }
             ],
         }
@@ -79,7 +79,9 @@ class TestLemmingClear(unittest.TestCase):
             self.assertEqual(len(data["tasks"]), 1)
 
     def test_clear_tasks_and_context(self):
-        result = self.runner.invoke(cli, self.base_args + ["clear", "--tasks", "--context"])
+        result = self.runner.invoke(
+            cli, self.base_args + ["clear", "--tasks", "--context"]
+        )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Cleared all context and tasks.", result.output)
 
@@ -87,6 +89,29 @@ class TestLemmingClear(unittest.TestCase):
             data = yaml.safe_load(f)
             self.assertEqual(data["context"], "")
             self.assertEqual(data["tasks"], [])
+
+    def test_clear_completed(self):
+        # Setup data with mixed tasks
+        data = {
+            "context": "Initial context",
+            "tasks": [
+                {"id": "t1", "description": "Completed", "status": "completed"},
+                {"id": "t2", "description": "Pending", "status": "pending"},
+            ],
+        }
+        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f)
+
+        result = self.runner.invoke(cli, self.base_args + ["clear", "--completed"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Cleared completed tasks.", result.output)
+
+        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            self.assertEqual(len(data["tasks"]), 1)
+            self.assertEqual(data["tasks"][0]["id"], "t2")
+            self.assertEqual(data["context"], "Initial context")
+
 
 if __name__ == "__main__":
     unittest.main()
