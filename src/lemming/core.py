@@ -154,12 +154,22 @@ def mark_task_in_progress(
                 if is_pending or is_stale:
                     task["status"] = "in_progress"
                     task["last_heartbeat"] = now
+                    task["started_at"] = now
                     if pid:
                         task["pid"] = pid
                     save_tasks(tasks_file, data)
                     return True
                 return False
     return False
+
+
+def update_run_time(task: dict, end_time: float | None = None) -> None:
+    """Accumulate run time for the task."""
+    if "started_at" in task:
+        end = end_time or time.time()
+        duration = end - task["started_at"]
+        task["run_time"] = task.get("run_time", 0) + duration
+        del task["started_at"]
 
 
 def update_heartbeat(tasks_file: pathlib.Path, task_id: str) -> None:
@@ -192,6 +202,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
                         except OSError:
                             pass
 
+                update_run_time(task)
                 task["status"] = "pending"
                 if "pid" in task:
                     del task["pid"]

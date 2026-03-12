@@ -213,7 +213,7 @@
                     <!-- Task Details -->
                     <div :show="expanded[task.id]" class="px-12 pb-3 text-xs text-gray-600 border-t border-gray-100 bg-gray-50/50">
                         <div class="mt-2 text-gray-700 font-normal break-words whitespace-pre-wrap">{{ task.description }}</div>
-                        <div class="mt-2 grid grid-cols-2 gap-4">
+                        <div class="mt-2 flex flex-wrap gap-4">
                             <div :if="task.agent">
                                 <span class="font-semibold uppercase text-gray-400 block mb-1" style="font-size: 9px">Custom Agent:</span>
                                 <span class="font-mono bg-gray-200 px-1 rounded">{{ task.agent }}</span>
@@ -225,6 +225,10 @@
                             <div :if="task.completed_at">
                                 <span class="font-semibold uppercase text-gray-400 block mb-1" style="font-size: 9px">Completed At:</span>
                                 <span class="text-gray-700">{{ formatDate(task.completed_at) }}</span>
+                            </div>
+                            <div :if="task.run_time || task.status === 'in_progress'">
+                                <span class="font-semibold uppercase text-gray-400 block mb-1" style="font-size: 9px">Run Time:</span>
+                                <span class="text-gray-700">{{ formatTaskRunTime(task) }}</span>
                             </div>
                         </div>
                         <div class="mt-3">
@@ -256,6 +260,20 @@
 
         $.trim = (s, l = 60) => (s && s.length > l ? s.substring(0, l - 3) + '...' : s);
         $.formatDate = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : '');
+        $.formatDuration = (seconds) => {
+            if (!seconds) return '0.0s';
+            if (seconds < 60) return `${seconds.toFixed(1)}s`;
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${minutes}m ${remainingSeconds}s`;
+        };
+        $.formatTaskRunTime = function(task) {
+            let total = task.run_time || 0;
+            if (task.status === 'in_progress' && task.started_at) {
+                total += (Date.now() / 1000) - task.started_at;
+            }
+            return this.formatDuration(total);
+        };
 
         $.addToast = function(message, type = 'info') {
             const id = Date.now() + Math.random();
