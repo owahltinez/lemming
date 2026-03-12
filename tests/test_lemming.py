@@ -64,6 +64,7 @@ class TestLemming(unittest.TestCase):
             self.assertNotIn("To be removed", task_descs)
 
     def test_task_complete(self):
+        self.runner.invoke(cli, self.base_args + ["outcome", "12345678", "Done"])
         result = self.runner.invoke(cli, self.base_args + ["complete", "12345678"])
         self.assertEqual(result.exit_code, 0)
 
@@ -71,10 +72,13 @@ class TestLemming(unittest.TestCase):
             data = yaml.safe_load(f)
             self.assertEqual(data["tasks"][0]["status"], "completed")
 
-    def test_task_complete_with_outcome(self):
-        result = self.runner.invoke(
-            cli, self.base_args + ["complete", "12345678", "--outcome", "Did the thing"]
+    def test_task_complete_after_outcome(self):
+        # Record outcome first
+        self.runner.invoke(
+            cli, self.base_args + ["outcome", "12345678", "Did the thing"]
         )
+        # Then complete
+        result = self.runner.invoke(cli, self.base_args + ["complete", "12345678"])
         self.assertEqual(result.exit_code, 0)
 
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
@@ -83,14 +87,23 @@ class TestLemming(unittest.TestCase):
             self.assertIn("Did the thing", data["tasks"][0]["outcomes"])
 
     def test_task_fail(self):
+        # Record failure outcome first
+        self.runner.invoke(
+            cli,
+            self.base_args
+            + [
+                "outcome",
+                "12345678",
+                "Failed due to missing dependency",
+            ],
+        )
+        # Then fail
         result = self.runner.invoke(
             cli,
             self.base_args
             + [
                 "fail",
                 "12345678",
-                "--outcome",
-                "Failed due to missing dependency",
             ],
         )
         self.assertEqual(result.exit_code, 0)
@@ -218,6 +231,7 @@ class TestLemming(unittest.TestCase):
 
     def test_edit_completed_task(self):
         # Mark a task as completed first
+        self.runner.invoke(cli, self.base_args + ["outcome", "12345678", "Done"])
         self.runner.invoke(cli, self.base_args + ["complete", "12345678"])
 
         # Try to edit it
@@ -274,6 +288,7 @@ class TestLemming(unittest.TestCase):
 
     def test_task_uncomplete(self):
         # First mark as complete
+        self.runner.invoke(cli, self.base_args + ["outcome", "12345678", "Done"])
         self.runner.invoke(cli, self.base_args + ["complete", "12345678"])
 
         result = self.runner.invoke(cli, self.base_args + ["uncomplete", "12345678"])
@@ -290,9 +305,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Error: Task nonexistent not found.", result.output)
 
     def test_task_fail_not_found(self):
-        result = self.runner.invoke(
-            cli, self.base_args + ["fail", "nonexistent", "--outcome", "why"]
-        )
+        result = self.runner.invoke(cli, self.base_args + ["fail", "nonexistent"])
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Error: Task nonexistent not found.", result.output)
 

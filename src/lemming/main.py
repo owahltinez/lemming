@@ -22,7 +22,7 @@ from .core import (
 @click.option(
     "--tasks-file",
     type=click.Path(path_type=pathlib.Path),
-    help="Path to the tasks file (defaults to ./tasks.yml or ~/.local/lemming/tasks.yml).",
+    help="Path to the tasks file (defaults to ./tasks.yml or project-isolated tasks in ~/.local/lemming/projects/).",
 )
 @click.option(
     "--verbose",
@@ -194,7 +194,16 @@ def status(ctx: click.Context, task_id: str | None):
                 click.echo("No tasks found.")
             return
 
-        for t in data.get("tasks", []):
+        # Sort tasks: in_progress, then pending, then completed (most recent first)
+        all_tasks = data.get("tasks", [])
+        in_progress = [t for t in all_tasks if t.get("status") == "in_progress"]
+        pending = [t for t in all_tasks if t.get("status") == "pending"]
+        completed = [t for t in all_tasks if t.get("status") == "completed"]
+        completed.sort(key=lambda x: x.get("completed_at", 0), reverse=True)
+
+        sorted_tasks = in_progress + pending + completed
+
+        for t in sorted_tasks:
             if not verbose and t["status"] == "completed":
                 continue
 
@@ -319,11 +328,10 @@ def clear(
         click.echo("Cleared project context.")
 
 
-@cli.command(short_help="<taskid> Mark a task as completed and save an outcome")
+@cli.command(short_help="<taskid> Mark a task as completed")
 @click.argument("task_id")
-@click.option("--outcome", help="A short summary of the work completed.")
 @click.pass_context
-def complete(ctx: click.Context, task_id: str, outcome: str | None):
+def complete(ctx: click.Context, task_id: str):
     """Mark a task as completed."""
     tasks_file = ctx.obj["TASKS_FILE"]
     ctx.obj["VERBOSE"]
@@ -336,12 +344,15 @@ def complete(ctx: click.Context, task_id: str, outcome: str | None):
             click.echo(f"Error: Task {task_id} not found.")
             ctx.exit(1)
 
+        if not target.get("outcomes"):
+            click.echo(
+                f"Error: Task {target['id']} has no recorded outcomes. "
+                "Use `lemming outcome <id> <text>` to record at least one outcome before completing."
+            )
+            ctx.exit(1)
+
         target["status"] = "completed"
         target["completed_at"] = time.time()
-        if outcome:
-            if "outcomes" not in target:
-                target["outcomes"] = []
-            target["outcomes"].append(outcome)
 
         save_tasks(tasks_file, data)
     click.echo(f"Task {target['id']} marked as completed.")
@@ -393,12 +404,11 @@ def outcome(ctx: click.Context, task_id: str, text: str):
     click.echo(f"Outcome added to task {target['id']}.")
 
 
-@cli.command(short_help="<taskid> Record a task failure and save an outcome")
+@cli.command(short_help="<taskid> Record a task failure")
 @click.argument("task_id")
-@click.option("--outcome", "outcome_text", help="Technical explanation of the failure.")
 @click.pass_context
-def fail(ctx: click.Context, task_id: str, outcome_text: str | None):
-    """Record a task failure and save an outcome."""
+def fail(ctx: click.Context, task_id: str):
+    """Record a task failure."""
     tasks_file = ctx.obj["TASKS_FILE"]
     ctx.obj["VERBOSE"]
 
@@ -410,18 +420,17 @@ def fail(ctx: click.Context, task_id: str, outcome_text: str | None):
             click.echo(f"Error: Task {task_id} not found.")
             ctx.exit(1)
 
-        if outcome_text:
-            if "outcomes" not in target:
-                target["outcomes"] = []
-            target["outcomes"].append(outcome_text)
+        if not target.get("outcomes"):
+            click.echo(
+                f"Error: Task {target['id']} has no recorded outcomes. "
+                "Use `lemming outcome <id> <text>` to record at least one outcome before failing."
+            )
+            ctx.exit(1)
 
         target["status"] = "pending"
         save_tasks(tasks_file, data)
 
-    if outcome_text:
-        click.echo(f"Failure recorded for task {target['id']}. Outcome saved.")
-    else:
-        click.echo(f"Failure recorded for task {target['id']}.")
+    click.echo(f"Failure recorded for task {target['id']}.")
 
 
 @cli.command(short_help="<taskid> Clear a task's attempts and outcomes")
@@ -526,7 +535,6 @@ def run_agent_with_heartbeat(
 
 
 @cli.command(
-    context_settings=dict(ignore_unknown_options=True),
     short_help="Run the autonomous task execution loop",
 )
 @click.option(
@@ -753,12 +761,11 @@ def run(
 def serve(ctx: click.Context, port: int, host: str):
     """Launch the web interface."""
     import uvicorn
-    from .api import app
+    from .api import app, set_tasks_file
 
     # We pass the TASKS_FILE from context to the API
-    # Since the API is already initialized, we might need a way to set it
-    # For now, we'll assume the default or let it be handled by env vars if needed
-    # But actually, api.py already calls get_default_tasks_file()
+    tasks_file = ctx.obj["TASKS_FILE"]
+    set_tasks_file(tasks_file)
 
     click.echo(f"Launching Lemming UI at http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)

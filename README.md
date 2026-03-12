@@ -1,103 +1,119 @@
-# Lemming
+# Lemming 🐹
 
-An autonomous, iterative task runner for AI coding agents.
+**The transparent, tool-agnostic orchestrator for autonomous AI coding agents.**
 
-Lemming orchestrates AI coding agents by walking through a structured `tasks.yml` project roadmap **sequentially**. It manages the project context, tracks task attempts, and records technical outcomes directly in the roadmap file, ensuring transparency and zero context drift.
+Lemming bridges the gap between high-level project strategy and low-level agent execution. Instead of letting an agent wander through your codebase in a single, massive context window, Lemming forces a structured, iterative workflow via a shared **Project Roadmap**.
 
-It is tool-agnostic and works out-of-the-box with agentic CLIs like `gemini` (default), `aider`, `claude`, and `codex`.
+## Why Lemming?
+
+*   **Zero Context Drift**: By breaking projects into discrete tasks, Lemming ensures agents stay focused. They only see the project context, relevant history, and the specific task at hand.
+*   **Transparency & Control**: Every decision, technical finding, and outcome is recorded in a human-readable `tasks.yml` file. You can step in, adjust the roadmap, or swap agents at any time.
+*   **Tool Agnostic**: Lemming doesn't care which agent you use. It works out-of-the-box with `gemini-code-assistant`, `aider`, `claude-engineer`, `codex`, or even your own custom scripts.
+*   **Resilient Execution**: With built-in heartbeat monitoring, automatic retries, and outcome tracking, Lemming handles process crashes and rate limits gracefully.
+*   **Human-Agent Collaboration**: Use the CLI or the Web UI to collaborate with your agents in real-time. Mark tasks, edit descriptions, and review outcomes as they happen.
+
+---
 
 ## Installation
 
-Install globally using `uv tool`:
+Install globally using `uv`:
 
 ```bash
 uv tool install git+https://github.com/owahltinez/lemming.git
 ```
 
-## Quick Start
+## Quick Start in 3 Steps
 
-Lemming relies on a single `tasks.yml` file. By default, it looks for `tasks.yml` in the current directory. If not found, it uses `~/.local/lemming/tasks.yml`.
-
-### 1. Scaffold your Project
-Set the overarching project context and add tasks to the queue:
+### 1. Scaffold the Roadmap
+Initialize your project context and define your goals.
 
 ```bash
-# Set context from a string
-lemming context "Use Python 3.10 and the Click framework. Always write unit tests."
-
-# Or set context from a file
-lemming context --file GUIDELINES.md
+# Set project-wide rules (e.g. tech stack, style guides)
+lemming context "Use React, TypeScript, and Tailwind. Follow TDD."
 
 # Add tasks to the queue
-lemming add "Implement the backend logic"
-lemming add "Write unit tests"
+lemming add "Initialize the project with Vite"
+lemming add "Create the Button component"
+lemming add "Implement the authentication flow"
 ```
 
-### 2. Review the Roadmap
-Check the current status and context of your project:
+### 2. Review and Refine
+See exactly what's pending and what the agent will see.
+
 ```bash
-# Show pending tasks and context summary
+# Show the current roadmap
 lemming status
-
-# Show all tasks (including completed ones) and full context
-lemming status --verbose
-
-# Show details for a specific task
-lemming status <task_id>
 ```
 
-### 3. Run the Autonomous Loop
-Trigger the autonomous orchestrator. Lemming will invoke the underlying agent, feed it the context and the current task, and wait for the agent to report back.
+### 3. Release the Lemming
+Start the autonomous loop. Lemming will pick the first pending task, invoke your preferred agent, and feed it the necessary context.
 
 ```bash
-# Execute the autonomous execution loop
-lemming run --max-attempts 3 --retry-delay 10
-```
+# Run using the default agent (gemini)
+lemming run
 
-## Commands Reference
-
-### Project Management
-*   **`context [<text>]`**: View or set the project context. Use `-f/--file` to read from a file.
-*   **`add <description>`**: Add a new task. Use `--index <n>` to insert at a specific position, or `--agent <name>` to specify a custom agent for just this task.
-*   **`edit <task_id>`**: Edit an existing task. Supports `--description`, `--agent`, and `--index`.
-*   **`delete <task_id>`**: Remove a task from the queue.
-*   **`reset <task_id>`**: Clear a task's attempts and outcomes.
-*   **`clear`**: Clear the task queue (default). Use `--completed` to clear only completed tasks, `--context` to clear only context, or `--all` for both.
-*   **`status [<task_id>]`**: Show roadmap overview or specific task details.
-*   **`serve`**: Launch the web interface (defaults to http://127.0.0.1:8000). Includes a built-in file browser to navigate the project workspace while respecting `.gitignore`.
-
-### Task Status (used by agents or humans)
-*   **`outcome <task_id> <text>`**: Record a technical outcome or finding as a bullet point. Agents are encouraged to call this multiple times to provide structured summaries.
-*   **`complete <task_id>`**: Mark a task as completed. Supports an optional `--outcome <text>` for a final summary.
-*   **`fail <task_id>`**: Record a failure. Supports an optional `--outcome <text>` for a technical explanation.
-*   **`uncomplete <task_id>`**: Mark a completed task as pending again.
-
-### Global Options
-*   **`--tasks-file <path>`**: Explicitly set the path to the `tasks.yml` file.
-*   **`--verbose`, `-v`**: Enable detailed output for any command.
-
-## Advanced Usage
-
-### Tool Agnosticism & Arbitrary Flags
-Lemming acts as a prompt-injector and orchestrator. It uses **fuzzy matching** on the agent's filename to automatically inject the correct YOLO/auto-approve flags (e.g. any binary starting with `gemini` will get `--yolo --no-sandbox`).
-
-It can also pass arbitrary, unparsed arguments straight through to the underlying agent using the standard POSIX `--` separator.
-
-```bash
-# Lemming sees 'aider' and automatically adds '--yes'
-# The custom model flag is passed straight through
+# Or use a different agent with custom flags
 lemming run --agent aider -- --model claude-3-5-sonnet
-
-# Use a custom script named `gemini-wrapper`. 
-# Lemming will fuzzy-match 'gemini' and add '--yolo'
-lemming run --agent /path/to/gemini-wrapper
-
-# Completely override auto-injection with --no-defaults
-# Provide your own prompt flag and exact arguments
-lemming run --agent my-custom-agent --no-defaults --prompt-flag message -- --verbose --debug
 ```
 
-### How Agents Interact with Lemming
-When `lemming run` invokes an agent, it strictly instructs the agent **not** to edit the `tasks.yml` file manually. Instead, the agent is instructed to use Lemming's internal API (`complete` or `fail`).
+---
 
-This guarantees that your project state, outcomes, and technical findings are recorded perfectly every time.
+## The Web Dashboard
+
+Lemming includes a modern, fast Web UI to monitor your projects.
+
+```bash
+lemming serve
+```
+
+*   **Real-time Monitoring**: Watch tasks move from pending to in-progress to completed.
+*   **Project Explorer**: A built-in, `.gitignore`-aware file browser to inspect your workspace alongside the roadmap.
+*   **Interactive Controls**: Add tasks, edit context, and manage the execution loop from your browser.
+
+---
+
+## How it Works: The Roadmap Architecture
+
+Lemming operates on a **Strategic vs. Tactical** split:
+
+1.  **Strategic (Lemming)**: Manages the `tasks.yml` file. It decides *what* needs to be done next and provides the agent with a "lesson learned" summary of previous attempts.
+2.  **Tactical (Agent)**: Executes the specific task. It is strictly forbidden from editing the roadmap directly. Instead, it reports back via the Lemming API.
+
+### The Agent Protocol
+When an agent runs under Lemming, it is instructed to use these commands:
+*   `lemming outcome <id> "finding"`: Record a technical detail (e.g. "Database schema is in /migrations").
+*   `lemming complete <id>`: Mark the task as successful.
+*   `lemming fail <id>`: Report a blocker or failure for retry.
+
+---
+
+## Command Reference
+
+### Roadmap Management
+*   **`status [<id>]`**: Roadmap overview or deep-dive into a specific task.
+*   **`context [<text>]`**: Set or view project-wide instructions. Supports `-f/--file`.
+*   **`add <desc>`**: Append a new task. Supports `--index` and `--agent`.
+*   **`edit <id>`**: Modify a task's description, agent, or position.
+*   **`delete <id>`**: Remove a task.
+*   **`clear`**: Wipe the queue or context. Supports `--completed` and `--all`.
+*   **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
+
+### Execution
+*   **`run`**: Start the orchestrator loop.
+    *   `--max-attempts`: Retries per task (default 3).
+    *   `--agent`: The CLI tool to invoke.
+    *   `--`: Use `--` to pass any flag directly to the underlying agent.
+*   **`serve`**: Launch the interactive Web UI.
+
+---
+
+## Advanced: Agent Customization
+
+Lemming uses **fuzzy matching** to automatically inject the correct "YOLO" (auto-approve) and "Quiet" flags for popular tools:
+
+*   **Gemini**: Adds `--yolo --no-sandbox`
+*   **Aider**: Adds `--yes --quiet`
+*   **Claude**: Adds `--auto-approve`
+*   **Codex**: Adds `--yolo`
+
+You can disable this behavior with `--no-defaults` or override the prompt flag with `--prompt-flag`.

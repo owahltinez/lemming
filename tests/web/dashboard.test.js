@@ -22,14 +22,71 @@ const createInitialState = (overrides = {}) => {
     trim: (s, l = 60) =>
       s && s.length > l ? `${s.substring(0, l - 3)}...` : s,
     formatDate: (ts) => (ts ? new Date(ts * 1000).toLocaleString() : ""),
-    filteredTasks: hideCompleted
-      ? tasks.filter((t) => t.status !== "completed")
-      : tasks,
+    filteredTasks: $computed(() => {
+      const ts = hideCompleted
+        ? tasks.filter((t) => t.status !== "completed")
+        : tasks;
+      const inProgress = ts.filter((t) => t.status === "in_progress");
+      const pending = ts.filter((t) => t.status === "pending");
+      const completed = ts
+        .filter((t) => t.status === "completed")
+        .sort((a, b) => (b.completed_at || 0) - (a.completed_at || 0));
+      return [...inProgress, ...pending, ...completed];
+    }),
     ...overrides,
   };
 };
 
+const $computed = (fn) => fn();
+
 describe("Lemming Web Dashboard", () => {
+  test("tasks are sorted correctly", async () => {
+    const tasks = [
+      {
+        id: "c1",
+        description: "Oldest Completed",
+        status: "completed",
+        completed_at: 1000,
+      },
+      { id: "p1", description: "Pending 1", status: "pending" },
+      { id: "r1", description: "Running", status: "in_progress" },
+      {
+        id: "c2",
+        description: "Newest Completed",
+        status: "completed",
+        completed_at: 2000,
+      },
+      { id: "p2", description: "Pending 2", status: "pending" },
+    ];
+
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    const root =
+      fragment.querySelector("body") || fragment.firstElementChild || fragment;
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    await renderer.mount(fragment);
+
+    const taskItems = fragment.querySelectorAll('[role="listitem"]');
+    assert.strictEqual(taskItems.length, 5);
+
+    const descriptions = Array.from(taskItems).map((item) => {
+      const p = item.querySelector("p");
+      return p ? p.textContent.trim() : "";
+    });
+
+    assert.strictEqual(descriptions[0], "Running");
+    assert.strictEqual(descriptions[1], "Pending 1");
+    assert.strictEqual(descriptions[2], "Pending 2");
+    assert.strictEqual(descriptions[3], "Newest Completed");
+    assert.strictEqual(descriptions[4], "Oldest Completed");
+  });
+
   test("initial state", async () => {
     const renderer = new Renderer(createInitialState());
 
@@ -237,9 +294,9 @@ describe("Lemming Web Dashboard", () => {
     );
   });
 
-  test("trims long descriptions in queue but shows full in details", async () => {
+  test("shows long descriptions in queue and full in details", async () => {
     const longDescription =
-      "This is a very long task description that should be trimmed in the queue list but show fully when expanded and should be ellipsized properly.";
+      "This is a very long task description that should occupy as much space as possible in the queue list but show fully when expanded and should be ellipsized properly by CSS.";
     const tasks = [
       {
         id: "123",
@@ -270,11 +327,31 @@ describe("Lemming Web Dashboard", () => {
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
-    const p = taskItem.querySelector("p");
+    const leftSide = taskItem.querySelector(
+      ".flex.items-center.gap-2.overflow-hidden",
+    );
+    assert.ok(
+      leftSide.classList.contains("flex-grow"),
+      "Left side should have flex-grow",
+    );
+    assert.ok(
+      leftSide.classList.contains("min-w-0"),
+      "Left side should have min-w-0",
+    );
 
-    // The trimmed version should have 80 chars total including '...'
-    assert.strictEqual(p.textContent.trim().length, 80);
-    assert.ok(p.textContent.trim().endsWith("..."));
+    const descriptionWrapper = leftSide.querySelector(
+      ".overflow-hidden.flex-grow.min-w-0",
+    );
+    assert.ok(
+      descriptionWrapper,
+      "Description wrapper should have flex-grow and min-w-0",
+    );
+
+    const p = descriptionWrapper.querySelector("p");
+
+    // Should now contain the full description (truncation handled by CSS)
+    assert.strictEqual(p.textContent.trim(), longDescription);
+    assert.ok(p.classList.contains("truncate"), "Should have truncate class");
 
     const details = taskItem.querySelector(".px-12.pb-3");
     const fullDescriptionDiv = details.querySelector(".mt-2.text-gray-700");
@@ -518,5 +595,66 @@ describe("Lemming Web Dashboard", () => {
     await renderer.mount(fragment);
 
     assert.strictEqual(textarea.value, "Initial context");
+  });
+
+  test("status chip colors and labels", async () => {
+    const tasks = [
+      {
+        id: "r1",
+        description: "Running Task",
+        status: "in_progress",
+        attempts: 1,
+      },
+      { id: "p1", description: "Pending Task", status: "pending", attempts: 0 },
+      { id: "f1", description: "Failed Task", status: "pending", attempts: 1 },
+      {
+        id: "c1",
+        description: "Completed Task",
+        status: "completed",
+        attempts: 1,
+      },
+    ];
+
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+        filteredTasks: tasks,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    const root =
+      fragment.querySelector("body") || fragment.firstElementChild || fragment;
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    await renderer.mount(fragment);
+
+    const taskItems = fragment.querySelectorAll('[role="listitem"]');
+    assert.strictEqual(taskItems.length, 4);
+
+    // 1. Running Task
+    const runningChip = taskItems[0].querySelector('[role="status"]');
+    assert.strictEqual(runningChip.textContent.trim(), "Running");
+    assert.ok(runningChip.classList.contains("bg-blue-100"));
+    assert.ok(runningChip.classList.contains("text-blue-700"));
+    assert.ok(runningChip.classList.contains("animate-pulse"));
+
+    // 2. Pending Task
+    const pendingChip = taskItems[1].querySelector('[role="status"]');
+    assert.strictEqual(pendingChip.textContent.trim(), "Pending");
+    assert.ok(pendingChip.classList.contains("bg-gray-100"));
+    assert.ok(pendingChip.classList.contains("text-gray-500"));
+
+    // 3. Failed Task
+    const failedChip = taskItems[2].querySelector('[role="status"]');
+    assert.strictEqual(failedChip.textContent.trim(), "Failed");
+    assert.ok(failedChip.classList.contains("bg-red-100"));
+    assert.ok(failedChip.classList.contains("text-red-700"));
+
+    // 4. Completed Task
+    const completedChip = taskItems[3].querySelector('[role="status"]');
+    assert.strictEqual(completedChip.textContent.trim(), "Completed");
+    assert.ok(completedChip.classList.contains("bg-green-100"));
+    assert.ok(completedChip.classList.contains("text-green-700"));
   });
 });
