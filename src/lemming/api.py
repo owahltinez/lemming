@@ -60,6 +60,7 @@ class ContextUpdate(BaseModel):
 
 class RunRequest(BaseModel):
     agent: Optional[str] = "gemini"
+    env: Optional[dict[str, str]] = None
 
 
 class TaskUpdate(BaseModel):
@@ -206,8 +207,14 @@ async def run_loop(request: RunRequest):
     cmd = ["lemming", "run"]
     if request.agent:
         cmd.extend(["--agent", request.agent])
-    subprocess.Popen(cmd, start_new_session=True)
+
+    env = os.environ.copy()
+    if request.env:
+        env.update(request.env)
+
+    subprocess.Popen(cmd, start_new_session=True, env=env)
     return {"status": "started"}
+
 
 
 def is_ignored(path: pathlib.Path) -> bool:
