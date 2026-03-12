@@ -63,7 +63,7 @@
                 <div class="pt-2 border-t border-gray-100">
                     <label class="block text-xs font-semibold text-gray-400 uppercase mb-2">Environment Overrides</label>
                     <div class="space-y-2">
-                        <div :for="override, index in envOverrides" :key="index" class="flex gap-2">
+                        <div :for="override in envOverrides" class="flex gap-2">
                             <input 
                                 type="text" 
                                 :bind="override.key" 
@@ -81,7 +81,7 @@
                             <button 
                                 type="button" 
                                 role="button"
-                                :on:click="removeEnvOverride(index)"
+                                :on:click="removeEnvOverride(override)"
                                 class="px-2 py-1 text-red-500 hover:bg-red-50 transition duration-200 rounded-md border-none bg-transparent cursor-pointer font-bold"
                                 title="Remove override"
                                 aria-label="Remove override"
@@ -397,17 +397,19 @@
         };
 
         $.addEnvOverride = function() {
-            this.envOverrides.push({ key: '', value: '' });
+            this.envOverrides = [...this.envOverrides, { key: '', value: '' }];
             this.saveEnvOverrides();
         };
 
-        $.removeEnvOverride = function(index) {
-            this.envOverrides.splice(index, 1);
+        $.removeEnvOverride = function(overrideToRemove) {
+            this.envOverrides = this.envOverrides.filter(o => o !== overrideToRemove);
             this.saveEnvOverrides();
         };
 
         $.saveEnvOverrides = function() {
-            localStorage.setItem('lemming_env_overrides', JSON.stringify(this.envOverrides));
+            setTimeout(() => {
+                localStorage.setItem('lemming_env_overrides', JSON.stringify(this.envOverrides));
+            }, 50);
         };
 
         $.loadEnvOverrides = function() {
@@ -508,9 +510,10 @@
 
         $.runLemming = async function() {
             const env = {};
-            this.envOverrides.forEach(o => {
-                if (o.key.trim()) {
-                    env[o.key.trim()] = o.value;
+            (this.envOverrides || []).forEach(o => {
+                const k = o.key || '';
+                if (k.trim()) {
+                    env[k.trim()] = o.value || '';
                 }
             });
 

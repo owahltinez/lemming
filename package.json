@@ -4,14 +4,15 @@
   "description": "Autonomous AI coding agent orchestrator",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/web/*.test.js",
+    "test": "node --test tests/web/*.test.js && playwright test",
     "lint": "biome check .",
     "format": "biome format --write .",
     "check": "mancha check src/lemming/web/*.html"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "mancha": "0.21.3",
-    "jsdom": "latest"
+    "@playwright/test": "^1.58.2",
+    "jsdom": "latest",
+    "mancha": "0.21.3"
   }
 }

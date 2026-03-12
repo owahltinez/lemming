@@ -16,6 +16,7 @@ const createInitialState = (overrides = {}) => {
     loading: true,
     agents: [],
     selectedAgent: "gemini",
+    envOverrides: [],
     hideCompleted,
     toasts: [],
     expanded: {},
