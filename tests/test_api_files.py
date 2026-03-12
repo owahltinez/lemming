@@ -96,7 +96,7 @@ def test_serve_file(git_repo):
 def test_serve_ignored_file(git_repo):
     response = client.get("/files/ignored.txt")
     assert response.status_code == 403
-    assert "Access denied by .gitignore" in response.text
+    assert "Forbidden" in response.text
 
 
 def test_serve_nonexistent_file(git_repo):
