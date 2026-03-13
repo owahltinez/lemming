@@ -15,7 +15,9 @@ requires-python = ">=3.8"
 keywords = ["ai", "agents", "automation", "gemini", "claude", "aider"]
 dependencies = [
     "click>=8.0.0",
+    "fastapi>=0.124.4",
     "pyyaml>=6.0.3",
+    "uvicorn>=0.33.0",
 ]
 
 [dependency-groups]
