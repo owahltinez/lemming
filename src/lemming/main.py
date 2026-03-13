@@ -156,10 +156,14 @@ def edit(
 
 @cli.command(name="delete", short_help="<taskid> Delete a task from the queue")
 @click.argument("task_id", required=False)
-@click.option("--all", "delete_all", is_flag=True, help="Delete all tasks and clear context.")
+@click.option(
+    "--all", "delete_all", is_flag=True, help="Delete all tasks and clear context."
+)
 @click.option("--completed", is_flag=True, help="Delete completed tasks only.")
 @click.pass_context
-def delete_task(ctx: click.Context, task_id: str | None, delete_all: bool, completed: bool):
+def delete_task(
+    ctx: click.Context, task_id: str | None, delete_all: bool, completed: bool
+):
     """Delete a task from the queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
 
@@ -190,7 +194,9 @@ def delete_task(ctx: click.Context, task_id: str | None, delete_all: bool, compl
             click.echo(f"Deleted {removed} completed task(s).")
         else:
             initial_count = len(data["tasks"])
-            data["tasks"] = [t for t in data["tasks"] if not t["id"].startswith(task_id)]
+            data["tasks"] = [
+                t for t in data["tasks"] if not t["id"].startswith(task_id)
+            ]
 
             if len(data["tasks"]) < initial_count:
                 save_tasks(tasks_file, data)
@@ -314,7 +320,6 @@ def context(ctx: click.Context, context_text: str | None, file: pathlib.Path | N
             click.echo("Project context updated.")
         else:
             click.echo(data.get("context") or "No context set.")
-
 
 
 @cli.command(short_help="<taskid> Mark a task as completed")
