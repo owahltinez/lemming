@@ -10,7 +10,6 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "src"))
 
-from lemming import api
 from lemming.api import app
 
 

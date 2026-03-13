@@ -4,7 +4,7 @@ import subprocess
 import time
 from typing import List, Optional, Dict
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
@@ -63,8 +63,9 @@ def get_data():
         tasks.append(task)
 
         if task.status == "in_progress":
-            is_stale = (task.last_heartbeat and now - task.last_heartbeat > STALE_THRESHOLD) or \
-                       (task.pid and not is_pid_alive(task.pid))
+            is_stale = (
+                task.last_heartbeat and now - task.last_heartbeat > STALE_THRESHOLD
+            ) or (task.pid and not is_pid_alive(task.pid))
             if not is_stale:
                 loop_running = True
 
@@ -86,7 +87,14 @@ def add_task(task: Task):
     with lock_tasks(app.state.tasks_file):
         data = load_tasks(app.state.tasks_file)
         new_task = task.model_dump(exclude_none=True)
-        new_task.update({"id": generate_task_id(), "status": "pending", "attempts": 0, "outcomes": []})
+        new_task.update(
+            {
+                "id": generate_task_id(),
+                "status": "pending",
+                "attempts": 0,
+                "outcomes": [],
+            }
+        )
         data["tasks"].append(new_task)
         save_tasks(app.state.tasks_file, data)
     return new_task
@@ -187,18 +195,26 @@ def get_files_api(path: str):
 
     contents = []
     for item in target_path.iterdir():
-        if is_ignored(item): continue
+        if is_ignored(item):
+            continue
         rel_path = item.relative_to(base_path)
         is_dir = item.is_dir()
         stats = item.stat()
-        contents.append({
-            "name": item.name + ("/" if is_dir else ""),
-            "path": str(rel_path),
-            "is_dir": is_dir,
-            "size": None if is_dir else stats.st_size,
-            "modified": stats.st_mtime,
-        })
-    return {"path": path, "contents": sorted(contents, key=lambda x: (not x["is_dir"], x["name"].lower()))}
+        contents.append(
+            {
+                "name": item.name + ("/" if is_dir else ""),
+                "path": str(rel_path),
+                "is_dir": is_dir,
+                "size": None if is_dir else stats.st_size,
+                "modified": stats.st_mtime,
+            }
+        )
+    return {
+        "path": path,
+        "contents": sorted(
+            contents, key=lambda x: (not x["is_dir"], x["name"].lower())
+        ),
+    }
 
 
 @app.get("/files/{path:path}")
@@ -228,4 +244,3 @@ app.mount("/static", StaticFiles(directory=web_dir), name="static")
 @app.get("/")
 def read_index():
     return FileResponse(web_dir / "index.html")
-
