@@ -6,11 +6,24 @@ const indexHtmlPath = path.resolve(process.cwd(), "src/lemming/web/index.html");
 
 test.describe("Environment Overrides UI", () => {
   test.beforeEach(async ({ page }) => {
+    page.on("console", (msg) => console.log("BROWSER CONSOLE:", msg.text()));
+
     // Serve the HTML file over a mocked HTTP url to avoid file:// fetch errors
     await page.route("http://localhost:8000/", async (route) => {
       await route.fulfill({
         contentType: "text/html",
         body: fs.readFileSync(indexHtmlPath, "utf8"),
+      });
+    });
+
+    await page.route("http://localhost:8000/static/index.js", async (route) => {
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: fs.readFileSync(
+          path.resolve(process.cwd(), "src/lemming/web/index.js"),
+          "utf8",
+        ),
+        headers: { "Access-Control-Allow-Origin": "*" },
       });
     });
 
@@ -67,7 +80,7 @@ test.describe("Environment Overrides UI", () => {
     await page.waitForTimeout(600);
 
     const localStorageData = await page.evaluate(() =>
-      localStorage.getItem("lemming_env_overrides")
+      localStorage.getItem("lemming_env_overrides"),
     );
     expect(localStorageData).toContain("MY_MOCK_KEY");
     expect(localStorageData).toContain("MY_MOCK_VALUE");
@@ -110,7 +123,7 @@ test.describe("Environment Overrides UI", () => {
     await page.waitForTimeout(600);
 
     const localStorageData = await page.evaluate(() =>
-      localStorage.getItem("lemming_env_overrides")
+      localStorage.getItem("lemming_env_overrides"),
     );
     expect(localStorageData).toContain("KEY2");
     expect(localStorageData).not.toContain("KEY1");
@@ -144,31 +157,35 @@ test.describe("Environment Overrides UI", () => {
     expect(runRequestPayload.env).toBeUndefined();
   });
 
-  test('persists overrides across page reloads', async ({ page }) => {
-    await page.goto('http://localhost:8000/');
+  test("persists overrides across page reloads", async ({ page }) => {
+    await page.goto("http://localhost:8000/");
     await page.evaluate(() => localStorage.clear());
-    await page.goto('http://localhost:8000/');
+    await page.goto("http://localhost:8000/");
 
     // Add override
-    await page.getByRole('button', { name: 'Add override' }).click();
-    await page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)').fill('TEST_KEY');
-    await page.getByPlaceholder('VALUE').fill('TEST_VAL');
-    
+    await page.getByRole("button", { name: "Add override" }).click();
+    await page.getByPlaceholder("KEY (e.g. OPENAI_API_KEY)").fill("TEST_KEY");
+    await page.getByPlaceholder("VALUE").fill("TEST_VAL");
+
     // Wait for save debounce
     await page.waitForTimeout(600);
-    
+
     // Reload page
     await page.reload();
-    await page.waitForLoadState('networkidle');
-    
+    await page.waitForLoadState("networkidle");
+
     // Check that we're dealing with Mancha actually being ready
-    await expect(page.getByRole('heading', { name: 'Lemming Task Runner' })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Lemming Task Runner" }),
+    ).toBeVisible();
 
     // Give render time
     await page.waitForTimeout(500);
 
     // Verify values restored
-    await expect(page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)')).toHaveValue('TEST_KEY');
-    await expect(page.getByPlaceholder('VALUE')).toHaveValue('TEST_VAL');
+    await expect(
+      page.getByPlaceholder("KEY (e.g. OPENAI_API_KEY)"),
+    ).toHaveValue("TEST_KEY");
+    await expect(page.getByPlaceholder("VALUE")).toHaveValue("TEST_VAL");
   });
 });

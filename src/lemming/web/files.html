@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lemming</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
-    <script src="https://unpkg.com/mancha@0.21.3" css="basic+utils+custom" init></script>
+    <script src="/static/mancha.js" css="basic+utils"></script>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans" :data="{ path: '', contents: [], loading: true }">
+<body class="bg-gray-50 text-gray-900 font-sans">
     <div class="max-w-4xl mx-auto p-4">
         <header class="mb-4 flex items-center justify-between gap-4">
             <div class="flex items-center gap-4 flex-shrink-0">
@@ -75,38 +75,50 @@
     </div>
 
     <script>
-        const { $ } = Mancha;
+        (async () => {
+window.ManchaApp = Mancha.initMancha({
+                cloak: true,
+                callback: async (renderer) => {
+                    const { $ } = renderer;
 
-        $.formatSize = function(bytes) {
-            if (bytes === null || bytes === undefined) return '';
-            if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        };
+                    $.path = '';
+                    $.contents = [];
+                    $.loading = true;
 
-        $.formatDate = function(ts) {
-            return ts ? new Date(ts * 1000).toLocaleString() : '';
-        };
+                    $.formatSize = (bytes) => {
+                        if (bytes === null || bytes === undefined) return '';
+                        if (bytes === 0) return '0 B';
+                        const k = 1024;
+                        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                        const i = Math.floor(Math.log(bytes) / Math.log(k));
+                        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+                    };
 
-        $.fetchFiles = async function() {
-            // Extract path from URL: /files/some/path -> some/path
-            const pathname = window.location.pathname;
-            const path = pathname.replace(/^\/files\/?/, '').replace(/\/$/, '');
-            
-            const response = await fetch(`/api/files/${path}`);
-            if (response.ok) {
-                const data = await response.json();
-                this.path = data.path;
-                this.contents = data.contents;
-            } else {
-                console.error('Failed to fetch files');
-            }
-            this.loading = false;
-        };
+                    $.formatDate = (ts) => {
+                        return ts ? new Date(ts * 1000).toLocaleString() : '';
+                    };
 
-        $.fetchFiles();
+                    $.fetchFiles = async () => {
+                        // Extract path from URL: /files/some/path -> some/path
+                        const pathname = window.location.pathname;
+                        const path = pathname.replace(/^\/files\/?/, '').replace(/\/$/, '');
+                        
+                        const response = await fetch(`/api/files/${path}`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            $.path = data.path;
+                            $.contents = data.contents;
+                        } else {
+                            console.error('Failed to fetch files');
+                        }
+                        $.loading = false;
+                    };
+
+                    await $.fetchFiles();
+                    await renderer.mount(document.body);
+                }
+            });
+        })();
     </script>
 </body>
 </html>
