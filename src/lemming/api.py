@@ -116,6 +116,9 @@ def update_task(task_id: str, update: Dict):
                 update_run_time(target)
             if update["status"] == "completed":
                 target["completed_at"] = time.time()
+            elif update["status"] == "pending":
+                target.pop("completed_at", None)
+                target["attempts"] = 0
             elif "completed_at" in target:
                 del target["completed_at"]
             target["status"] = update["status"]

@@ -155,24 +155,48 @@ def edit(
 
 
 @cli.command(name="delete", short_help="<taskid> Delete a task from the queue")
-@click.argument("task_id")
+@click.argument("task_id", required=False)
+@click.option("--all", "delete_all", is_flag=True, help="Delete all tasks and clear context.")
+@click.option("--completed", is_flag=True, help="Delete completed tasks only.")
 @click.pass_context
-def delete_task(ctx: click.Context, task_id: str):
+def delete_task(ctx: click.Context, task_id: str | None, delete_all: bool, completed: bool):
     """Delete a task from the queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
-    ctx.obj["VERBOSE"]
+
+    # Validate argument combinations
+    if delete_all and completed:
+        click.echo("Error: --all and --completed are mutually exclusive.")
+        ctx.exit(1)
+    if task_id and (delete_all or completed):
+        click.echo("Error: Cannot specify a task ID with --all or --completed.")
+        ctx.exit(1)
+    if not task_id and not delete_all and not completed:
+        click.echo("Error: Provide a task ID, or use --all or --completed.")
+        ctx.exit(1)
 
     with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
 
-        initial_count = len(data["tasks"])
-        data["tasks"] = [t for t in data["tasks"] if not t["id"].startswith(task_id)]
-
-        if len(data["tasks"]) < initial_count:
+        if delete_all:
+            data["tasks"] = []
+            data["context"] = ""
             save_tasks(tasks_file, data)
-            click.echo(f"Removed task(s) matching {task_id}")
+            click.echo("Deleted all tasks and cleared context.")
+        elif completed:
+            initial_count = len(data["tasks"])
+            data["tasks"] = [t for t in data["tasks"] if t.get("status") != "completed"]
+            removed = initial_count - len(data["tasks"])
+            save_tasks(tasks_file, data)
+            click.echo(f"Deleted {removed} completed task(s).")
         else:
-            click.echo(f"Error: Task {task_id} not found.")
+            initial_count = len(data["tasks"])
+            data["tasks"] = [t for t in data["tasks"] if not t["id"].startswith(task_id)]
+
+            if len(data["tasks"]) < initial_count:
+                save_tasks(tasks_file, data)
+                click.echo(f"Removed task(s) matching {task_id}")
+            else:
+                click.echo(f"Error: Task {task_id} not found.")
 
 
 @cli.command(short_help="<taskid> Show context and task details")
@@ -291,52 +315,6 @@ def context(ctx: click.Context, context_text: str | None, file: pathlib.Path | N
         else:
             click.echo(data.get("context") or "No context set.")
 
-
-@cli.command(short_help="Clear the project context or task queue")
-@click.option("--all", is_flag=True, help="Clear both context and tasks.")
-@click.option("--tasks", is_flag=True, help="Clear tasks only.")
-@click.option("--context", "clear_context", is_flag=True, help="Clear context only.")
-@click.option("--completed", is_flag=True, help="Clear completed tasks only.")
-@click.pass_context
-def clear(
-    ctx: click.Context, all: bool, tasks: bool, clear_context: bool, completed: bool
-):
-    """Clear the project context or task queue."""
-    tasks_file = ctx.obj["TASKS_FILE"]
-    ctx.obj["VERBOSE"]
-
-    with lock_tasks(tasks_file):
-        data = load_tasks(tasks_file)
-
-        do_clear_tasks = tasks
-        do_clear_context = clear_context
-        do_clear_completed = completed
-
-        if all:
-            do_clear_tasks = True
-            do_clear_context = True
-            do_clear_completed = False
-        elif not tasks and not clear_context and not completed:
-            do_clear_tasks = True
-
-        if do_clear_tasks:
-            data["tasks"] = []
-        elif do_clear_completed:
-            data["tasks"] = [t for t in data["tasks"] if t.get("status") != "completed"]
-
-        if do_clear_context:
-            data["context"] = ""
-
-        save_tasks(tasks_file, data)
-
-    if do_clear_tasks and do_clear_context:
-        click.echo("Cleared all context and tasks.")
-    elif do_clear_tasks:
-        click.echo("Cleared task queue.")
-    elif do_clear_completed:
-        click.echo("Cleared completed tasks.")
-    elif do_clear_context:
-        click.echo("Cleared project context.")
 
 
 @cli.command(short_help="<taskid> Mark a task as completed")

@@ -126,8 +126,10 @@ def test_uncomplete_task_via_api(test_tasks):
     response = client.patch("/api/tasks/task1", json={"status": "pending"})
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
+    assert response.json()["attempts"] == 0
 
     with open(test_tasks, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
         task1 = next(t for t in data["tasks"] if t["id"] == "task1")
         assert task1["status"] == "pending"
+        assert task1["attempts"] == 0
