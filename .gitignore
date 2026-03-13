@@ -8,3 +8,4 @@ tasks.yml
 *.swp
 node_modules/
 .biome/
+uv.lock
