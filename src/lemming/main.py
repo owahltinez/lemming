@@ -503,8 +503,8 @@ def build_agent_command(
             default_prompt_flag = "--message"
         elif agent_base.startswith("claude"):
             if yolo:
-                cmd.append("--auto-approve")
-            default_prompt_flag = "--prompt"
+                cmd.append("--dangerously-skip-permissions")
+            default_prompt_flag = "--print"
         elif agent_base.startswith("codex"):
             if yolo:
                 cmd.append("--yolo")
