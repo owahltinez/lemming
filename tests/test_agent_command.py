@@ -21,8 +21,8 @@ class TestAgentCommand(unittest.TestCase):
     def test_claude_yolo(self):
         cmd = build_agent_command("claude", "hello", yolo=True)
         self.assertEqual(cmd[0], "claude")
-        self.assertIn("--auto-approve", cmd)
-        self.assertIn("--prompt", cmd)
+        self.assertIn("--dangerously-skip-permissions", cmd)
+        self.assertIn("--print", cmd)
         self.assertIn("hello", cmd)
 
     def test_codex_yolo(self):
