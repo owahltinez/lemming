@@ -94,8 +94,7 @@ When an agent runs under Lemming, it is instructed to use these commands:
 *   **`context [<text>]`**: Set or view project-wide instructions. Supports `-f/--file`.
 *   **`add <desc>`**: Append a new task. Supports `--index` and `--agent`.
 *   **`edit <id>`**: Modify a task's description, agent, or position.
-*   **`delete <id>`**: Remove a task.
-*   **`clear`**: Wipe the queue or context. Supports `--completed` and `--all`.
+*   **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk operations.
 *   **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
 
 ### Execution

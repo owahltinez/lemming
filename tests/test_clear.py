@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from lemming.main import cli
 
 
-class TestLemmingClear(unittest.TestCase):
+class TestLemmingDeleteBulk(unittest.TestCase):
     def setUp(self):
         self.runner = CliRunner()
         self.test_dir = tempfile.mkdtemp()
@@ -38,59 +38,17 @@ class TestLemmingClear(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir)
 
-    def test_clear_default(self):
-        result = self.runner.invoke(cli, self.base_args + ["clear"])
+    def test_delete_all(self):
+        result = self.runner.invoke(cli, self.base_args + ["delete", "--all"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Cleared task queue.", result.output)
-
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["context"], "Initial context")
-            self.assertEqual(data["tasks"], [])
-
-    def test_clear_all(self):
-        result = self.runner.invoke(cli, self.base_args + ["clear", "--all"])
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("Cleared all context and tasks.", result.output)
+        self.assertIn("Deleted all tasks and cleared context.", result.output)
 
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             self.assertEqual(data["context"], "")
             self.assertEqual(data["tasks"], [])
 
-    def test_clear_tasks(self):
-        result = self.runner.invoke(cli, self.base_args + ["clear", "--tasks"])
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("Cleared task queue.", result.output)
-
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["context"], "Initial context")
-            self.assertEqual(data["tasks"], [])
-
-    def test_clear_context(self):
-        result = self.runner.invoke(cli, self.base_args + ["clear", "--context"])
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("Cleared project context.", result.output)
-
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["context"], "")
-            self.assertEqual(len(data["tasks"]), 1)
-
-    def test_clear_tasks_and_context(self):
-        result = self.runner.invoke(
-            cli, self.base_args + ["clear", "--tasks", "--context"]
-        )
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("Cleared all context and tasks.", result.output)
-
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["context"], "")
-            self.assertEqual(data["tasks"], [])
-
-    def test_clear_completed(self):
+    def test_delete_completed(self):
         # Setup data with mixed tasks
         data = {
             "context": "Initial context",
@@ -102,15 +60,52 @@ class TestLemmingClear(unittest.TestCase):
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
 
-        result = self.runner.invoke(cli, self.base_args + ["clear", "--completed"])
+        result = self.runner.invoke(cli, self.base_args + ["delete", "--completed"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Cleared completed tasks.", result.output)
+        self.assertIn("Deleted 1 completed task(s).", result.output)
 
         with open(self.test_tasks_file, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
             self.assertEqual(len(data["tasks"]), 1)
             self.assertEqual(data["tasks"][0]["id"], "t2")
             self.assertEqual(data["context"], "Initial context")
+
+    def test_delete_no_args_shows_error(self):
+        result = self.runner.invoke(cli, self.base_args + ["delete"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Provide a task ID", result.output)
+
+    def test_delete_all_and_completed_mutually_exclusive(self):
+        result = self.runner.invoke(
+            cli, self.base_args + ["delete", "--all", "--completed"]
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("mutually exclusive", result.output)
+
+    def test_delete_task_id_with_all_flag_shows_error(self):
+        result = self.runner.invoke(
+            cli, self.base_args + ["delete", "12345678", "--all"]
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Cannot specify a task ID", result.output)
+
+    def test_delete_preserves_context_with_completed(self):
+        """Ensure --completed only removes completed tasks, not context."""
+        data = {
+            "context": "Keep this",
+            "tasks": [
+                {"id": "t1", "description": "Done", "status": "completed"},
+            ],
+        }
+        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f)
+
+        self.runner.invoke(cli, self.base_args + ["delete", "--completed"])
+
+        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            self.assertEqual(data["context"], "Keep this")
+            self.assertEqual(data["tasks"], [])
 
 
 if __name__ == "__main__":
