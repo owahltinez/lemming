@@ -16,6 +16,19 @@ test.describe("Environment Overrides UI", () => {
       });
     });
 
+    await page.route(
+      "http://localhost:8000/static/mancha.js",
+      async (route) => {
+        await route.fulfill({
+          contentType: "application/javascript",
+          body: fs.readFileSync(
+            path.resolve(process.cwd(), "src/lemming/web/mancha.js"),
+            "utf8",
+          ),
+        });
+      },
+    );
+
     await page.route("http://localhost:8000/static/index.js", async (route) => {
       await route.fulfill({
         contentType: "application/javascript",
@@ -48,6 +61,14 @@ test.describe("Environment Overrides UI", () => {
     });
   });
 
+  async function gotoAndAwaitMancha(page) {
+    await page.goto("http://localhost:8000/");
+    await page.evaluate(async () => {
+      while (!window.ManchaApp) await new Promise((r) => setTimeout(r, 50));
+      await window.ManchaApp;
+    });
+  }
+
   test("adds an environment override, stores it in localStorage, and sends it on run", async ({
     page,
   }) => {
@@ -60,11 +81,11 @@ test.describe("Environment Overrides UI", () => {
       });
     });
 
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
     await page.waitForLoadState("networkidle");
 
     await page.evaluate(() => localStorage.clear());
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
 
     const addButton = page.getByRole("button", { name: "Add override" });
     await expect(addButton).toBeVisible();
@@ -97,9 +118,9 @@ test.describe("Environment Overrides UI", () => {
   });
 
   test("removes an environment override", async ({ page }) => {
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
     await page.evaluate(() => localStorage.clear());
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
 
     const keyInputs = page.getByPlaceholder("KEY (e.g. OPENAI_API_KEY)");
 
@@ -139,9 +160,9 @@ test.describe("Environment Overrides UI", () => {
       });
     });
 
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
     await page.evaluate(() => localStorage.clear());
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
 
     await page.getByRole("button", { name: "Add override" }).click();
     const keyInputs = page.getByPlaceholder("KEY (e.g. OPENAI_API_KEY)");
@@ -158,9 +179,9 @@ test.describe("Environment Overrides UI", () => {
   });
 
   test("persists overrides across page reloads", async ({ page }) => {
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
     await page.evaluate(() => localStorage.clear());
-    await page.goto("http://localhost:8000/");
+    await gotoAndAwaitMancha(page);
 
     // Add override
     await page.getByRole("button", { name: "Add override" }).click();
