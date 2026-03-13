@@ -45,4 +45,6 @@ jobs:
       run: npm run check
 
     - name: Run Web tests
-      run: npm test
+      run: |
+        npx playwright install --with-deps
+        npm test
