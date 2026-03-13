@@ -4,10 +4,12 @@
   "description": "Autonomous AI coding agent orchestrator",
   "type": "module",
   "scripts": {
+    "postinstall": "npm run vendor",
     "test": "node --test tests/web/*.test.js && playwright test",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "check": "mancha check src/lemming/web/*.html"
+    "check": "mancha check src/lemming/web/*.html",
+    "vendor": "cp node_modules/mancha/dist/mancha.js src/lemming/web/mancha.js"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

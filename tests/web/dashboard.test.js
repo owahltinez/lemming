@@ -84,7 +84,6 @@ describe("Lemming Web Dashboard", () => {
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) root.removeAttribute(":data");
     await renderer.mount(fragment);
 
     const taskItems = fragment.querySelectorAll('[role="listitem"]');
@@ -110,9 +109,8 @@ describe("Lemming Web Dashboard", () => {
     // Ensure :data on body doesn't overwrite our test state
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) {
-      root.removeAttribute(":data");
-    }
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
 
     await renderer.mount(fragment);
 
@@ -172,9 +170,8 @@ describe("Lemming Web Dashboard", () => {
     // Ensure :data on body doesn't overwrite our test state
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) {
-      root.removeAttribute(":data");
-    }
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
 
     await renderer.mount(fragment);
 
@@ -220,9 +217,8 @@ describe("Lemming Web Dashboard", () => {
 
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) {
-      root.removeAttribute(":data");
-    }
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
 
     await renderer.mount(fragment);
 
@@ -255,9 +251,8 @@ describe("Lemming Web Dashboard", () => {
 
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) {
-      root.removeAttribute(":data");
-    }
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
 
     await renderer.mount(fragment);
 
@@ -335,9 +330,8 @@ describe("Lemming Web Dashboard", () => {
 
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) {
-      root.removeAttribute(":data");
-    }
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
 
     await renderer.mount(fragment);
 
@@ -396,6 +390,7 @@ describe("Lemming Web Dashboard", () => {
     let root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
     if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
     await renderer.mount(fragment);
 
     let deleteCompletedBtn = fragment.querySelector(
@@ -437,6 +432,7 @@ describe("Lemming Web Dashboard", () => {
     root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
     if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
     await renderer.mount(fragment);
 
     deleteCompletedBtn = fragment.querySelector(
@@ -461,7 +457,6 @@ describe("Lemming Web Dashboard", () => {
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) root.removeAttribute(":data");
     await renderer.mount(fragment);
 
     const runLoopBtn = fragment.querySelector('[aria-label="Run Loop"]');
@@ -531,7 +526,6 @@ describe("Lemming Web Dashboard", () => {
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) root.removeAttribute(":data");
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
@@ -571,9 +565,8 @@ describe("Lemming Web Dashboard", () => {
 
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) {
-      root.removeAttribute(":data");
-    }
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
 
     await renderer.mount(fragment);
 
@@ -606,7 +599,6 @@ describe("Lemming Web Dashboard", () => {
 
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) root.removeAttribute(":data");
     await renderer.mount(fragment);
 
     assert.strictEqual(textarea.value, "Initial context");
@@ -641,7 +633,6 @@ describe("Lemming Web Dashboard", () => {
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) root.removeAttribute(":data");
     await renderer.mount(fragment);
 
     const taskItems = fragment.querySelectorAll('[role="listitem"]');
@@ -698,7 +689,6 @@ describe("Lemming Web Dashboard", () => {
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
     const root =
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
-    if (root.hasAttribute(":data")) root.removeAttribute(":data");
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
