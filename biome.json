@@ -1,7 +1,13 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "ignore": [".venv", "node_modules", "dist", "src/lemming/web/mancha.js"]
+    "ignore": [
+      ".venv",
+      "node_modules",
+      "dist",
+      "src/lemming/web/mancha.js",
+      "test-results"
+    ]
   },
   "organizeImports": {
     "enabled": true
