@@ -48,3 +48,6 @@ jobs:
       run: |
         npx playwright install --with-deps
         npm test
+
+    - name: Build container image
+      run: docker build -t lemming:ci .

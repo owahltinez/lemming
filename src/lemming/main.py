@@ -759,19 +759,29 @@ def run(
 
 
 @cli.command(short_help="Launch the web interface")
-@click.option("--port", default=8000, help="Port to run the server on.")
+@click.option("--port", default=8999, help="Port to run the server on.")
 @click.option("--host", default="127.0.0.1", help="Host to bind the server to.")
 @click.pass_context
 def serve(ctx: click.Context, port: int, host: str):
     """Launch the web interface."""
+    import copy
     import uvicorn
+    from uvicorn.config import LOGGING_CONFIG
+
     from .api import app
 
     # We pass the TASKS_FILE from context to the API
     app.state.tasks_file = ctx.obj["TASKS_FILE"]
 
+    # Suppress repetitive access-log lines from UI polling endpoints.
+    log_config = copy.deepcopy(LOGGING_CONFIG)
+    log_config["filters"] = {
+        "quiet_poll": {"()": "lemming.api.QuietPollFilter"},
+    }
+    log_config["handlers"]["access"]["filters"] = ["quiet_poll"]
+
     click.echo(f"Launching Lemming UI at http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, log_config=log_config)
 
 
 if __name__ == "__main__":
