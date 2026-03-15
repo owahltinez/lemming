@@ -1,3 +1,7 @@
+import asyncio
+import importlib.resources
+import json
+import logging
 import os
 import pathlib
 import subprocess
@@ -8,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
 from .core import (
     get_default_tasks_file,
@@ -20,6 +25,18 @@ from .core import (
     STALE_THRESHOLD,
     is_pid_alive,
 )
+
+# Paths that should not appear in the uvicorn access log (e.g. polling endpoints).
+QUIET_PATHS = {"/api/data", "/api/events"}
+
+
+class QuietPollFilter(logging.Filter):
+    """Suppress uvicorn access-log lines for high-frequency polling endpoints."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(path in msg for path in QUIET_PATHS)
+
 
 app = FastAPI()
 app.state.tasks_file = get_default_tasks_file()
@@ -53,6 +70,11 @@ class RunRequest(BaseModel):
 
 @app.get("/api/data", response_model=ProjectData)
 def get_data():
+    return _build_project_data()
+
+
+def _build_project_data() -> dict:
+    """Build the project data dict (shared by GET and SSE endpoints)."""
     data = load_tasks(app.state.tasks_file)
     tasks = []
     loop_running = False
@@ -71,10 +93,49 @@ def get_data():
 
     return {
         "context": data.get("context", ""),
-        "tasks": tasks,
+        "tasks": [t.model_dump() for t in tasks],
         "cwd": os.getcwd(),
         "loop_running": loop_running,
     }
+
+
+async def _sse_generator():
+    """Yield SSE events when the tasks file changes."""
+    last_mtime = 0.0
+
+    # Send initial data immediately.
+    project_data = _build_project_data()
+    yield f"data: {json.dumps(project_data)}\n\n"
+    try:
+        last_mtime = os.path.getmtime(app.state.tasks_file)
+    except OSError:
+        pass
+
+    while True:
+        await asyncio.sleep(1)
+
+        try:
+            current_mtime = os.path.getmtime(app.state.tasks_file)
+        except OSError:
+            continue
+
+        if current_mtime != last_mtime:
+            last_mtime = current_mtime
+            project_data = _build_project_data()
+            yield f"data: {json.dumps(project_data)}\n\n"
+
+
+@app.get("/api/events")
+async def sse_events():
+    """Server-Sent Events endpoint for real-time task updates."""
+    return StreamingResponse(
+        _sse_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/agents")
@@ -178,9 +239,33 @@ def run_loop(request: RunRequest):
     return {"status": "started"}
 
 
+def _in_git_repo() -> bool:
+    """Check if cwd is inside a git repository (cached after first call)."""
+    if not hasattr(_in_git_repo, "_result"):
+        try:
+            _in_git_repo._result = (
+                subprocess.run(
+                    ["git", "rev-parse", "--git-dir"],
+                    capture_output=True,
+                ).returncode
+                == 0
+            )
+        except Exception:
+            _in_git_repo._result = False
+    return _in_git_repo._result
+
+
 def is_ignored(path: pathlib.Path) -> bool:
+    if not _in_git_repo():
+        return False
     try:
-        return subprocess.run(["git", "check-ignore", "-q", str(path)]).returncode == 0
+        return (
+            subprocess.run(
+                ["git", "check-ignore", "-q", str(path)],
+                capture_output=True,
+            ).returncode
+            == 0
+        )
     except Exception:
         return False
 
@@ -240,7 +325,7 @@ def redirect_files():
     return RedirectResponse("/files/")
 
 
-web_dir = pathlib.Path(__file__).parent / "web"
+web_dir = pathlib.Path(str(importlib.resources.files("lemming").joinpath("web")))
 app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
 

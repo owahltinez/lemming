@@ -133,3 +133,84 @@ def test_uncomplete_task_via_api(test_tasks):
         task1 = next(t for t in data["tasks"] if t["id"] == "task1")
         assert task1["status"] == "pending"
         assert task1["attempts"] == 0
+
+
+def test_sse_generator_initial_event(test_tasks):
+    """SSE generator yields an initial event with current task data."""
+    import asyncio
+    import json
+    from lemming.api import _sse_generator
+
+    async def get_first_event():
+        gen = _sse_generator()
+        return await gen.__anext__()
+
+    first_event = asyncio.run(get_first_event())
+    assert first_event.startswith("data: ")
+    assert first_event.endswith("\n\n")
+
+    payload = json.loads(first_event.removeprefix("data: ").strip())
+    assert "tasks" in payload
+    assert "context" in payload
+    assert "cwd" in payload
+    assert "loop_running" in payload
+    assert len(payload["tasks"]) == 3
+    assert payload["context"] == "Initial context"
+
+
+def test_sse_events_endpoint_returns_event_stream(test_tasks):
+    """SSE endpoint returns correct content-type and headers."""
+    from lemming.api import sse_events
+
+    import asyncio
+
+    async def check_response():
+        response = await sse_events()
+        assert response.media_type == "text/event-stream"
+        assert response.headers["Cache-Control"] == "no-cache"
+        assert response.headers["X-Accel-Buffering"] == "no"
+
+    asyncio.run(check_response())
+
+
+def test_build_project_data(test_tasks):
+    """_build_project_data returns correct structure used by both GET and SSE."""
+    from lemming.api import _build_project_data
+
+    result = _build_project_data()
+    assert result["context"] == "Initial context"
+    assert len(result["tasks"]) == 3
+    assert "cwd" in result
+    assert isinstance(result["loop_running"], bool)
+
+
+def test_quiet_poll_filter():
+    """QuietPollFilter suppresses access-log lines for polling endpoints."""
+    import logging
+    from lemming.api import QuietPollFilter
+
+    filt = QuietPollFilter()
+
+    # Simulate a uvicorn access-log record for the polling endpoint.
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=("127.0.0.1:55964", "GET", "/api/data", "1.1", 200),
+        exc_info=None,
+    )
+    assert filt.filter(record) is False
+
+    # Non-polling endpoints should still be logged.
+    record_other = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=("127.0.0.1:55964", "GET", "/api/tasks", "1.1", 200),
+        exc_info=None,
+    )
+    assert filt.filter(record_other) is True

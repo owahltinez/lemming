@@ -112,7 +112,7 @@ Lemming uses **fuzzy matching** to automatically inject the correct "YOLO" (auto
 
 *   **Gemini**: Adds `--yolo --no-sandbox`
 *   **Aider**: Adds `--yes --quiet`
-*   **Claude**: Adds `--auto-approve`
+*   **Claude**: Adds `--dangerously-skip-permissions`
 *   **Codex**: Adds `--yolo`
 
 You can disable this behavior with `--no-defaults` or override the prompt flag with `--prompt-flag`.

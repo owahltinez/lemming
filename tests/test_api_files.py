@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "src"))
 
-from lemming.api import app
+from lemming.api import app, _in_git_repo
 
 client = TestClient(app)
 
@@ -22,6 +22,10 @@ def git_repo():
     test_dir = tempfile.mkdtemp()
     orig_cwd = os.getcwd()
     os.chdir(test_dir)
+
+    # Clear cached git repo check from previous tests
+    if hasattr(_in_git_repo, "_result"):
+        del _in_git_repo._result
 
     subprocess.run(["git", "init"], check=True)
     subprocess.run(["git", "config", "user.email", "you@example.com"], check=True)
@@ -40,6 +44,9 @@ def git_repo():
 
     yield pathlib.Path(test_dir)
 
+    # Clear cached git repo check and restore cwd
+    if hasattr(_in_git_repo, "_result"):
+        del _in_git_repo._result
     os.chdir(orig_cwd)
     shutil.rmtree(test_dir)
 
@@ -102,6 +109,41 @@ def test_serve_ignored_file(git_repo):
 def test_serve_nonexistent_file(git_repo):
     response = client.get("/files/nonexistent.txt")
     assert response.status_code == 404
+
+
+@pytest.fixture
+def non_git_dir():
+    """A temporary directory that is NOT a git repo."""
+    test_dir = tempfile.mkdtemp()
+    orig_cwd = os.getcwd()
+    os.chdir(test_dir)
+
+    # Clear cached git repo check
+    if hasattr(_in_git_repo, "_result"):
+        del _in_git_repo._result
+
+    # Create files (including one that would be "ignored" if git were present)
+    (pathlib.Path(test_dir) / "file1.txt").write_text("content1")
+    (pathlib.Path(test_dir) / "ignored.txt").write_text("not actually ignored")
+
+    yield pathlib.Path(test_dir)
+
+    if hasattr(_in_git_repo, "_result"):
+        del _in_git_repo._result
+    os.chdir(orig_cwd)
+    shutil.rmtree(test_dir)
+
+
+def test_list_non_git_dir(non_git_dir):
+    """Files should be listed without errors when not in a git repo."""
+    response = client.get("/api/files/")
+    assert response.status_code == 200
+    data = response.json()
+    names = [item["name"] for item in data["contents"]]
+
+    # All files should be visible since there's no git to check ignore rules
+    assert "file1.txt" in names
+    assert "ignored.txt" in names
 
 
 def test_security_traversal(git_repo):
