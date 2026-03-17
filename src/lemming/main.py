@@ -788,7 +788,7 @@ def parse_timeout(t_str: str) -> float:
     t_str = t_str.strip()
     if t_str == "0" or t_str.startswith("-"):
         return 0.0
-    
+
     multiplier = 1.0
     if t_str.endswith("h"):
         multiplier = 3600.0
@@ -798,15 +798,25 @@ def parse_timeout(t_str: str) -> float:
         t_str = t_str[:-1]
     elif t_str.endswith("s"):
         t_str = t_str[:-1]
-        
+
     try:
         return float(t_str) * multiplier
     except ValueError:
         return 0.0
 
+
 @cli.command(short_help="Expose the Lemming UI to the public internet securely")
-@click.option("--provider", default="cloudflare", type=click.Choice(["cloudflare", "tailscale"]), help="The tunnel provider to use.")
-@click.option("--timeout", default="8h", help="Timeout for the public tunnel (e.g., '8h', '30m', '0' for no timeout).")
+@click.option(
+    "--provider",
+    default="cloudflare",
+    type=click.Choice(["cloudflare", "tailscale"]),
+    help="The tunnel provider to use.",
+)
+@click.option(
+    "--timeout",
+    default="8h",
+    help="Timeout for the public tunnel (e.g., '8h', '30m', '0' for no timeout).",
+)
 @click.option("--port", default=8999, help="Port to run the local server on.")
 @click.option("--host", default="127.0.0.1", help="Host to bind the local server to.")
 @click.pass_context
@@ -826,7 +836,7 @@ def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str)
 
     click.echo(f"[ Lemming ] Starting local server on port {port}...")
     click.echo(f"[ Lemming ] Initiating public tunnel via {provider.capitalize()}...")
-    
+
     tunnel = CloudflareProvider() if provider == "cloudflare" else TailscaleProvider()
     try:
         public_url = tunnel.start(port)
@@ -841,37 +851,50 @@ def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str)
 
     click.echo("[ Lemming ] ")
     click.echo("[ Lemming ] ⚠️  SECURITY WARNING ")
-    click.echo("[ Lemming ] Your Lemming instance is being exposed to the public internet.")
+    click.echo(
+        "[ Lemming ] Your Lemming instance is being exposed to the public internet."
+    )
     click.echo("[ Lemming ] Token-based authentication has been automatically enabled.")
     if timeout_seconds > 0:
-        click.echo(f"[ Lemming ] The public tunnel will automatically close in {timeout}.")
+        click.echo(
+            f"[ Lemming ] The public tunnel will automatically close in {timeout}."
+        )
     else:
-        click.echo("[ Lemming ] The public tunnel will stay open until manually closed.")
+        click.echo(
+            "[ Lemming ] The public tunnel will stay open until manually closed."
+        )
     click.echo("[ Lemming ] ")
     click.echo("[ Lemming ] 🌐 Share this exact, secure link with the remote user:")
     click.echo(f"[ Lemming ] 👉 {public_url}?token={token}")
     click.echo("")
-    click.echo("[ Lemming ] Press Ctrl+C to manually close the tunnel and shut down the server.")
+    click.echo(
+        "[ Lemming ] Press Ctrl+C to manually close the tunnel and shut down the server."
+    )
 
     # Monitor thread
     if timeout_seconds > 0:
+
         def monitor():
             time.sleep(timeout_seconds)
-            click.echo("\n[ Lemming ] Timeout reached. Tunnel closed. Waiting for tasks to finish...")
+            click.echo(
+                "\n[ Lemming ] Timeout reached. Tunnel closed. Waiting for tasks to finish..."
+            )
             tunnel.stop()
-            
+
             tasks_file = app.state.tasks_file
             while True:
                 with lock_tasks(tasks_file):
                     data = load_tasks(tasks_file)
-                    has_running = any(t.get("status") == "in_progress" for t in data["tasks"])
+                    has_running = any(
+                        t.get("status") == "in_progress" for t in data["tasks"]
+                    )
                 if not has_running:
                     break
                 time.sleep(5)
-            
+
             click.echo("[ Lemming ] All tasks finished. Exiting.")
             os._exit(0)
-            
+
         monitor_thread = threading.Thread(target=monitor, daemon=True)
         monitor_thread.start()
 
@@ -887,6 +910,7 @@ def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str)
         pass
     finally:
         tunnel.stop()
+
 
 if __name__ == "__main__":
     cli()

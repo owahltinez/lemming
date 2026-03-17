@@ -4,6 +4,7 @@ import subprocess
 import time
 from typing import Optional
 
+
 class TunnelProvider(abc.ABC):
     @abc.abstractmethod
     def start(self, local_port: int) -> str:
@@ -21,7 +22,10 @@ class CloudflareProvider(TunnelProvider):
         self.process: Optional[subprocess.Popen] = None
 
     def start(self, local_port: int) -> str:
-        if subprocess.run(["which", "cloudflared"], capture_output=True).returncode != 0:
+        if (
+            subprocess.run(["which", "cloudflared"], capture_output=True).returncode
+            != 0
+        ):
             raise RuntimeError(
                 "cloudflared not found in PATH. Please install it via 'brew install cloudflare/cloudflare/cloudflared' "
                 "or visit https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
@@ -29,14 +33,11 @@ class CloudflareProvider(TunnelProvider):
 
         cmd = ["cloudflared", "tunnel", "--url", f"http://127.0.0.1:{local_port}"]
         self.process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
 
         url_pattern = re.compile(r"(https://[a-zA-Z0-9-]+\.trycloudflare\.com)")
-        
+
         start_time = time.time()
         while time.time() - start_time < 15:
             if self.process.stdout is None:
@@ -50,7 +51,7 @@ class CloudflareProvider(TunnelProvider):
             match = url_pattern.search(line)
             if match:
                 return match.group(1)
-        
+
         self.stop()
         raise RuntimeError("Failed to obtain Cloudflare tunnel URL within 15 seconds.")
 
@@ -78,16 +79,27 @@ class TailscaleProvider(TunnelProvider):
         try:
             subprocess.run(cmd, capture_output=True, check=True)
             # funnel is enabled separately: tailscale funnel 8999
-            subprocess.run(["tailscale", "funnel", str(local_port), "on"], capture_output=True, check=True)
+            subprocess.run(
+                ["tailscale", "funnel", str(local_port), "on"],
+                capture_output=True,
+                check=True,
+            )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to start tailscale serve/funnel: {e.stderr.decode() if e.stderr else str(e)}")
-            
-        status = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True)
+            raise RuntimeError(
+                f"Failed to start tailscale serve/funnel: {e.stderr.decode() if e.stderr else str(e)}"
+            )
+
+        status = subprocess.run(
+            ["tailscale", "status", "--json"], capture_output=True, text=True
+        )
         if status.returncode != 0:
             self.stop()
-            raise RuntimeError("Failed to run 'tailscale status'. Is tailscaled running?")
-            
+            raise RuntimeError(
+                "Failed to run 'tailscale status'. Is tailscaled running?"
+            )
+
         import json
+
         try:
             data = json.loads(status.stdout)
             domain = data.get("Self", {}).get("DNSName", "").strip(".")

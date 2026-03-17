@@ -41,6 +41,7 @@ class QuietPollFilter(logging.Filter):
 app = FastAPI()
 app.state.tasks_file = get_default_tasks_file()
 
+
 @app.middleware("http")
 async def share_token_middleware(request: Request, call_next):
     share_token = getattr(request.app.state, "share_token", None)
@@ -56,11 +57,11 @@ async def share_token_middleware(request: Request, call_next):
         response = await call_next(request)
         response.set_cookie(key="lemming_share_token", value=token, httponly=True)
         return response
-    
+
     cookie_token = request.cookies.get("lemming_share_token")
     if cookie_token == share_token:
         return await call_next(request)
-        
+
     return Response("Unauthorized", status_code=401)
 
 
