@@ -27,5 +27,10 @@ dev = [
     "pytest",
 ]
 
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
 [project.scripts]
 lemming = "lemming.main:cli"
