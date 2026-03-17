@@ -784,5 +784,109 @@ def serve(ctx: click.Context, port: int, host: str):
     uvicorn.run(app, host=host, port=port, log_config=log_config)
 
 
+def parse_timeout(t_str: str) -> float:
+    t_str = t_str.strip()
+    if t_str == "0" or t_str.startswith("-"):
+        return 0.0
+    
+    multiplier = 1.0
+    if t_str.endswith("h"):
+        multiplier = 3600.0
+        t_str = t_str[:-1]
+    elif t_str.endswith("m"):
+        multiplier = 60.0
+        t_str = t_str[:-1]
+    elif t_str.endswith("s"):
+        t_str = t_str[:-1]
+        
+    try:
+        return float(t_str) * multiplier
+    except ValueError:
+        return 0.0
+
+@cli.command(short_help="Expose the Lemming UI to the public internet securely")
+@click.option("--provider", default="cloudflare", type=click.Choice(["cloudflare", "tailscale"]), help="The tunnel provider to use.")
+@click.option("--timeout", default="8h", help="Timeout for the public tunnel (e.g., '8h', '30m', '0' for no timeout).")
+@click.option("--port", default=8999, help="Port to run the local server on.")
+@click.option("--host", default="127.0.0.1", help="Host to bind the local server to.")
+@click.pass_context
+def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str):
+    """Expose the Lemming UI to the public internet securely."""
+    import copy
+    import secrets
+    import threading
+    import sys
+    import uvicorn
+    from uvicorn.config import LOGGING_CONFIG
+
+    from .api import app
+    from .providers import CloudflareProvider, TailscaleProvider
+
+    timeout_seconds = parse_timeout(timeout)
+
+    click.echo(f"[ Lemming ] Starting local server on port {port}...")
+    click.echo(f"[ Lemming ] Initiating public tunnel via {provider.capitalize()}...")
+    
+    tunnel = CloudflareProvider() if provider == "cloudflare" else TailscaleProvider()
+    try:
+        public_url = tunnel.start(port)
+    except Exception as e:
+        click.echo(f"[ Lemming ] Error starting tunnel: {e}", err=True)
+        sys.exit(1)
+
+    # Generate token
+    token = secrets.token_urlsafe(32)
+    app.state.share_token = token
+    app.state.tasks_file = ctx.obj["TASKS_FILE"]
+
+    click.echo("[ Lemming ] ")
+    click.echo("[ Lemming ] ⚠️  SECURITY WARNING ")
+    click.echo("[ Lemming ] Your Lemming instance is being exposed to the public internet.")
+    click.echo("[ Lemming ] Token-based authentication has been automatically enabled.")
+    if timeout_seconds > 0:
+        click.echo(f"[ Lemming ] The public tunnel will automatically close in {timeout}.")
+    else:
+        click.echo("[ Lemming ] The public tunnel will stay open until manually closed.")
+    click.echo("[ Lemming ] ")
+    click.echo("[ Lemming ] 🌐 Share this exact, secure link with the remote user:")
+    click.echo(f"[ Lemming ] 👉 {public_url}?token={token}")
+    click.echo("")
+    click.echo("[ Lemming ] Press Ctrl+C to manually close the tunnel and shut down the server.")
+
+    # Monitor thread
+    if timeout_seconds > 0:
+        def monitor():
+            time.sleep(timeout_seconds)
+            click.echo("\n[ Lemming ] Timeout reached. Tunnel closed. Waiting for tasks to finish...")
+            tunnel.stop()
+            
+            tasks_file = app.state.tasks_file
+            while True:
+                with lock_tasks(tasks_file):
+                    data = load_tasks(tasks_file)
+                    has_running = any(t.get("status") == "in_progress" for t in data["tasks"])
+                if not has_running:
+                    break
+                time.sleep(5)
+            
+            click.echo("[ Lemming ] All tasks finished. Exiting.")
+            os._exit(0)
+            
+        monitor_thread = threading.Thread(target=monitor, daemon=True)
+        monitor_thread.start()
+
+    log_config = copy.deepcopy(LOGGING_CONFIG)
+    log_config["filters"] = {
+        "quiet_poll": {"()": "lemming.api.QuietPollFilter"},
+    }
+    log_config["handlers"]["access"]["filters"] = ["quiet_poll"]
+
+    try:
+        uvicorn.run(app, host=host, port=port, log_config=log_config)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        tunnel.stop()
+
 if __name__ == "__main__":
     cli()

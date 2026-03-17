@@ -8,7 +8,7 @@ import subprocess
 import time
 from typing import List, Optional, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
@@ -40,6 +40,28 @@ class QuietPollFilter(logging.Filter):
 
 app = FastAPI()
 app.state.tasks_file = get_default_tasks_file()
+
+@app.middleware("http")
+async def share_token_middleware(request: Request, call_next):
+    share_token = getattr(request.app.state, "share_token", None)
+    if not share_token:
+        return await call_next(request)
+
+    host = request.headers.get("host", "")
+    if host.startswith("127.0.0.1") or host.startswith("localhost"):
+        return await call_next(request)
+
+    token = request.query_params.get("token")
+    if token == share_token:
+        response = await call_next(request)
+        response.set_cookie(key="lemming_share_token", value=token, httponly=True)
+        return response
+    
+    cookie_token = request.cookies.get("lemming_share_token")
+    if cookie_token == share_token:
+        return await call_next(request)
+        
+    return Response("Unauthorized", status_code=401)
 
 
 class Task(BaseModel):
