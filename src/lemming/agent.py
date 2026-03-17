@@ -50,6 +50,7 @@ def build_agent_command(
         elif agent_base.startswith("claude"):
             if yolo:
                 cmd.append("--dangerously-skip-permissions")
+            cmd.extend(["--output-format=stream-json", "--verbose"])
             default_prompt_flag = "--print"
         elif agent_base.startswith("codex"):
             if yolo:
