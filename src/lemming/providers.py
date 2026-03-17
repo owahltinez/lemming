@@ -49,7 +49,11 @@ class CloudflareProvider(TunnelProvider):
                     break
                 continue
             match = url_pattern.search(line)
-            if match:
+            if (
+                match
+                and "api.trycloudflare.com" not in match.group(1)
+                and "update.trycloudflare.com" not in match.group(1)
+            ):
                 return match.group(1)
 
         self.stop()

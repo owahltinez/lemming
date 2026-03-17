@@ -212,6 +212,16 @@
         }
       };
 
+      $.clearTask = async function (id) {
+        if (confirm("Clear task attempts and outcomes?")) {
+          const res = await fetch(`/api/tasks/${id}/clear`, { method: "POST" });
+          if (res.ok) {
+            this.addToast("Task cleared", "success");
+            await this.fetchData();
+          }
+        }
+      };
+
       $.ctxSaveTimeout = null;
       $.updateContext = function () {
         clearTimeout(this.ctxSaveTimeout);

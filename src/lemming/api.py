@@ -197,6 +197,15 @@ def cancel_task_endpoint(task_id: str):
     raise fastapi.HTTPException(404, "Task not found")
 
 
+@app.post("/api/tasks/{task_id}/clear")
+def clear_task_endpoint(task_id: str):
+    try:
+        tasks.reset_task(app.state.tasks_file, task_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise fastapi.HTTPException(404, str(e))
+
+
 @app.get("/api/tasks/{task_id}/log")
 def get_task_log(task_id: str):
     log_file = paths.get_log_file(app.state.tasks_file, task_id)

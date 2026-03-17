@@ -253,6 +253,19 @@
                             <button 
                                 type="button" 
                                 role="button" 
+                                :show="task.status !== 'completed' && task.status !== 'in_progress' && task.attempts > 0"
+                                :on:click="clearTask(task.id)" 
+                                class="p-1 text-gray-600 hover:text-orange-500 hover:bg-orange-100 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
+                                title="Clear Task Attempts"
+                                aria-label="Clear Task Attempts"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" role="img">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" />
+                                </svg>
+                            </button>
+                            <button 
+                                type="button" 
+                                role="button" 
                                 :show="task.status !== 'in_progress'"
                                 :on:click="deleteTask(task.id)" 
                                 class="p-1 text-gray-600 hover:text-red-500 hover:bg-red-100 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer" 
