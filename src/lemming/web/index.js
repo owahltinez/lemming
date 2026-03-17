@@ -96,10 +96,57 @@
         const response = await fetch("/api/data");
         if (!response.ok) return;
         const data = await response.json();
+
         this.cwd = data.cwd || "";
         this.loopRunning = data.loop_running || false;
-        this.tasks = data.tasks || [];
-        this.context = data.context || "";
+        const newTasks = data.tasks || [];
+
+        // Show toast notifications for task state changes.
+        if (!this.loading && this.tasks.length > 0) {
+          const oldTaskMap = new Map(this.tasks.map((t) => [t.id, t]));
+          for (const newTask of newTasks) {
+            const oldTask = oldTaskMap.get(newTask.id);
+            if (!oldTask) continue;
+            if (
+              oldTask.status !== "completed" &&
+              newTask.status === "completed"
+            ) {
+              this.addToast(
+                `Task completed: ${this.trim(newTask.description, 60)}`,
+                "success",
+              );
+            } else if (
+              oldTask.status === "in_progress" &&
+              newTask.status === "pending"
+            ) {
+              this.addToast(
+                `Task failed: ${this.trim(newTask.description, 60)}`,
+                "error",
+              );
+            } else if (
+              (newTask.outcomes?.length || 0) > (oldTask.outcomes?.length || 0)
+            ) {
+              this.addToast(
+                `Outcome recorded: ${this.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
+                "info",
+              );
+            } else if (newTask.attempts > oldTask.attempts) {
+              this.addToast(
+                `Task attempt ${newTask.attempts}: ${this.trim(newTask.description, 60)}`,
+                "info",
+              );
+            }
+          }
+        }
+
+        this.tasks = newTasks;
+        const contextElem = document.querySelector("textarea");
+        if (
+          this.loading ||
+          (contextElem && document.activeElement !== contextElem)
+        ) {
+          this.context = data.context || "";
+        }
         this.loading = false;
       };
 
@@ -269,63 +316,8 @@
       // --- Mount to DOM ---
       await renderer.mount(document.body);
 
-      // --- Real-time Updates via Server-Sent Events ---
-      const evtSource = new EventSource("/api/events");
-      evtSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-
-        $.cwd = data.cwd || "";
-        $.loopRunning = data.loop_running || false;
-        const newTasks = data.tasks || [];
-
-        // Show toast notifications for task state changes.
-        if (!$.loading && $.tasks.length > 0) {
-          const oldTaskMap = new Map($.tasks.map((t) => [t.id, t]));
-          for (const newTask of newTasks) {
-            const oldTask = oldTaskMap.get(newTask.id);
-            if (!oldTask) continue;
-            if (
-              oldTask.status !== "completed" &&
-              newTask.status === "completed"
-            ) {
-              $.addToast(
-                `Task completed: ${$.trim(newTask.description, 60)}`,
-                "success",
-              );
-            } else if (
-              oldTask.status === "in_progress" &&
-              newTask.status === "pending"
-            ) {
-              $.addToast(
-                `Task failed: ${$.trim(newTask.description, 60)}`,
-                "error",
-              );
-            } else if (
-              (newTask.outcomes?.length || 0) > (oldTask.outcomes?.length || 0)
-            ) {
-              $.addToast(
-                `Outcome recorded: ${$.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
-                "info",
-              );
-            } else if (newTask.attempts > oldTask.attempts) {
-              $.addToast(
-                `Task attempt ${newTask.attempts}: ${$.trim(newTask.description, 60)}`,
-                "info",
-              );
-            }
-          }
-        }
-
-        $.tasks = newTasks;
-        const contextElem = document.querySelector("textarea");
-        if (
-          $.loading ||
-          (contextElem && document.activeElement !== contextElem)
-        ) {
-          $.context = data.context || "";
-        }
-        $.loading = false;
-      };
+      // --- Auto-refresh via polling ---
+      setInterval(() => $.fetchData(), 2000);
     },
   });
 })();

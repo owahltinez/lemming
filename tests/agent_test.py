@@ -20,6 +20,27 @@ def test_build_agent_command_aider():
     assert "--message" in cmd
 
 
+def test_build_agent_command_with_flags_in_name():
+    cmd = agent.build_agent_command(
+        "claude-corp -- --output-format=stream-json", "my prompt", yolo=True
+    )
+    assert cmd[0] == "claude-corp"
+    assert "--" in cmd
+    assert "--output-format=stream-json" in cmd
+    assert "--dangerously-skip-permissions" in cmd
+    assert "--print" in cmd
+    assert "my prompt" in cmd
+
+
+def test_build_agent_command_with_quoted_flags_in_name():
+    cmd = agent.build_agent_command(
+        'my-agent --model "gpt 4"', "my prompt", yolo=True, no_defaults=True
+    )
+    assert cmd[0] == "my-agent"
+    assert "--model" in cmd
+    assert "gpt 4" in cmd
+
+
 def test_prepare_prompt(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = {

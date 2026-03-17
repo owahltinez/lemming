@@ -29,10 +29,12 @@ def build_agent_command(
     verbose: bool = False,
 ) -> list[str]:
     """Constructs the CLI command for the specified agent."""
-    cmd = [agent_name]
+    parts = shlex.split(agent_name)
+    cmd = [parts[0]]
+    extra_parts = parts[1:]
     default_prompt_flag = None
 
-    agent_base = os.path.basename(agent_name)
+    agent_base = os.path.basename(parts[0])
 
     if not no_defaults:
         if agent_base.startswith("gemini"):
@@ -54,6 +56,8 @@ def build_agent_command(
                 cmd.append("--yolo")
             default_prompt_flag = "--instructions"
 
+    if extra_parts:
+        cmd.extend(extra_parts)
     if agent_args:
         cmd.extend(agent_args)
 

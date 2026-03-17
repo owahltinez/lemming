@@ -1,5 +1,3 @@
-import asyncio
-import json
 import logging
 import os
 import pathlib
@@ -200,40 +198,8 @@ def test_uncomplete_task_via_api(test_tasks):
         assert task1["attempts"] == 0
 
 
-def test_sse_generator_initial_event(test_tasks):
-    """SSE generator yields an initial event with current task data."""
-
-    async def get_first_event():
-        gen = api._sse_generator()
-        return await gen.__anext__()
-
-    first_event = asyncio.run(get_first_event())
-    assert first_event.startswith("data: ")
-    assert first_event.endswith("\n\n")
-
-    payload = json.loads(first_event.removeprefix("data: ").strip())
-    assert "tasks" in payload
-    assert "context" in payload
-    assert "cwd" in payload
-    assert "loop_running" in payload
-    assert len(payload["tasks"]) == 3
-    assert payload["context"] == "Initial context"
-
-
-def test_sse_events_endpoint_returns_event_stream(test_tasks):
-    """SSE endpoint returns correct content-type and headers."""
-
-    async def check_response():
-        response = await api.sse_events()
-        assert response.media_type == "text/event-stream"
-        assert response.headers["Cache-Control"] == "no-cache"
-        assert response.headers["X-Accel-Buffering"] == "no"
-
-    asyncio.run(check_response())
-
-
 def test_build_project_data(test_tasks):
-    """get_project_data returns correct structure used by both GET and SSE."""
+    """get_project_data returns correct structure used by GET /api/data."""
     result = tasks.get_project_data(api.app.state.tasks_file)
     assert result["context"] == "Initial context"
     assert len(result["tasks"]) == 3
@@ -266,7 +232,7 @@ def test_quiet_poll_filter():
     filt = api.QuietPollFilter()
 
     # Simulate a uvicorn access-log record for the polling endpoints.
-    for path in ("/api/data", "/api/events"):
+    for path in ("/api/data",):
         record = logging.LogRecord(
             name="uvicorn.access",
             level=logging.INFO,

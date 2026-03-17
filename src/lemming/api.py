@@ -1,6 +1,4 @@
-import asyncio
 import importlib.resources
-import json
 import logging
 import os
 import pathlib
@@ -11,14 +9,13 @@ import fastapi
 import fastapi.responses
 import fastapi.staticfiles
 import pydantic
-import starlette.responses
 
 from . import paths
 from . import tasks
 from . import utils
 
 # Paths that should not appear in the uvicorn access log (e.g. polling endpoints).
-QUIET_PATHS = {"/api/data", "/api/events", "GET /api/tasks/"}
+QUIET_PATHS = {"/api/data", "GET /api/tasks/"}
 
 
 class QuietPollFilter(logging.Filter):
@@ -87,45 +84,6 @@ class RunRequest(pydantic.BaseModel):
 @app.get("/api/data", response_model=ProjectData)
 def get_data():
     return tasks.get_project_data(app.state.tasks_file)
-
-
-async def _sse_generator():
-    """Yield SSE events when the tasks file changes."""
-    last_mtime = 0.0
-
-    # Send initial data immediately.
-    project_data = tasks.get_project_data(app.state.tasks_file)
-    yield f"data: {json.dumps(project_data)}\n\n"
-    try:
-        last_mtime = os.path.getmtime(app.state.tasks_file)
-    except OSError:
-        pass
-
-    while True:
-        await asyncio.sleep(1)
-
-        try:
-            current_mtime = os.path.getmtime(app.state.tasks_file)
-        except OSError:
-            continue
-
-        if current_mtime != last_mtime:
-            last_mtime = current_mtime
-            project_data = tasks.get_project_data(app.state.tasks_file)
-            yield f"data: {json.dumps(project_data)}\n\n"
-
-
-@app.get("/api/events")
-async def sse_events():
-    """Server-Sent Events endpoint for real-time task updates."""
-    return starlette.responses.StreamingResponse(
-        _sse_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
 
 
 @app.get("/api/agents")
