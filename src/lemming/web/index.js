@@ -40,9 +40,10 @@
       );
 
       $.filteredTasks = $.$computed(($) => {
-        const inProgress = $.tasks.filter((t) => t.status === "in_progress");
-        const pending = $.tasks.filter((t) => t.status === "pending");
-        const completed = $.tasks
+        const ts = $.tasks;
+        const inProgress = ts.filter((t) => t.status === "in_progress");
+        const pending = ts.filter((t) => t.status === "pending");
+        const completed = ts
           .filter((t) => t.status === "completed" && !$.hideCompleted)
           .sort((a, b) => (b.completed_at || 0) - (a.completed_at || 0));
         return [...inProgress, ...pending, ...completed];
@@ -65,6 +66,20 @@
           total += Date.now() / 1000 - task.started_at;
         }
         return $.formatDuration(total);
+      };
+
+      $.copyToClipboard = function (text) {
+        if (!navigator.clipboard) {
+          const el = document.createElement("textarea");
+          el.value = text;
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand("copy");
+          document.body.removeChild(el);
+        } else {
+          navigator.clipboard.writeText(text);
+        }
+        this.addToast("Copied to clipboard", "info");
       };
 
       // --- UI Feedback ---

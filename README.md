@@ -85,6 +85,12 @@ When an agent runs under Lemming, it is instructed to use these commands:
 *   `lemming complete <id>`: Mark the task as successful.
 *   `lemming fail <id>`: Report a blocker or failure for retry.
 
+### Environment Overrides
+You can pass custom environment variables to your agents, which is particularly useful for API keys or configuration that shouldn't be hardcoded.
+
+*   **CLI**: Use the `--env` flag: `lemming run --env OPENAI_API_KEY=sk-...`
+*   **Web UI**: Use the "Environment Overrides" section in the metadata card.
+
 ---
 
 ## Command Reference
@@ -95,12 +101,14 @@ When an agent runs under Lemming, it is instructed to use these commands:
 *   **`add <desc>`**: Append a new task. Supports `--index` and `--agent`.
 *   **`edit <id>`**: Modify a task's description, agent, or position.
 *   **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk operations.
+*   **`cancel <id>`**: Stop an in-progress task (kills the agent process).
 *   **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
 
 ### Execution
 *   **`run`**: Start the orchestrator loop.
     *   `--max-attempts`: Retries per task (default 3).
     *   `--agent`: The CLI tool to invoke.
+    *   `--env`: Set environment variables for the agent (can be used multiple times).
     *   `--`: Use `--` to pass any flag directly to the underlying agent.
 *   **`serve`**: Launch the interactive Web UI.
 

@@ -140,9 +140,9 @@
 
         <section class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden" aria-labelledby="tasks-heading">
             <div class="py-2 px-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                <div class="flex items-center gap-2">
-                    <h2 id="tasks-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Task Queue</h2>
-                    <label class="flex items-center gap-1 cursor-pointer" title="Hide or show completed tasks">
+                <div class="flex items-center gap-3 flex-grow">
+                    <h2 id="tasks-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-shrink-0">Task Queue</h2>
+                    <label class="flex items-center gap-1 cursor-pointer flex-shrink-0" title="Hide or show completed tasks">
                         <input type="checkbox" :bind="hideCompleted" :on:change="saveHideCompletedPreference()" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-3 w-3" aria-label="Hide completed tasks">
                         <span class="font-medium text-gray-500 uppercase tracking-wider text-10px">Hide Completed</span>
                     </label>
@@ -190,8 +190,21 @@
                                     >
                                         {{ task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending')) }}
                                     </span>
-                                    <p class="text-gray-400 font-mono uppercase text-10px" :attr:aria-label="'Task ID ' + task.id + ', ' + task.attempts + ' attempts'" title="Task ID and number of attempts">
-                                        {{ task.id }} &middot; Attempts: {{ task.attempts }}
+                                    <p class="text-gray-400 font-mono uppercase text-10px flex items-center gap-1" :attr:aria-label="'Task ID ' + task.id + ', ' + task.attempts + ' attempts'" title="Task ID and number of attempts">
+                                        {{ task.id }} 
+                                        <button 
+                                            type="button" 
+                                            role="button" 
+                                            :on:click="copyToClipboard(task.id)" 
+                                            class="p-0.5 text-gray-400 hover:text-indigo-600 hover:bg-gray-100 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
+                                            title="Copy Task ID"
+                                            aria-label="Copy Task ID"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                            </svg>
+                                        </button>
+                                        &middot; Attempts: {{ task.attempts }}
                                     </p>
                                 </div>
                             </div>
@@ -272,6 +285,17 @@
                             <div :if="task.run_time || task.status === 'in_progress'">
                                 <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Run Time:</span>
                                 <span class="text-gray-700">{{ formatTaskRunTime(task) }}</span>
+                            </div>
+                            <div>
+                                <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Task Log:</span>
+                                <a 
+                                    :attr:href="task.has_log ? '/tasks/' + task.id + '/log' : 'javascript:void(0)'"
+                                    :attr:target="task.has_log ? '_blank' : ''"
+                                    :attr:class="'transition duration-200 ' + (task.has_log ? 'text-indigo-600 hover:text-indigo-800 font-medium' : 'text-gray-300 cursor-not-allowed no-underline')"
+                                    :attr:title="task.has_log ? 'View full task log in a new tab' : 'No log available for this task'"
+                                >
+                                    {{ task.has_log ? 'View Log' : 'No Log' }}
+                                </a>
                             </div>
                         </div>
                         <div class="mt-3">

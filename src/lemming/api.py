@@ -5,29 +5,20 @@ import logging
 import os
 import pathlib
 import subprocess
-import time
-from typing import List, Optional, Dict
+import sys
 
-from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel
-from starlette.responses import StreamingResponse
+import fastapi
+import fastapi.responses
+import fastapi.staticfiles
+import pydantic
+import starlette.responses
 
-from .core import (
-    get_default_tasks_file,
-    generate_task_id,
-    load_tasks,
-    save_tasks,
-    lock_tasks,
-    update_run_time,
-    cancel_task,
-    STALE_THRESHOLD,
-    is_pid_alive,
-)
+from . import paths
+from . import tasks
+from . import utils
 
 # Paths that should not appear in the uvicorn access log (e.g. polling endpoints).
-QUIET_PATHS = {"/api/data", "/api/events"}
+QUIET_PATHS = {"/api/data", "/api/events", "GET /api/tasks/"}
 
 
 class QuietPollFilter(logging.Filter):
@@ -38,12 +29,12 @@ class QuietPollFilter(logging.Filter):
         return not any(path in msg for path in QUIET_PATHS)
 
 
-app = FastAPI()
-app.state.tasks_file = get_default_tasks_file()
+app = fastapi.FastAPI()
+app.state.tasks_file = paths.get_default_tasks_file()
 
 
 @app.middleware("http")
-async def share_token_middleware(request: Request, call_next):
+async def share_token_middleware(request: fastapi.Request, call_next):
     share_token = getattr(request.app.state, "share_token", None)
     if not share_token:
         return await call_next(request)
@@ -62,64 +53,40 @@ async def share_token_middleware(request: Request, call_next):
     if cookie_token == share_token:
         return await call_next(request)
 
-    return Response("Unauthorized", status_code=401)
+    return fastapi.Response("Unauthorized", status_code=401)
 
 
-class Task(BaseModel):
-    id: Optional[str] = None
+class Task(pydantic.BaseModel):
+    id: str | None = None
     description: str
     status: str = "pending"
     attempts: int = 0
-    outcomes: List[str] = []
-    agent: Optional[str] = None
-    pid: Optional[int] = None
-    completed_at: Optional[float] = None
-    run_time: Optional[float] = None
-    started_at: Optional[float] = None
-    last_heartbeat: Optional[float] = None
+    outcomes: list[str] = []
+    agent: str | None = None
+    pid: int | None = None
+    completed_at: float | None = None
+    run_time: float | None = None
+    started_at: float | None = None
+    last_heartbeat: float | None = None
+    has_log: bool = False
+    index: int | None = -1
 
 
-class ProjectData(BaseModel):
+class ProjectData(pydantic.BaseModel):
     context: str
-    tasks: List[Task]
+    tasks: list[Task]
     cwd: str
     loop_running: bool
 
 
-class RunRequest(BaseModel):
-    agent: Optional[str] = "gemini"
-    env: Optional[Dict[str, str]] = None
+class RunRequest(pydantic.BaseModel):
+    agent: str | None = "gemini"
+    env: dict[str, str] | None = None
 
 
 @app.get("/api/data", response_model=ProjectData)
 def get_data():
-    return _build_project_data()
-
-
-def _build_project_data() -> dict:
-    """Build the project data dict (shared by GET and SSE endpoints)."""
-    data = load_tasks(app.state.tasks_file)
-    tasks = []
-    loop_running = False
-    now = time.time()
-
-    for t in data.get("tasks", []):
-        task = Task(**t)
-        tasks.append(task)
-
-        if task.status == "in_progress":
-            is_stale = (
-                task.last_heartbeat and now - task.last_heartbeat > STALE_THRESHOLD
-            ) or (task.pid and not is_pid_alive(task.pid))
-            if not is_stale:
-                loop_running = True
-
-    return {
-        "context": data.get("context", ""),
-        "tasks": [t.model_dump() for t in tasks],
-        "cwd": os.getcwd(),
-        "loop_running": loop_running,
-    }
+    return tasks.get_project_data(app.state.tasks_file)
 
 
 async def _sse_generator():
@@ -127,7 +94,7 @@ async def _sse_generator():
     last_mtime = 0.0
 
     # Send initial data immediately.
-    project_data = _build_project_data()
+    project_data = tasks.get_project_data(app.state.tasks_file)
     yield f"data: {json.dumps(project_data)}\n\n"
     try:
         last_mtime = os.path.getmtime(app.state.tasks_file)
@@ -144,14 +111,14 @@ async def _sse_generator():
 
         if current_mtime != last_mtime:
             last_mtime = current_mtime
-            project_data = _build_project_data()
+            project_data = tasks.get_project_data(app.state.tasks_file)
             yield f"data: {json.dumps(project_data)}\n\n"
 
 
 @app.get("/api/events")
 async def sse_events():
     """Server-Sent Events endpoint for real-time task updates."""
-    return StreamingResponse(
+    return starlette.responses.StreamingResponse(
         _sse_generator(),
         media_type="text/event-stream",
         headers={
@@ -168,89 +135,95 @@ def get_agents():
 
 @app.post("/api/tasks")
 def add_task(task: Task):
-    with lock_tasks(app.state.tasks_file):
-        data = load_tasks(app.state.tasks_file)
-        new_task = task.model_dump(exclude_none=True)
-        new_task.update(
-            {
-                "id": generate_task_id(),
-                "status": "pending",
-                "attempts": 0,
-                "outcomes": [],
-            }
-        )
-        data["tasks"].append(new_task)
-        save_tasks(app.state.tasks_file, data)
-    return new_task
+    return tasks.add_task(
+        app.state.tasks_file, task.description, task.agent, index=task.index
+    )
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task(task_id: str):
+    data = tasks.load_tasks(app.state.tasks_file)
+    target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
+    if not target:
+        raise fastapi.HTTPException(404, "Task not found")
+    return target
 
 
 @app.patch("/api/tasks/{task_id}")
-def update_task(task_id: str, update: Dict):
-    with lock_tasks(app.state.tasks_file):
-        data = load_tasks(app.state.tasks_file)
+def update_task(task_id: str, update: dict):
+    status = update.get("status")
+
+    # Validation: require outcomes if completing or failing from the UI,
+    # but not if we are just marking a completed task as pending (uncomplete).
+    require_outcomes = False
+    if status in ("completed", "pending"):
+        data = tasks.load_tasks(app.state.tasks_file)
         target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
-        if not target:
-            raise HTTPException(404, "Task not found")
+        if target and target.get("status") != "completed":
+            require_outcomes = True
 
-        if target.get("status") == "completed" and update.get("description"):
-            raise HTTPException(400, "Cannot edit description of a completed task")
-
-        if "status" in update and update["status"] != target.get("status"):
-            if target.get("status") == "in_progress":
-                update_run_time(target)
-            if update["status"] == "completed":
-                target["completed_at"] = time.time()
-            elif update["status"] == "pending":
-                target.pop("completed_at", None)
-                target["attempts"] = 0
-            elif "completed_at" in target:
-                del target["completed_at"]
-            target["status"] = update["status"]
-
-        if "description" in update:
-            target["description"] = update["description"]
-
-        save_tasks(app.state.tasks_file, data)
-    return target
+    try:
+        return tasks.update_task(
+            app.state.tasks_file,
+            task_id,
+            description=update.get("description"),
+            agent=update.get("agent"),
+            index=update.get("index"),
+            status=status,
+            require_outcomes=require_outcomes,
+        )
+    except ValueError as e:
+        if "not found" in str(e):
+            raise fastapi.HTTPException(404, str(e))
+        raise fastapi.HTTPException(400, str(e))
 
 
 @app.delete("/api/tasks/completed")
 def delete_completed_tasks():
-    with lock_tasks(app.state.tasks_file):
-        data = load_tasks(app.state.tasks_file)
-        data["tasks"] = [t for t in data["tasks"] if t.get("status") != "completed"]
-        save_tasks(app.state.tasks_file, data)
+    tasks.delete_tasks(app.state.tasks_file, completed_only=True)
     return {"status": "ok"}
 
 
 @app.delete("/api/tasks/{task_id}")
 def delete_task(task_id: str):
-    with lock_tasks(app.state.tasks_file):
-        data = load_tasks(app.state.tasks_file)
-        data["tasks"] = [t for t in data["tasks"] if not t["id"].startswith(task_id)]
-        save_tasks(app.state.tasks_file, data)
+    tasks.delete_tasks(app.state.tasks_file, task_id=task_id)
     return {"status": "ok"}
 
 
 @app.post("/api/tasks/{task_id}/cancel")
 def cancel_task_endpoint(task_id: str):
-    if cancel_task(app.state.tasks_file, task_id):
+    if tasks.cancel_task(app.state.tasks_file, task_id):
         return {"status": "ok"}
-    raise HTTPException(404, "Task not found")
+    raise fastapi.HTTPException(404, "Task not found")
+
+
+@app.get("/api/tasks/{task_id}/log")
+def get_task_log(task_id: str):
+    log_file = paths.get_log_file(app.state.tasks_file, task_id)
+    if not log_file.exists():
+        return {"log": ""}
+    return {"log": log_file.read_text(encoding="utf-8")}
 
 
 @app.post("/api/context")
-def update_context(update: Dict):
-    with lock_tasks(app.state.tasks_file):
-        data = load_tasks(app.state.tasks_file)
-        data["context"] = update.get("context", "")
-        save_tasks(app.state.tasks_file, data)
+def update_context(update: dict):
+    tasks.update_context(app.state.tasks_file, update.get("context", ""))
     return {"status": "ok"}
 
 
 @app.post("/api/run")
 def run_loop(request: RunRequest):
-    cmd = ["lemming", "run"]
+    # Use sys.executable -m lemming.main to ensure we use the same environment
+    # and pass the explicit tasks file.
+    cmd = [
+        sys.executable,
+        "-m",
+        "lemming.main",
+        "--tasks-file",
+        str(app.state.tasks_file),
+    ]
+    cmd.append("run")
+
     if request.agent:
         cmd.extend(["--agent", request.agent])
 
@@ -262,51 +235,20 @@ def run_loop(request: RunRequest):
     return {"status": "started"}
 
 
-def _in_git_repo() -> bool:
-    """Check if cwd is inside a git repository (cached after first call)."""
-    if not hasattr(_in_git_repo, "_result"):
-        try:
-            _in_git_repo._result = (
-                subprocess.run(
-                    ["git", "rev-parse", "--git-dir"],
-                    capture_output=True,
-                ).returncode
-                == 0
-            )
-        except Exception:
-            _in_git_repo._result = False
-    return _in_git_repo._result
-
-
-def is_ignored(path: pathlib.Path) -> bool:
-    if not _in_git_repo():
-        return False
-    try:
-        return (
-            subprocess.run(
-                ["git", "check-ignore", "-q", str(path)],
-                capture_output=True,
-            ).returncode
-            == 0
-        )
-    except Exception:
-        return False
-
-
 @app.get("/api/files/{path:path}")
 def get_files_api(path: str):
     base_path = pathlib.Path.cwd().resolve()
     target_path = (base_path / path).resolve()
 
-    if not str(target_path).startswith(str(base_path)) or is_ignored(target_path):
-        raise HTTPException(403, "Forbidden")
+    if not str(target_path).startswith(str(base_path)) or utils.is_ignored(target_path):
+        raise fastapi.HTTPException(403, "Forbidden")
 
     if not target_path.is_dir():
-        raise HTTPException(400, "Not a directory")
+        raise fastapi.HTTPException(400, "Not a directory")
 
     contents = []
     for item in target_path.iterdir():
-        if is_ignored(item):
+        if utils.is_ignored(item):
             continue
         rel_path = item.relative_to(base_path)
         is_dir = item.is_dir()
@@ -328,30 +270,35 @@ def get_files_api(path: str):
     }
 
 
+@app.get("/tasks/{task_id}/log")
+def serve_task_log(task_id: str):
+    return fastapi.responses.FileResponse(web_dir / "logs.html")
+
+
 @app.get("/files/{path:path}")
 def serve_files(path: str):
     base_path = pathlib.Path.cwd().resolve()
     target_path = (base_path / path).resolve()
 
-    if not str(target_path).startswith(str(base_path)) or is_ignored(target_path):
-        raise HTTPException(403, "Forbidden")
+    if not str(target_path).startswith(str(base_path)) or utils.is_ignored(target_path):
+        raise fastapi.HTTPException(403, "Forbidden")
 
     if target_path.is_dir():
-        return FileResponse(web_dir / "files.html")
+        return fastapi.responses.FileResponse(web_dir / "files.html")
     if target_path.is_file():
-        return FileResponse(target_path)
-    raise HTTPException(404, "Not found")
+        return fastapi.responses.FileResponse(target_path)
+    raise fastapi.HTTPException(404, "Not found")
 
 
 @app.get("/files")
 def redirect_files():
-    return RedirectResponse("/files/")
+    return fastapi.responses.RedirectResponse("/files/")
 
 
 web_dir = pathlib.Path(str(importlib.resources.files("lemming").joinpath("web")))
-app.mount("/static", StaticFiles(directory=web_dir), name="static")
+app.mount("/static", fastapi.staticfiles.StaticFiles(directory=web_dir), name="static")
 
 
 @app.get("/")
 def read_index():
-    return FileResponse(web_dir / "index.html")
+    return fastapi.responses.FileResponse(web_dir / "index.html")

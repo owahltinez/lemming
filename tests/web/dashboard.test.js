@@ -38,12 +38,13 @@ const createInitialState = (overrides = {}) => {
       return this.formatDuration(total);
     },
     filteredTasks: $computed(() => {
-      const ts = hideCompleted
-        ? tasks.filter((t) => t.status !== "completed")
-        : tasks;
-      const inProgress = ts.filter((t) => t.status === "in_progress");
-      const pending = ts.filter((t) => t.status === "pending");
-      const completed = ts
+      const ts = tasks;
+      const filtered = hideCompleted
+        ? ts.filter((t) => t.status !== "completed")
+        : ts;
+      const inProgress = filtered.filter((t) => t.status === "in_progress");
+      const pending = filtered.filter((t) => t.status === "pending");
+      const completed = filtered
         .filter((t) => t.status === "completed")
         .sort((a, b) => (b.completed_at || 0) - (a.completed_at || 0));
       return [...inProgress, ...pending, ...completed];
@@ -62,16 +63,18 @@ describe("Lemming Web Dashboard", () => {
         description: "Oldest Completed",
         status: "completed",
         completed_at: 1000,
+        outcomes: [],
       },
-      { id: "p1", description: "Pending 1", status: "pending" },
-      { id: "r1", description: "Running", status: "in_progress" },
+      { id: "p1", description: "Pending 1", status: "pending", outcomes: [] },
+      { id: "r1", description: "Running", status: "in_progress", outcomes: [] },
       {
         id: "c2",
         description: "Newest Completed",
         status: "completed",
         completed_at: 2000,
+        outcomes: [],
       },
-      { id: "p2", description: "Pending 2", status: "pending" },
+      { id: "p2", description: "Pending 2", status: "pending", outcomes: [] },
     ];
 
     const renderer = new Renderer(
@@ -611,14 +614,28 @@ describe("Lemming Web Dashboard", () => {
         description: "Running Task",
         status: "in_progress",
         attempts: 1,
+        outcomes: [],
       },
-      { id: "p1", description: "Pending Task", status: "pending", attempts: 0 },
-      { id: "f1", description: "Failed Task", status: "pending", attempts: 1 },
+      {
+        id: "p1",
+        description: "Pending Task",
+        status: "pending",
+        attempts: 0,
+        outcomes: [],
+      },
+      {
+        id: "f1",
+        description: "Failed Task",
+        status: "pending",
+        attempts: 1,
+        outcomes: [],
+      },
       {
         id: "c1",
         description: "Completed Task",
         status: "completed",
         attempts: 1,
+        outcomes: [],
       },
     ];
 
@@ -674,6 +691,7 @@ describe("Lemming Web Dashboard", () => {
         attempts: 1,
         run_time: 50.0,
         started_at: now - 20, // Started 20 seconds ago
+        outcomes: [],
       },
     ];
 
@@ -698,5 +716,22 @@ describe("Lemming Web Dashboard", () => {
     assert.ok(runTimeValue, "Run Time value should be present");
     // Should be around 70s (50 + 20)
     assert.ok(runTimeValue.textContent.includes("1m 10s"));
+  });
+
+  test("renders copy task id button", async () => {
+    const tasks = [
+      { id: "123", description: "Test", status: "pending", outcomes: [] },
+    ];
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+      }),
+    );
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    await renderer.mount(fragment);
+
+    const copyBtn = fragment.querySelector('[aria-label="Copy Task ID"]');
+    assert.ok(copyBtn, "Copy Task ID button should exist");
   });
 });

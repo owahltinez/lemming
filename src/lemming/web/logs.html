@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lemming - Task Log</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
+    <script src="/static/mancha.js" css="basic+utils"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans">
+    <div class="max-w-4xl mx-auto p-4">
+        <header class="mb-4 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-4 flex-shrink-0">
+                <a href="/" class="text-indigo-600 hover:text-indigo-800 transition duration-200" title="Back to Dashboard" aria-label="Back to Dashboard">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                </a>
+                <h1 class="text-2xl font-bold text-indigo-600" title="Lemming Task Runner">Task Log</h1>
+            </div>
+            <div class="text-sm font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded truncate min-w-0" :attr:title="task.description">
+                {{ task.id }} &middot; {{ task.status }}
+            </div>
+        </header>
+
+        <section class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div class="py-2 px-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Log Output</h2>
+                <div :if="task.status === 'in_progress'" class="flex items-center gap-2">
+                    <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                    <span class="text-xs font-medium text-blue-600 uppercase tracking-wider">Live</span>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-900 overflow-hidden">
+                <pre id="log-container" class="text-gray-100 text-[11px] font-mono leading-tight overflow-auto max-h-[70vh] whitespace-pre-wrap">{{ taskLog || 'Loading log content...' }}</pre>
+            </div>
+        </section>
+
+        <footer class="mt-4 text-center">
+            <p class="text-xs text-gray-400 font-mono italic">{{ task.description }}</p>
+        </footer>
+    </div>
+
+    <script>
+        (async () => {
+            window.ManchaApp = Mancha.initMancha({
+                cloak: true,
+                callback: async (renderer) => {
+                    const { $ } = renderer;
+
+                    $.task = { id: '', status: '', description: '' };
+                    $.taskLog = '';
+                    $.loading = true;
+
+                    const getTaskId = () => {
+                        const parts = window.location.pathname.split('/');
+                        // Expected: /tasks/{task_id}/log
+                        return parts[parts.length - 2];
+                    };
+
+                    $.fetchTask = async () => {
+                        const taskId = getTaskId();
+                        const response = await fetch(`/api/tasks/${taskId}`);
+                        if (response.ok) {
+                            $.task = await response.json();
+                        } else {
+                            console.error('Failed to fetch task details');
+                        }
+                    };
+
+                    $.fetchLog = async () => {
+                        const taskId = getTaskId();
+                        const response = await fetch(`/api/tasks/${taskId}/log`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            const newLog = data.log || 'No log available yet.';
+                            
+                            // Only update if changed to avoid unnecessary re-renders
+                            if (newLog !== $.taskLog) {
+                                $.taskLog = newLog;
+                                // Scroll to bottom on update
+                                setTimeout(() => {
+                                    const container = document.getElementById('log-container');
+                                    if (container) container.scrollTop = container.scrollHeight;
+                                }, 0);
+                            }
+                        }
+                    };
+
+                    $.refresh = async () => {
+                        await $.fetchTask();
+                        await $.fetchLog();
+                        
+                        // Auto-refresh if in progress
+                        if ($.task.status === 'in_progress') {
+                            setTimeout($.refresh, 2000);
+                        }
+                    };
+
+                    await $.refresh();
+                    await renderer.mount(document.body);
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

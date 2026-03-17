@@ -1,8 +1,8 @@
 import abc
+import json
 import re
 import subprocess
 import time
-from typing import Optional
 
 
 class TunnelProvider(abc.ABC):
@@ -19,7 +19,7 @@ class TunnelProvider(abc.ABC):
 
 class CloudflareProvider(TunnelProvider):
     def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
 
     def start(self, local_port: int) -> str:
         if (
@@ -67,7 +67,7 @@ class CloudflareProvider(TunnelProvider):
 
 class TailscaleProvider(TunnelProvider):
     def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
 
     def start(self, local_port: int) -> str:
         if subprocess.run(["which", "tailscale"], capture_output=True).returncode != 0:
@@ -97,8 +97,6 @@ class TailscaleProvider(TunnelProvider):
             raise RuntimeError(
                 "Failed to run 'tailscale status'. Is tailscaled running?"
             )
-
-        import json
 
         try:
             data = json.loads(status.stdout)
