@@ -2,15 +2,23 @@ import contextlib
 import os
 import pathlib
 import secrets
+import subprocess
 import time
+
 from filelock import FileLock
+
+from . import tasks
 
 STALE_THRESHOLD = 30  # seconds
 
 
 @contextlib.contextmanager
 def lock_tasks(tasks_file: pathlib.Path):
-    """Context manager for file locking."""
+    """Context manager for cross-platform file locking.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+    """
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
     # Ensure the file exists before we can lock it
     if not tasks_file.exists():
@@ -22,12 +30,23 @@ def lock_tasks(tasks_file: pathlib.Path):
 
 
 def generate_task_id() -> str:
-    """Generates a random short hex string for the task ID."""
+    """Generates a random short hex string for a unique task ID.
+
+    Returns:
+        A random 8-character hex string.
+    """
     return secrets.token_hex(4)
 
 
 def is_pid_alive(pid: int) -> bool:
-    """Check if a process is still running."""
+    """Check if a process is still running.
+
+    Args:
+        pid: The process ID to check.
+
+    Returns:
+        True if the process is alive, False otherwise.
+    """
     try:
         os.kill(pid, 0)
     except OSError:
@@ -35,8 +54,13 @@ def is_pid_alive(pid: int) -> bool:
     return True
 
 
-def update_run_time(task: dict, end_time: float | None = None) -> None:
-    """Accumulate run time for the task."""
+def update_run_time(task: tasks.TaskDict, end_time: float | None = None) -> None:
+    """Accumulates the execution run time for a given task.
+
+    Args:
+        task: The TaskDict to update.
+        end_time: Optional end timestamp (defaults to current time).
+    """
     if "started_at" in task:
         end = end_time or time.time()
         duration = end - task["started_at"]
@@ -45,9 +69,13 @@ def update_run_time(task: dict, end_time: float | None = None) -> None:
 
 
 def in_git_repo() -> bool:
-    """Check if cwd is inside a git repository (cached after first call)."""
-    import subprocess
+    """Check if the current directory is inside a git repository.
 
+    The result is cached on the function after the first call.
+
+    Returns:
+        True if inside a git repository, False otherwise.
+    """
     if not hasattr(in_git_repo, "_result"):
         try:
             in_git_repo._result = (
@@ -63,9 +91,14 @@ def in_git_repo() -> bool:
 
 
 def is_ignored(path: pathlib.Path) -> bool:
-    """Check if a path is ignored by git."""
-    import subprocess
+    """Check if a given path is ignored by git.
 
+    Args:
+        path: The path to check for git-ignore status.
+
+    Returns:
+        True if the path is ignored by git, False otherwise.
+    """
     if not in_git_repo():
         return False
     try:
