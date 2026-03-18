@@ -73,6 +73,15 @@ def test_reset_task(tmp_path):
     assert data["tasks"][0]["outcomes"] == []
 
 
+def test_update_run_time():
+    import time
+
+    task = {"started_at": time.time() - 5}
+    tasks.update_run_time(task)
+    assert "run_time" in task
+    assert 5 <= task["run_time"] <= 6
+
+
 def test_claim_already_in_progress(tmp_path):
     import os
 

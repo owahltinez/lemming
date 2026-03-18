@@ -1,17 +1,10 @@
-from __future__ import annotations
-
 import contextlib
 import os
 import pathlib
 import secrets
 import subprocess
-import time
-from typing import TYPE_CHECKING
 
 from filelock import FileLock
-
-if TYPE_CHECKING:
-    from . import tasks
 
 STALE_THRESHOLD = 30  # seconds
 
@@ -56,20 +49,6 @@ def is_pid_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
-
-
-def update_run_time(task: tasks.TaskDict, end_time: float | None = None) -> None:
-    """Accumulates the execution run time for a given task.
-
-    Args:
-        task: The TaskDict to update.
-        end_time: Optional end timestamp (defaults to current time).
-    """
-    if "started_at" in task:
-        end = end_time or time.time()
-        duration = end - task["started_at"]
-        task["run_time"] = task.get("run_time", 0) + duration
-        del task["started_at"]
 
 
 def in_git_repo() -> bool:

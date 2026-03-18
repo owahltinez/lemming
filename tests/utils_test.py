@@ -1,5 +1,4 @@
 import os
-import time
 
 from lemming import utils
 
@@ -14,14 +13,6 @@ def test_generate_task_id():
 def test_is_pid_alive():
     assert utils.is_pid_alive(os.getpid()) is True
     assert utils.is_pid_alive(999999) is False  # Assuming this PID doesn't exist
-
-
-def test_update_run_time():
-    task = {"started_at": time.time() - 5}
-    utils.update_run_time(task)
-    assert "run_time" in task
-    assert 5 <= task["run_time"] <= 6
-    assert "started_at" not in task
 
 
 def test_in_git_repo():

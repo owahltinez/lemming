@@ -42,6 +42,20 @@ class ProjectDataDict(TypedDict, total=False):
     loop_running: bool
 
 
+def update_run_time(task: TaskDict, end_time: float | None = None) -> None:
+    """Accumulates the execution run time for a given task.
+
+    Args:
+        task: The TaskDict to update.
+        end_time: Optional end timestamp (defaults to current time).
+    """
+    if "started_at" in task:
+        end = end_time or time.time()
+        duration = end - task["started_at"]
+        task["run_time"] = task.get("run_time", 0) + duration
+        del task["started_at"]
+
+
 def load_tasks(tasks_file: pathlib.Path) -> RoadmapDict:
     """Loads tasks from a YAML file.
 
@@ -273,7 +287,7 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> TaskDict | No
 
         if task.get("status") == "in_progress":
             # Reset to pending if it's still in_progress but the process finished
-            utils.update_run_time(task)
+            update_run_time(task)
             task["status"] = "pending"
             task.pop("pid", None)
             task.pop("last_heartbeat", None)
@@ -337,7 +351,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
                         except OSError:
                             pass
 
-                utils.update_run_time(task)
+                update_run_time(task)
                 task["status"] = "pending"
                 if "pid" in task:
                     del task["pid"]
@@ -495,7 +509,7 @@ def update_task(
 
         if status and status != target.get("status"):
             if target.get("status") == "in_progress":
-                utils.update_run_time(target)
+                update_run_time(target)
             if status == "completed":
                 target["completed_at"] = time.time()
             elif status == "pending":
