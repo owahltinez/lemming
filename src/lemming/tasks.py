@@ -1,13 +1,42 @@
 import os
 import pathlib
 import time
+from typing import List, Optional, TypedDict
+
 import yaml
 
 from . import paths
 from . import utils
 
 
-def load_tasks(tasks_file: pathlib.Path) -> dict:
+class TaskDict(TypedDict, total=False):
+    id: str
+    description: str
+    status: str
+    attempts: int
+    outcomes: List[str]
+    agent: str
+    completed_at: float
+    started_at: float
+    run_time: float
+    pid: int
+    last_heartbeat: float
+    has_log: bool
+
+
+class RoadmapDict(TypedDict, total=False):
+    context: str
+    tasks: List[TaskDict]
+
+
+class ProjectDataDict(TypedDict, total=False):
+    context: str
+    tasks: List[TaskDict]
+    cwd: str
+    loop_running: bool
+
+
+def load_tasks(tasks_file: pathlib.Path) -> RoadmapDict:
     if not tasks_file.exists():
         return {
             "context": "# Project Context\n\nAdd your guidelines here.",
@@ -34,20 +63,20 @@ def load_tasks(tasks_file: pathlib.Path) -> dict:
         return data
 
 
-def save_tasks(tasks_file: pathlib.Path, data: dict) -> None:
+def save_tasks(tasks_file: pathlib.Path, data: RoadmapDict) -> None:
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
     with open(tasks_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=80)
 
 
-def get_project_data(tasks_file: pathlib.Path) -> dict:
+def get_project_data(tasks_file: pathlib.Path) -> ProjectDataDict:
     """Consolidated logic to get project state (tasks, context, loop status)."""
     data = load_tasks(tasks_file)
     tasks_list = data.get("tasks", [])
     now = time.time()
 
     loop_running = False
-    enriched_tasks = []
+    enriched_tasks: List[TaskDict] = []
 
     for t in tasks_list:
         # Check if task has a log file
@@ -85,7 +114,7 @@ def get_project_data(tasks_file: pathlib.Path) -> dict:
     }
 
 
-def get_pending_task(data: dict) -> dict | None:
+def get_pending_task(data: RoadmapDict) -> Optional[TaskDict]:
     now = time.time()
     for task in data.get("tasks", []):
         if task.get("status") == "in_progress":
@@ -109,7 +138,7 @@ def get_pending_task(data: dict) -> dict | None:
     return None
 
 
-def _mark_task_in_progress(data: dict, task_id: str, pid: int | None = None) -> bool:
+def _mark_task_in_progress(data: RoadmapDict, task_id: str, pid: Optional[int] = None) -> bool:
     """Internal helper to mark a task as in_progress without locking or saving."""
     now = time.time()
     for task in data.get("tasks", []):
@@ -137,7 +166,7 @@ def _mark_task_in_progress(data: dict, task_id: str, pid: int | None = None) -> 
 
 
 def mark_task_in_progress(
-    tasks_file: pathlib.Path, task_id: str, pid: int | None = None
+    tasks_file: pathlib.Path, task_id: str, pid: Optional[int] = None
 ) -> bool:
     """Try to mark a task as in_progress. Returns True if successful."""
     with utils.lock_tasks(tasks_file):
@@ -148,7 +177,7 @@ def mark_task_in_progress(
     return False
 
 
-def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> dict | None:
+def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> Optional[TaskDict]:
     """Claims a task for execution: marks in_progress and increments attempts. Returns the task dict."""
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
@@ -161,7 +190,7 @@ def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> dict | None:
         return task
 
 
-def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> dict | None:
+def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> Optional[TaskDict]:
     """Handles post-execution cleanup for a task attempt. Returns the updated task dict."""
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
@@ -169,7 +198,7 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> dict | None:
         if not task:
             return None
 
-        if task["status"] == "in_progress":
+        if task.get("status") == "in_progress":
             # Reset to pending if it's still in_progress but the process finished
             utils.update_run_time(task)
             task["status"] = "pending"
@@ -231,9 +260,9 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
 def add_task(
     tasks_file: pathlib.Path,
     description: str,
-    agent: str | None = None,
+    agent: Optional[str] = None,
     index: int = -1,
-) -> dict:
+) -> TaskDict:
     """Adds a new task to the roadmap."""
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
@@ -243,7 +272,7 @@ def add_task(
         while task_id in existing_ids:
             task_id = utils.generate_task_id()
 
-        new_task = {
+        new_task: TaskDict = {
             "id": task_id,
             "description": description,
             "status": "pending",
@@ -264,7 +293,7 @@ def add_task(
 
 def delete_tasks(
     tasks_file: pathlib.Path,
-    task_id: str | None = None,
+    task_id: Optional[str] = None,
     all_tasks: bool = False,
     completed_only: bool = False,
 ) -> int:
@@ -300,12 +329,12 @@ def delete_tasks(
 def update_task(
     tasks_file: pathlib.Path,
     task_id: str,
-    description: str | None = None,
-    agent: str | None = None,
-    index: int | None = None,
-    status: str | None = None,
+    description: Optional[str] = None,
+    agent: Optional[str] = None,
+    index: Optional[int] = None,
+    status: Optional[str] = None,
     require_outcomes: bool = False,
-) -> dict:
+) -> TaskDict:
     """Updates an existing task."""
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
@@ -359,7 +388,7 @@ def update_task(
     return target
 
 
-def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str) -> dict:
+def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str) -> TaskDict:
     """Adds an outcome to a task."""
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
@@ -374,7 +403,7 @@ def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str) -> dict:
     return target
 
 
-def reset_task(tasks_file: pathlib.Path, task_id: str) -> dict:
+def reset_task(tasks_file: pathlib.Path, task_id: str) -> TaskDict:
     """Resets a task's attempts and outcomes."""
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
