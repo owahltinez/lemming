@@ -84,6 +84,8 @@ When an agent runs under Lemming, it is instructed to use these commands:
 *   `lemming outcome <id> "finding"`: Record a technical detail (e.g. "Database schema is in /migrations").
 *   `lemming complete <id>`: Mark the task as successful.
 *   `lemming fail <id>`: Report a blocker or failure for retry.
+*   `lemming add <desc> [--index N]`: Add or insert new tasks into the queue.
+*   `lemming --help`: Explore the full list of available commands.
 
 ### Environment Overrides
 You can pass custom environment variables to your agents, which is particularly useful for API keys or configuration that shouldn't be hardcoded.
