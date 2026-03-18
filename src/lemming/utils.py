@@ -1,9 +1,9 @@
 import contextlib
-import fcntl
 import os
 import pathlib
 import secrets
 import time
+from filelock import FileLock
 
 STALE_THRESHOLD = 30  # seconds
 
@@ -16,12 +16,9 @@ def lock_tasks(tasks_file: pathlib.Path):
     if not tasks_file.exists():
         tasks_file.write_text("{}", encoding="utf-8")
 
-    with open(tasks_file, "r+") as f:
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            yield f
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+    lock_path = tasks_file.with_suffix(".lock")
+    with FileLock(lock_path):
+        yield
 
 
 def generate_task_id() -> str:
