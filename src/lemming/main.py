@@ -50,7 +50,13 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
 )
 @click.pass_context
 def add(ctx: click.Context, description: str, index: int, agent_name: str | None):
-    """Add a new task to the queue."""
+    """Adds a new task to the roadmap queue.
+
+    Args:
+        description: A text description of the task to perform.
+        index: The position in the roadmap to insert the task.
+        agent_name: An optional custom agent to use for this specific task.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
@@ -76,7 +82,14 @@ def edit(
     agent_name: str | None,
     index: int | None,
 ):
-    """Edit an existing task's details."""
+    """Edits an existing task's description, preferred agent, or position.
+
+    Args:
+        task_id: The ID of the task to update.
+        description: The new description (optional).
+        agent_name: The new preferred agent (optional).
+        index: The new position in the roadmap (optional).
+    """
     if description is None and agent_name is None and index is None:
         click.echo(
             "Error: At least one of --description, --agent, or --index must be provided."
@@ -105,7 +118,13 @@ def edit(
 def delete_task(
     ctx: click.Context, task_id: str | None, delete_all: bool, completed: bool
 ):
-    """Delete a task from the queue."""
+    """Deletes one or more tasks from the roadmap.
+
+    Args:
+        task_id: The ID of the specific task to delete.
+        delete_all: If set, clears the entire roadmap and project context.
+        completed: If set, deletes all tasks marked as 'completed'.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
 
     # Validate argument combinations
@@ -138,7 +157,11 @@ def delete_task(
 @click.argument("task_id", required=False)
 @click.pass_context
 def status(ctx: click.Context, task_id: str | None):
-    """Show context or task details."""
+    """Displays the roadmap status or details for a specific task.
+
+    Args:
+        task_id: Optional ID of the task to inspect in detail.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
     project_data = tasks.get_project_data(tasks_file)
@@ -229,7 +252,12 @@ def status(ctx: click.Context, task_id: str | None):
 )
 @click.pass_context
 def context(ctx: click.Context, context_text: str | None, file: pathlib.Path | None):
-    """View or set the project context."""
+    """Sets or displays the global project-wide context and rules.
+
+    Args:
+        context_text: The context string to set (optional).
+        file: A file path to read the context from (optional).
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
 
     if file:
@@ -247,7 +275,11 @@ def context(ctx: click.Context, context_text: str | None, file: pathlib.Path | N
 @click.argument("task_id")
 @click.pass_context
 def complete(ctx: click.Context, task_id: str):
-    """Mark a task as completed."""
+    """Marks a task as completed (requires at least one recorded outcome).
+
+    Args:
+        task_id: The ID of the task to mark as completed.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
 
     try:
@@ -264,7 +296,11 @@ def complete(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def uncomplete(ctx: click.Context, task_id: str):
-    """Mark a completed task as pending."""
+    """Unmarks a completed task, moving it back to 'pending' status.
+
+    Args:
+        task_id: The ID of the task to uncomplete.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(tasks_file, task_id, status="pending")
@@ -279,7 +315,12 @@ def uncomplete(ctx: click.Context, task_id: str):
 @click.argument("text")
 @click.pass_context
 def outcome(ctx: click.Context, task_id: str, text: str):
-    """Add a technical outcome to a task."""
+    """Records a technical outcome or finding for a specific task.
+
+    Args:
+        task_id: The ID of the task.
+        text: The technical detail or outcome to record.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.add_outcome(tasks_file, task_id, text)
@@ -293,7 +334,11 @@ def outcome(ctx: click.Context, task_id: str, text: str):
 @click.argument("task_id")
 @click.pass_context
 def fail(ctx: click.Context, task_id: str):
-    """Record a task failure."""
+    """Records a task failure (requires at least one recorded outcome).
+
+    Args:
+        task_id: The ID of the task to mark as failed.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(
@@ -309,7 +354,11 @@ def fail(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def cancel(ctx: click.Context, task_id: str):
-    """Stop an in-progress task."""
+    """Kills the agent process for an in-progress task and resets it to pending.
+
+    Args:
+        task_id: The ID of the task to cancel.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     if tasks.cancel_task(tasks_file, task_id):
         click.echo(f"Task {task_id} cancelled.")
@@ -322,7 +371,11 @@ def cancel(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def reset(ctx: click.Context, task_id: str):
-    """Clear a task's attempts and outcomes."""
+    """Clears all history (attempts, outcomes, and logs) for a specific task.
+
+    Args:
+        task_id: The ID of the task to reset.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.reset_task(tasks_file, task_id)
@@ -380,7 +433,18 @@ def run(
     prompt_flag: str | None,
     agent_args: tuple,
 ):
-    """Run the autonomous task execution loop."""
+    """Starts the orchestrator loop to autonomously execute pending tasks.
+
+    Args:
+        max_attempts: Maximum retries per task.
+        retry_delay: Delay between retries.
+        yolo: If True, skip agent confirmations.
+        agent_name: The CLI agent to invoke.
+        env: Environment variables to inject.
+        no_defaults: Skip default flag injection.
+        prompt_flag: Explicit prompt flag for the agent.
+        agent_args: Raw arguments passed directly to the agent.
+    """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
@@ -517,7 +581,12 @@ def run(
 @click.option("--host", default="127.0.0.1", help="Host to bind the server to.")
 @click.pass_context
 def serve(ctx: click.Context, port: int, host: str):
-    """Launch the web interface."""
+    """Launches the local web dashboard for monitoring and interaction.
+
+    Args:
+        port: The local port to bind the server to.
+        host: The local host to bind the server to.
+    """
     import copy
 
     import uvicorn
@@ -540,6 +609,14 @@ def serve(ctx: click.Context, port: int, host: str):
 
 
 def parse_timeout(t_str: str) -> float:
+    """Parses a duration string into seconds.
+
+    Args:
+        t_str: Duration string (e.g., '8h', '30m', '90s').
+
+    Returns:
+        The duration in seconds as a float.
+    """
     t_str = t_str.strip()
     if t_str == "0" or t_str.startswith("-"):
         return 0.0
@@ -576,7 +653,14 @@ def parse_timeout(t_str: str) -> float:
 @click.option("--host", default="127.0.0.1", help="Host to bind the local server to.")
 @click.pass_context
 def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str):
-    """Expose the Lemming UI to the public internet securely."""
+    """Exposes the local web dashboard to the public internet via a secure tunnel.
+
+    Args:
+        provider: The tunnel provider (cloudflare or tailscale).
+        timeout: The session timeout duration.
+        port: The local port to expose.
+        host: The local host to expose.
+    """
     import copy
     import os
     import secrets
