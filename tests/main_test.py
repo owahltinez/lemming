@@ -1009,6 +1009,45 @@ class TestLemmingRun(unittest.TestCase):
         )
         self.assertIn("An error occurred while executing gemini", result.output)
 
+    @unittest.mock.patch("subprocess.Popen")
+    def test_run_recovers_stale_task(self, mock_popen):
+        # 1. Mark a task as in_progress with a very old heartbeat
+        with utils.lock_tasks(self.test_tasks_file):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data["tasks"][0]["status"] = "in_progress"
+            data["tasks"][0]["last_heartbeat"] = time.time() - (utils.STALE_THRESHOLD + 10)
+            data["tasks"][0]["pid"] = 999999  # Some fake PID
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        # 2. Setup mock for the agent
+        mock_process = unittest.mock.MagicMock()
+        mock_process.poll.side_effect = [None, 0]
+        mock_process.returncode = 0
+        mock_process.stdout = iter(["success\n"])
+        
+        def wait_side_effect():
+            # Simulate task completion
+            with utils.lock_tasks(self.test_tasks_file):
+                data = tasks.load_tasks(self.test_tasks_file)
+                data["tasks"][0]["status"] = "completed"
+                tasks.save_tasks(self.test_tasks_file, data)
+            return 0
+        mock_process.wait.side_effect = wait_side_effect
+        mock_popen.return_value = mock_process
+
+        # 3. Run lemming
+        result = self.runner.invoke(
+            main.cli, ["--verbose"] + self.base_args + ["run", "--max-attempts", "1"]
+        )
+        
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Attempt 1/1", result.output)
+        self.assertIn("All tasks completed!", result.output)
+        
+        # Verify it was indeed picked up
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data["tasks"][0]["status"], "completed")
+
 
 class TestLemmingLogging(unittest.TestCase):
     def setUp(self):
@@ -1118,7 +1157,6 @@ class TestLemmingLogging(unittest.TestCase):
 
         self.assertFalse(log1.exists())
         self.assertFalse(log2.exists())
-
 
 class TestLemmingShare(unittest.TestCase):
     def setUp(self):

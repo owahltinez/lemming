@@ -71,3 +71,32 @@ def test_reset_task(tmp_path):
     assert data["tasks"][0]["status"] == "pending"
     assert data["tasks"][0]["attempts"] == 0
     assert data["tasks"][0]["outcomes"] == []
+
+
+def test_claim_already_in_progress(tmp_path):
+    import os
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Already in progress")
+    task_id = task["id"]
+
+    # First claim with alive PID
+    claimed = tasks.claim_task(tasks_file, task_id, pid=os.getpid())
+    assert claimed is not None
+    assert claimed["status"] == "in_progress"
+
+    # Second claim should fail
+    claimed_again = tasks.claim_task(tasks_file, task_id, pid=456)
+    assert claimed_again is None
+
+    # But if it's stale, it should succeed
+    import time
+    from lemming import utils
+    with utils.lock_tasks(tasks_file):
+        data = tasks.load_tasks(tasks_file)
+        data["tasks"][0]["last_heartbeat"] = time.time() - (utils.STALE_THRESHOLD + 1)
+        tasks.save_tasks(tasks_file, data)
+
+    claimed_stale = tasks.claim_task(tasks_file, task_id, pid=789)
+    assert claimed_stale is not None
+    assert claimed_stale["pid"] == 789
+    assert claimed_stale["attempts"] == 2
