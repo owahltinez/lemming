@@ -1,7 +1,7 @@
 import os
 import pathlib
 import time
-from typing import List, Optional, TypedDict
+from typing import TypedDict
 
 import yaml
 
@@ -10,11 +10,12 @@ from . import utils
 
 
 class TaskDict(TypedDict, total=False):
+    """Represents a single task in the roadmap."""
     id: str
     description: str
     status: str
     attempts: int
-    outcomes: List[str]
+    outcomes: list[str]
     agent: str
     completed_at: float
     started_at: float
@@ -25,18 +26,28 @@ class TaskDict(TypedDict, total=False):
 
 
 class RoadmapDict(TypedDict, total=False):
+    """Represents the entire roadmap state."""
     context: str
-    tasks: List[TaskDict]
+    tasks: list[TaskDict]
 
 
 class ProjectDataDict(TypedDict, total=False):
+    """Represents the project data returned by the API."""
     context: str
-    tasks: List[TaskDict]
+    tasks: list[TaskDict]
     cwd: str
     loop_running: bool
 
 
 def load_tasks(tasks_file: pathlib.Path) -> RoadmapDict:
+    """Loads tasks from a YAML file.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+
+    Returns:
+        A RoadmapDict containing the context and list of tasks.
+    """
     if not tasks_file.exists():
         return {
             "context": "# Project Context\n\nAdd your guidelines here.",
@@ -64,19 +75,32 @@ def load_tasks(tasks_file: pathlib.Path) -> RoadmapDict:
 
 
 def save_tasks(tasks_file: pathlib.Path, data: RoadmapDict) -> None:
+    """Saves the roadmap data to a YAML file.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        data: The RoadmapDict to save.
+    """
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
     with open(tasks_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=80)
 
 
 def get_project_data(tasks_file: pathlib.Path) -> ProjectDataDict:
-    """Consolidated logic to get project state (tasks, context, loop status)."""
+    """Consolidated logic to get project state (tasks, context, loop status).
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+
+    Returns:
+        A ProjectDataDict containing the enriched project state.
+    """
     data = load_tasks(tasks_file)
     tasks_list = data.get("tasks", [])
     now = time.time()
 
     loop_running = False
-    enriched_tasks: List[TaskDict] = []
+    enriched_tasks: list[TaskDict] = []
 
     for t in tasks_list:
         # Check if task has a log file
@@ -114,7 +138,16 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectDataDict:
     }
 
 
-def get_pending_task(data: RoadmapDict) -> Optional[TaskDict]:
+def get_pending_task(data: RoadmapDict) -> TaskDict | None:
+    """Finds the next task to be executed.
+
+    Args:
+        data: The RoadmapDict to search.
+
+    Returns:
+        The next TaskDict to execute, or None if no tasks are pending or a task
+        is already in progress.
+    """
     now = time.time()
     for task in data.get("tasks", []):
         if task.get("status") == "in_progress":
@@ -138,8 +171,17 @@ def get_pending_task(data: RoadmapDict) -> Optional[TaskDict]:
     return None
 
 
-def _mark_task_in_progress(data: RoadmapDict, task_id: str, pid: Optional[int] = None) -> bool:
-    """Internal helper to mark a task as in_progress without locking or saving."""
+def _mark_task_in_progress(data: RoadmapDict, task_id: str, pid: int | None = None) -> bool:
+    """Internal helper to mark a task as in_progress without locking or saving.
+
+    Args:
+        data: The RoadmapDict to update.
+        task_id: The ID of the task to mark.
+        pid: Optional process ID associated with the task.
+
+    Returns:
+        True if the task was successfully marked, False otherwise.
+    """
     now = time.time()
     for task in data.get("tasks", []):
         if task["id"] == task_id:
@@ -166,9 +208,18 @@ def _mark_task_in_progress(data: RoadmapDict, task_id: str, pid: Optional[int] =
 
 
 def mark_task_in_progress(
-    tasks_file: pathlib.Path, task_id: str, pid: Optional[int] = None
+    tasks_file: pathlib.Path, task_id: str, pid: int | None = None
 ) -> bool:
-    """Try to mark a task as in_progress. Returns True if successful."""
+    """Try to mark a task as in_progress. Returns True if successful.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task to mark.
+        pid: Optional process ID associated with the task.
+
+    Returns:
+        True if the task was successfully marked, False otherwise.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         if _mark_task_in_progress(data, task_id, pid=pid):
@@ -177,8 +228,17 @@ def mark_task_in_progress(
     return False
 
 
-def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> Optional[TaskDict]:
-    """Claims a task for execution: marks in_progress and increments attempts. Returns the task dict."""
+def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> TaskDict | None:
+    """Claims a task for execution: marks in_progress and increments attempts.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task to claim.
+        pid: The process ID of the agent executing the task.
+
+    Returns:
+        The claimed TaskDict, or None if the task could not be claimed.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         if not _mark_task_in_progress(data, task_id, pid=pid):
@@ -190,8 +250,16 @@ def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> Optional[Tas
         return task
 
 
-def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> Optional[TaskDict]:
-    """Handles post-execution cleanup for a task attempt. Returns the updated task dict."""
+def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> TaskDict | None:
+    """Handles post-execution cleanup for a task attempt.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task that finished.
+
+    Returns:
+        The updated TaskDict, or None if not found.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         task = next((t for t in data["tasks"] if t["id"] == task_id), None)
@@ -210,6 +278,12 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> Optional[Task
 
 
 def update_heartbeat(tasks_file: pathlib.Path, task_id: str) -> None:
+    """Updates the heartbeat timestamp for a task.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task to update.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         for task in data.get("tasks", []):
@@ -220,14 +294,27 @@ def update_heartbeat(tasks_file: pathlib.Path, task_id: str) -> None:
 
 
 def clear_log(tasks_file: pathlib.Path, task_id: str) -> None:
-    """Deletes the log file for a given task."""
+    """Deletes the log file for a given task.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task whose log should be cleared.
+    """
     log_file = paths.get_log_file(tasks_file, task_id)
     if log_file.exists():
         log_file.unlink()
 
 
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
-    """Kill the process associated with the task and mark it as pending."""
+    """Kill the process associated with the task and mark it as pending.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task to cancel.
+
+    Returns:
+        True if the task was found and cancellation was attempted, False otherwise.
+    """
     import signal
 
     with utils.lock_tasks(tasks_file):
@@ -260,10 +347,20 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
 def add_task(
     tasks_file: pathlib.Path,
     description: str,
-    agent: Optional[str] = None,
+    agent: str | None = None,
     index: int = -1,
 ) -> TaskDict:
-    """Adds a new task to the roadmap."""
+    """Adds a new task to the roadmap.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        description: Description of the task.
+        agent: Optional preferred agent for this task.
+        index: Position to insert the task at (default: append).
+
+    Returns:
+        The newly created TaskDict.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
 
@@ -293,11 +390,21 @@ def add_task(
 
 def delete_tasks(
     tasks_file: pathlib.Path,
-    task_id: Optional[str] = None,
+    task_id: str | None = None,
     all_tasks: bool = False,
     completed_only: bool = False,
 ) -> int:
-    """Deletes tasks from the roadmap. Returns number of tasks deleted."""
+    """Deletes tasks from the roadmap.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: Optional ID of a specific task to delete.
+        all_tasks: If True, deletes all tasks and clears context.
+        completed_only: If True, deletes only completed tasks.
+
+    Returns:
+        The number of tasks deleted.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         initial_count = len(data["tasks"])
@@ -329,13 +436,29 @@ def delete_tasks(
 def update_task(
     tasks_file: pathlib.Path,
     task_id: str,
-    description: Optional[str] = None,
-    agent: Optional[str] = None,
-    index: Optional[int] = None,
-    status: Optional[str] = None,
+    description: str | None = None,
+    agent: str | None = None,
+    index: int | None = None,
+    status: str | None = None,
     require_outcomes: bool = False,
 ) -> TaskDict:
-    """Updates an existing task."""
+    """Updates an existing task.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task to update.
+        description: New description.
+        agent: New preferred agent.
+        index: New position in the task list.
+        status: New status.
+        require_outcomes: If True, raises ValueError if the task has no outcomes.
+
+    Returns:
+        The updated TaskDict.
+
+    Raises:
+        ValueError: If the task is not found, or if validation fails.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
 
@@ -389,7 +512,16 @@ def update_task(
 
 
 def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str) -> TaskDict:
-    """Adds an outcome to a task."""
+    """Adds an outcome to a task.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task.
+        text: The outcome text to add.
+
+    Returns:
+        The updated TaskDict.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
@@ -404,7 +536,15 @@ def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str) -> TaskDict:
 
 
 def reset_task(tasks_file: pathlib.Path, task_id: str) -> TaskDict:
-    """Resets a task's attempts and outcomes."""
+    """Resets a task's attempts and outcomes.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task to reset.
+
+    Returns:
+        The reset TaskDict.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
@@ -426,7 +566,12 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> TaskDict:
 
 
 def update_context(tasks_file: pathlib.Path, context: str) -> None:
-    """Updates the project context."""
+    """Updates the project context.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        context: The new project context string.
+    """
     with utils.lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         data["context"] = context
