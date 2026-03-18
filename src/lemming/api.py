@@ -12,7 +12,6 @@ import pydantic
 
 from . import paths
 from . import tasks
-from . import utils
 
 # Paths that should not appear in the uvicorn access log (e.g. polling endpoints).
 QUIET_PATHS = {"/api/data", "GET /api/tasks/"}
@@ -207,7 +206,7 @@ def get_files_api(path: str):
     base_path = pathlib.Path.cwd().resolve()
     target_path = (base_path / path).resolve()
 
-    if not str(target_path).startswith(str(base_path)) or utils.is_ignored(target_path):
+    if not str(target_path).startswith(str(base_path)) or paths.is_ignored(target_path):
         raise fastapi.HTTPException(403, "Forbidden")
 
     if not target_path.is_dir():
@@ -215,7 +214,7 @@ def get_files_api(path: str):
 
     contents = []
     for item in target_path.iterdir():
-        if utils.is_ignored(item):
+        if paths.is_ignored(item):
             continue
         rel_path = item.relative_to(base_path)
         is_dir = item.is_dir()
@@ -247,7 +246,7 @@ def serve_files(path: str):
     base_path = pathlib.Path.cwd().resolve()
     target_path = (base_path / path).resolve()
 
-    if not str(target_path).startswith(str(base_path)) or utils.is_ignored(target_path):
+    if not str(target_path).startswith(str(base_path)) or paths.is_ignored(target_path):
         raise fastapi.HTTPException(403, "Forbidden")
 
     if target_path.is_dir():

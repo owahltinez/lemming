@@ -12,7 +12,6 @@ import fastapi.testclient
 from lemming import api
 from lemming import paths
 from lemming import tasks
-from lemming import utils
 
 client = fastapi.testclient.TestClient(api.app)
 
@@ -72,8 +71,8 @@ def git_repo():
     os.chdir(test_dir)
 
     # Clear cached git repo check from previous tests
-    if hasattr(utils.in_git_repo, "_result"):
-        del utils.in_git_repo._result
+    if hasattr(paths.in_git_repo, "_result"):
+        del paths.in_git_repo._result
 
     subprocess.run(["git", "init"], check=True)
     subprocess.run(["git", "config", "user.email", "you@example.com"], check=True)
@@ -93,8 +92,8 @@ def git_repo():
     yield pathlib.Path(test_dir)
 
     # Clear cached git repo check and restore cwd
-    if hasattr(utils.in_git_repo, "_result"):
-        del utils.in_git_repo._result
+    if hasattr(paths.in_git_repo, "_result"):
+        del paths.in_git_repo._result
     os.chdir(orig_cwd)
     shutil.rmtree(test_dir)
 
@@ -107,8 +106,8 @@ def non_git_dir():
     os.chdir(test_dir)
 
     # Clear cached git repo check
-    if hasattr(utils.in_git_repo, "_result"):
-        del utils.in_git_repo._result
+    if hasattr(paths.in_git_repo, "_result"):
+        del paths.in_git_repo._result
 
     # Create files (including one that would be "ignored" if git were present)
     (pathlib.Path(test_dir) / "file1.txt").write_text("content1")
@@ -116,8 +115,8 @@ def non_git_dir():
 
     yield pathlib.Path(test_dir)
 
-    if hasattr(utils.in_git_repo, "_result"):
-        del utils.in_git_repo._result
+    if hasattr(paths.in_git_repo, "_result"):
+        del paths.in_git_repo._result
     os.chdir(orig_cwd)
     shutil.rmtree(test_dir)
 

@@ -1,12 +1,58 @@
+import contextlib
 import os
 import pathlib
+import secrets
 import time
 from typing import TypedDict
 
 import yaml
+from filelock import FileLock
 
 from . import paths
-from . import utils
+
+STALE_THRESHOLD = 30  # seconds
+
+
+@contextlib.contextmanager
+def lock_tasks(tasks_file: pathlib.Path):
+    """Context manager for cross-platform file locking.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+    """
+    tasks_file.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure the file exists before we can lock it
+    if not tasks_file.exists():
+        tasks_file.write_text("{}", encoding="utf-8")
+
+    lock_path = tasks_file.with_suffix(".lock")
+    with FileLock(lock_path):
+        yield
+
+
+def generate_task_id() -> str:
+    """Generates a random short hex string for a unique task ID.
+
+    Returns:
+        A random 8-character hex string.
+    """
+    return secrets.token_hex(4)
+
+
+def is_pid_alive(pid: int) -> bool:
+    """Check if a process is still running.
+
+    Args:
+        pid: The process ID to check.
+
+    Returns:
+        True if the process is alive, False otherwise.
+    """
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 class TaskDict(TypedDict, total=False):
@@ -129,9 +175,9 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectDataDict:
             pid = t.get("pid")
 
             is_stale = False
-            if last_heartbeat and (now - last_heartbeat > utils.STALE_THRESHOLD):
+            if last_heartbeat and (now - last_heartbeat > STALE_THRESHOLD):
                 is_stale = True
-            if pid and not utils.is_pid_alive(pid):
+            if pid and not is_pid_alive(pid):
                 is_stale = True
 
             if not is_stale:
@@ -172,11 +218,11 @@ def get_pending_task(data: RoadmapDict) -> TaskDict | None:
             pid = task.get("pid")
 
             # If heartbeat is too old, it's stale
-            if now - last_heartbeat > utils.STALE_THRESHOLD:
+            if now - last_heartbeat > STALE_THRESHOLD:
                 return task
 
             # If we have a PID and it's dead, it's stale
-            if pid and not utils.is_pid_alive(pid):
+            if pid and not is_pid_alive(pid):
                 return task
 
             # If it's in progress and not stale, we shouldn't start anything else
@@ -210,9 +256,9 @@ def _mark_task_in_progress(
             if task.get("status") == "in_progress":
                 last_heartbeat = task.get("last_heartbeat", 0)
                 t_pid = task.get("pid")
-                if now - last_heartbeat > utils.STALE_THRESHOLD:
+                if now - last_heartbeat > STALE_THRESHOLD:
                     is_stale = True
-                elif t_pid and not utils.is_pid_alive(t_pid):
+                elif t_pid and not is_pid_alive(t_pid):
                     is_stale = True
 
             if is_pending or is_stale:
@@ -239,7 +285,7 @@ def mark_task_in_progress(
     Returns:
         True if the task was successfully marked, False otherwise.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         if _mark_task_in_progress(data, task_id, pid=pid):
             save_tasks(tasks_file, data)
@@ -258,7 +304,7 @@ def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> TaskDict | N
     Returns:
         The claimed TaskDict, or None if the task could not be claimed.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         if not _mark_task_in_progress(data, task_id, pid=pid):
             return None
@@ -279,7 +325,7 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> TaskDict | No
     Returns:
         The updated TaskDict, or None if not found.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         task = next((t for t in data["tasks"] if t["id"] == task_id), None)
         if not task:
@@ -303,7 +349,7 @@ def update_heartbeat(tasks_file: pathlib.Path, task_id: str) -> None:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task to update.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         for task in data.get("tasks", []):
             if task["id"] == task_id:
@@ -336,7 +382,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
     """
     import signal
 
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         for task in data.get("tasks", []):
             if task["id"] == task_id:
@@ -380,13 +426,13 @@ def add_task(
     Returns:
         The newly created TaskDict.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
 
-        task_id = utils.generate_task_id()
+        task_id = generate_task_id()
         existing_ids = {t["id"] for t in data["tasks"]}
         while task_id in existing_ids:
-            task_id = utils.generate_task_id()
+            task_id = generate_task_id()
 
         new_task: TaskDict = {
             "id": task_id,
@@ -424,7 +470,7 @@ def delete_tasks(
     Returns:
         The number of tasks deleted.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         initial_count = len(data["tasks"])
 
@@ -478,7 +524,7 @@ def update_task(
     Raises:
         ValueError: If the task is not found, or if validation fails.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
 
         # Find the task
@@ -541,7 +587,7 @@ def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str) -> TaskDict:
     Returns:
         The updated TaskDict.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
         if not target:
@@ -564,7 +610,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> TaskDict:
     Returns:
         The reset TaskDict.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
         if not target:
@@ -591,7 +637,7 @@ def update_context(tasks_file: pathlib.Path, context: str) -> None:
         tasks_file: Path to the tasks YAML file.
         context: The new project context string.
     """
-    with utils.lock_tasks(tasks_file):
+    with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         data["context"] = context
         save_tasks(tasks_file, data)

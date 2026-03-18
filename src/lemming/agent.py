@@ -8,7 +8,6 @@ from typing import Callable
 
 from . import paths
 from . import tasks
-from . import utils
 
 
 def load_prompt(name: str) -> str:
@@ -143,7 +142,7 @@ def run_agent_with_heartbeat(
         """Updates the task heartbeat while the process is running."""
         while process.poll() is None:
             tasks.update_heartbeat(tasks_file, task_id)
-            time.sleep(utils.STALE_THRESHOLD // 2)
+            time.sleep(tasks.STALE_THRESHOLD // 2)
 
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
     heartbeat_thread.start()

@@ -1,6 +1,20 @@
 from lemming import tasks
 
 
+def test_generate_task_id():
+    id1 = tasks.generate_task_id()
+    id2 = tasks.generate_task_id()
+    assert len(id1) == 8
+    assert id1 != id2
+
+
+def test_is_pid_alive():
+    import os
+
+    assert tasks.is_pid_alive(os.getpid()) is True
+    assert tasks.is_pid_alive(999999) is False  # Assuming this PID doesn't exist
+
+
 def test_load_save_tasks(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = {
@@ -100,11 +114,10 @@ def test_claim_already_in_progress(tmp_path):
 
     # But if it's stale, it should succeed
     import time
-    from lemming import utils
 
-    with utils.lock_tasks(tasks_file):
+    with tasks.lock_tasks(tasks_file):
         data = tasks.load_tasks(tasks_file)
-        data["tasks"][0]["last_heartbeat"] = time.time() - (utils.STALE_THRESHOLD + 1)
+        data["tasks"][0]["last_heartbeat"] = time.time() - (tasks.STALE_THRESHOLD + 1)
         tasks.save_tasks(tasks_file, data)
 
     claimed_stale = tasks.claim_task(tasks_file, task_id, pid=789)

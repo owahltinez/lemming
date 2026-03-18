@@ -15,7 +15,6 @@ from lemming import api
 from lemming import main
 from lemming import paths
 from lemming import tasks
-from lemming import utils
 
 
 class TestLemming(unittest.TestCase):
@@ -367,7 +366,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Initial Task", result.output)
 
         # Let's make it completed
-        with utils.lock_tasks(self.test_tasks_file):
+        with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
             data["tasks"][0]["status"] = "completed"
             tasks.save_tasks(self.test_tasks_file, data)
@@ -521,7 +520,7 @@ class TestLemming(unittest.TestCase):
 
     def test_delete_completed(self):
         # Setup data with mixed tasks
-        with utils.lock_tasks(self.test_tasks_file):
+        with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
             data["tasks"].append(
                 {"id": "t1", "description": "Completed", "status": "completed"}
@@ -706,7 +705,7 @@ class TestLemming(unittest.TestCase):
                     "id": "t1",
                     "description": "Task 1",
                     "status": "in_progress",
-                    "last_heartbeat": time.time() - (utils.STALE_THRESHOLD + 1),
+                    "last_heartbeat": time.time() - (tasks.STALE_THRESHOLD + 1),
                 }
             ]
         }
@@ -941,7 +940,7 @@ class TestLemmingRun(unittest.TestCase):
         # We need to update the file to simulate the task being completed
         # But we do it when wait is called
         def wait_side_effect():
-            with utils.lock_tasks(self.test_tasks_file):
+            with tasks.lock_tasks(self.test_tasks_file):
                 data = tasks.load_tasks(self.test_tasks_file)
                 data["tasks"][0]["status"] = "completed"
                 data["tasks"][0]["completed_at"] = 123456789.0
@@ -1012,11 +1011,11 @@ class TestLemmingRun(unittest.TestCase):
     @unittest.mock.patch("subprocess.Popen")
     def test_run_recovers_stale_task(self, mock_popen):
         # 1. Mark a task as in_progress with a very old heartbeat
-        with utils.lock_tasks(self.test_tasks_file):
+        with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
             data["tasks"][0]["status"] = "in_progress"
             data["tasks"][0]["last_heartbeat"] = time.time() - (
-                utils.STALE_THRESHOLD + 10
+                tasks.STALE_THRESHOLD + 10
             )
             data["tasks"][0]["pid"] = 999999  # Some fake PID
             tasks.save_tasks(self.test_tasks_file, data)
@@ -1029,7 +1028,7 @@ class TestLemmingRun(unittest.TestCase):
 
         def wait_side_effect():
             # Simulate task completion
-            with utils.lock_tasks(self.test_tasks_file):
+            with tasks.lock_tasks(self.test_tasks_file):
                 data = tasks.load_tasks(self.test_tasks_file)
                 data["tasks"][0]["status"] = "completed"
                 tasks.save_tasks(self.test_tasks_file, data)

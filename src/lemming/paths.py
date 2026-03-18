@@ -1,6 +1,7 @@
 import hashlib
 import os
 import pathlib
+import subprocess
 
 
 def get_lemming_home() -> pathlib.Path:
@@ -71,3 +72,48 @@ def get_log_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     project_dir = get_project_dir(tasks_file)
     project_dir.mkdir(parents=True, exist_ok=True)
     return project_dir / f"{task_id}.log"
+
+
+def in_git_repo() -> bool:
+    """Check if the current directory is inside a git repository.
+
+    The result is cached on the function after the first call.
+
+    Returns:
+        True if inside a git repository, False otherwise.
+    """
+    if not hasattr(in_git_repo, "_result"):
+        try:
+            in_git_repo._result = (
+                subprocess.run(
+                    ["git", "rev-parse", "--git-dir"],
+                    capture_output=True,
+                ).returncode
+                == 0
+            )
+        except Exception:
+            in_git_repo._result = False
+    return in_git_repo._result
+
+
+def is_ignored(path: pathlib.Path) -> bool:
+    """Check if a given path is ignored by git.
+
+    Args:
+        path: The path to check for git-ignore status.
+
+    Returns:
+        True if the path is ignored by git, False otherwise.
+    """
+    if not in_git_repo():
+        return False
+    try:
+        return (
+            subprocess.run(
+                ["git", "check-ignore", "-q", str(path)],
+                capture_output=True,
+            ).returncode
+            == 0
+        )
+    except Exception:
+        return False

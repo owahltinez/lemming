@@ -43,3 +43,39 @@ def test_get_log_file(tmp_path):
     log_file = paths.get_log_file(tasks_file, "task123")
     assert log_file.name == "task123.log"
     assert log_file.parent.exists()
+
+
+def test_in_git_repo_and_is_ignored(tmp_path):
+    import subprocess
+
+    orig_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        if hasattr(paths.in_git_repo, "_result"):
+            delattr(paths.in_git_repo, "_result")
+
+        # Not a git repo yet
+        assert paths.in_git_repo() is False
+        assert paths.is_ignored(tmp_path / "foo.txt") is False
+
+        # Init git repo
+        subprocess.run(["git", "init", "-q"], check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "config", "user.name", "test"], check=True)
+
+        # Clear cache again
+        if hasattr(paths.in_git_repo, "_result"):
+            delattr(paths.in_git_repo, "_result")
+
+        assert paths.in_git_repo() is True
+
+        # Create a gitignore
+        (tmp_path / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+        (tmp_path / "ignored.txt").touch()
+        (tmp_path / "not_ignored.txt").touch()
+
+        assert paths.is_ignored(tmp_path / "ignored.txt") is True
+        assert paths.is_ignored(tmp_path / "not_ignored.txt") is False
+
+    finally:
+        os.chdir(orig_cwd)
