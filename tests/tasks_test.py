@@ -75,6 +75,7 @@ def test_reset_task(tmp_path):
 
 def test_claim_already_in_progress(tmp_path):
     import os
+
     tasks_file = tmp_path / "tasks.yml"
     task = tasks.add_task(tasks_file, "Already in progress")
     task_id = task["id"]
@@ -91,6 +92,7 @@ def test_claim_already_in_progress(tmp_path):
     # But if it's stale, it should succeed
     import time
     from lemming import utils
+
     with utils.lock_tasks(tasks_file):
         data = tasks.load_tasks(tasks_file)
         data["tasks"][0]["last_heartbeat"] = time.time() - (utils.STALE_THRESHOLD + 1)

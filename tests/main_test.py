@@ -1015,7 +1015,9 @@ class TestLemmingRun(unittest.TestCase):
         with utils.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
             data["tasks"][0]["status"] = "in_progress"
-            data["tasks"][0]["last_heartbeat"] = time.time() - (utils.STALE_THRESHOLD + 10)
+            data["tasks"][0]["last_heartbeat"] = time.time() - (
+                utils.STALE_THRESHOLD + 10
+            )
             data["tasks"][0]["pid"] = 999999  # Some fake PID
             tasks.save_tasks(self.test_tasks_file, data)
 
@@ -1024,7 +1026,7 @@ class TestLemmingRun(unittest.TestCase):
         mock_process.poll.side_effect = [None, 0]
         mock_process.returncode = 0
         mock_process.stdout = iter(["success\n"])
-        
+
         def wait_side_effect():
             # Simulate task completion
             with utils.lock_tasks(self.test_tasks_file):
@@ -1032,6 +1034,7 @@ class TestLemmingRun(unittest.TestCase):
                 data["tasks"][0]["status"] = "completed"
                 tasks.save_tasks(self.test_tasks_file, data)
             return 0
+
         mock_process.wait.side_effect = wait_side_effect
         mock_popen.return_value = mock_process
 
@@ -1039,11 +1042,11 @@ class TestLemmingRun(unittest.TestCase):
         result = self.runner.invoke(
             main.cli, ["--verbose"] + self.base_args + ["run", "--max-attempts", "1"]
         )
-        
+
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Attempt 1/1", result.output)
         self.assertIn("All tasks completed!", result.output)
-        
+
         # Verify it was indeed picked up
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data["tasks"][0]["status"], "completed")
@@ -1157,6 +1160,7 @@ class TestLemmingLogging(unittest.TestCase):
 
         self.assertFalse(log1.exists())
         self.assertFalse(log2.exists())
+
 
 class TestLemmingShare(unittest.TestCase):
     def setUp(self):

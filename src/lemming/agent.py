@@ -168,7 +168,9 @@ def run_agent_with_heartbeat(
     return process.returncode, "".join(full_log), ""
 
 
-def prepare_prompt(data: tasks.RoadmapDict, task: tasks.TaskDict, tasks_file: pathlib.Path) -> str:
+def prepare_prompt(
+    data: tasks.RoadmapDict, task: tasks.TaskDict, tasks_file: pathlib.Path
+) -> str:
     """Prepares the agent prompt based on the current roadmap state.
 
     Args:

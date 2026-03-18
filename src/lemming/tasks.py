@@ -11,6 +11,7 @@ from . import utils
 
 class TaskDict(TypedDict, total=False):
     """Represents a single task in the roadmap."""
+
     id: str
     description: str
     status: str
@@ -27,12 +28,14 @@ class TaskDict(TypedDict, total=False):
 
 class RoadmapDict(TypedDict, total=False):
     """Represents the entire roadmap state."""
+
     context: str
     tasks: list[TaskDict]
 
 
 class ProjectDataDict(TypedDict, total=False):
     """Represents the project data returned by the API."""
+
     context: str
     tasks: list[TaskDict]
     cwd: str
@@ -171,7 +174,9 @@ def get_pending_task(data: RoadmapDict) -> TaskDict | None:
     return None
 
 
-def _mark_task_in_progress(data: RoadmapDict, task_id: str, pid: int | None = None) -> bool:
+def _mark_task_in_progress(
+    data: RoadmapDict, task_id: str, pid: int | None = None
+) -> bool:
     """Internal helper to mark a task as in_progress without locking or saving.
 
     Args:
