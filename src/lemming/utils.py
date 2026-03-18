@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 import contextlib
 import os
 import pathlib
 import secrets
 import subprocess
 import time
+from typing import TYPE_CHECKING
 
 from filelock import FileLock
 
-from . import tasks
+if TYPE_CHECKING:
+    from . import tasks
 
 STALE_THRESHOLD = 30  # seconds
 
