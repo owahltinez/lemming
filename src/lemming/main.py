@@ -601,38 +601,6 @@ def run(
                 time.sleep(retry_delay)
 
 
-@cli.command(short_help="Launch the web interface")
-@click.option("--port", default=8999, help="Port to run the server on.")
-@click.option("--host", default="127.0.0.1", help="Host to bind the server to.")
-@click.pass_context
-def serve(ctx: click.Context, port: int, host: str):
-    """Launches the local web dashboard for monitoring and interaction.
-
-    Args:
-        port: The local port to bind the server to.
-        host: The local host to bind the server to.
-    """
-    import copy
-
-    import uvicorn
-    import uvicorn.config
-
-    from . import api
-
-    # We pass the TASKS_FILE from context to the API
-    api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
-
-    # Suppress repetitive access-log lines from UI polling endpoints.
-    log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
-    log_config["filters"] = {
-        "quiet_poll": {"()": "lemming.api.QuietPollFilter"},
-    }
-    log_config["handlers"]["access"]["filters"] = ["quiet_poll"]
-
-    click.echo(f"Launching Lemming UI at http://{host}:{port}")
-    uvicorn.run(api.app, host=host, port=port, log_config=log_config)
-
-
 def parse_timeout(t_str: str) -> float:
     """Parses a duration string into seconds.
 
@@ -662,29 +630,27 @@ def parse_timeout(t_str: str) -> float:
         return 0.0
 
 
-@cli.command(short_help="Expose the Lemming UI to the public internet securely")
+@cli.command(short_help="Launch the web interface")
+@click.option("--port", default=8999, help="Port to run the server on.")
+@click.option("--host", default="127.0.0.1", help="Host to bind the server to.")
 @click.option(
-    "--provider",
-    default="cloudflare",
+    "--tunnel",
+    default=None,
     type=click.Choice(["cloudflare", "tailscale"]),
-    help="The tunnel provider to use.",
+    help="Expose via a public tunnel (cloudflare or tailscale).",
 )
 @click.option(
     "--timeout",
-    default="8h",
-    help="Timeout for the public tunnel (e.g., '8h', '30m', '0' for no timeout).",
+    default=None,
+    help="Auto-shutdown after duration (e.g., '8h', '30m', '0' to disable). Defaults to '8h' when --tunnel is used.",
 )
-@click.option("--port", default=8999, help="Port to run the local server on.")
-@click.option("--host", default="127.0.0.1", help="Host to bind the local server to.")
 @click.pass_context
-def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str):
-    """Exposes the local web dashboard to the public internet via a secure tunnel.
+def serve(
+    ctx: click.Context, port: int, host: str, tunnel: str | None, timeout: str | None
+):
+    """Launches the local web dashboard for monitoring and interaction.
 
-    Args:
-        provider: The tunnel provider (cloudflare or tailscale).
-        timeout: The session timeout duration.
-        port: The local port to expose.
-        host: The local host to expose.
+    Optionally exposes it to the public internet via --tunnel.
     """
     import copy
     import os
@@ -698,58 +664,56 @@ def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str)
     from . import api
     from . import providers
 
-    timeout_seconds = parse_timeout(timeout)
-
-    click.echo(f"[ Lemming ] Starting local server on port {port}...")
-    click.echo(f"[ Lemming ] Initiating public tunnel via {provider.capitalize()}...")
-
-    tunnel = (
-        providers.CloudflareProvider()
-        if provider == "cloudflare"
-        else providers.TailscaleProvider()
-    )
-    try:
-        public_url = tunnel.start(port)
-    except Exception as e:
-        click.echo(f"[ Lemming ] Error starting tunnel: {e}", err=True)
-        sys.exit(1)
-
-    # Generate token
-    token = secrets.token_urlsafe(32)
-    api.app.state.share_token = token
     api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
 
-    click.echo("[ Lemming ] ")
-    click.echo("[ Lemming ] ⚠️  SECURITY WARNING ")
-    click.echo(
-        "[ Lemming ] Your Lemming instance is being exposed to the public internet."
-    )
-    click.echo("[ Lemming ] Token-based authentication has been automatically enabled.")
-    if timeout_seconds > 0:
-        click.echo(
-            f"[ Lemming ] The public tunnel will automatically close in {timeout}."
-        )
-    else:
-        click.echo(
-            "[ Lemming ] The public tunnel will stay open until manually closed."
-        )
-    click.echo("[ Lemming ] ")
-    click.echo("[ Lemming ] 🌐 Share this exact, secure link with the remote user:")
-    click.echo(f"[ Lemming ] 👉 {public_url}?token={token}")
-    click.echo("")
-    click.echo(
-        "[ Lemming ] Press Ctrl+C to manually close the tunnel and shut down the server."
-    )
+    tunnel_proc = None
+    if tunnel:
+        click.echo(f"[ Lemming ] Starting local server on port {port}...")
+        click.echo(f"[ Lemming ] Initiating public tunnel via {tunnel.capitalize()}...")
 
-    # Monitor thread
+        tunnel_proc = (
+            providers.CloudflareProvider()
+            if tunnel == "cloudflare"
+            else providers.TailscaleProvider()
+        )
+        try:
+            public_url = tunnel_proc.start(port)
+        except Exception as e:
+            click.echo(f"[ Lemming ] Error starting tunnel: {e}", err=True)
+            sys.exit(1)
+
+        token = secrets.token_urlsafe(32)
+        api.app.state.share_token = token
+
+        click.echo("[ Lemming ] ")
+        click.echo("[ Lemming ] ⚠️  SECURITY WARNING ")
+        click.echo(
+            "[ Lemming ] Your Lemming instance is being exposed to the public internet."
+        )
+        click.echo(
+            "[ Lemming ] Token-based authentication has been automatically enabled."
+        )
+        click.echo("[ Lemming ] ")
+        click.echo("[ Lemming ] 🌐 Share this exact, secure link with the remote user:")
+        click.echo(f"[ Lemming ] 👉 {public_url}?token={token}")
+        click.echo("")
+    else:
+        click.echo(f"Launching Lemming UI at http://{host}:{port}")
+
+    # Default timeout to 8h for tunnel mode, 0 (disabled) for local mode.
+    timeout_str = timeout if timeout is not None else ("8h" if tunnel else "0")
+    timeout_seconds = parse_timeout(timeout_str)
+
     if timeout_seconds > 0:
+        click.echo(
+            f"[ Lemming ] The server will automatically shut down in {timeout_str}."
+        )
 
         def monitor():
             time.sleep(timeout_seconds)
-            click.echo(
-                "\n[ Lemming ] Timeout reached. Tunnel closed. Waiting for tasks to finish..."
-            )
-            tunnel.stop()
+            click.echo("\n[ Lemming ] Timeout reached. Waiting for tasks to finish...")
+            if tunnel_proc:
+                tunnel_proc.stop()
 
             tasks_file = api.app.state.tasks_file
             while True:
@@ -764,6 +728,12 @@ def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str)
         monitor_thread = threading.Thread(target=monitor, daemon=True)
         monitor_thread.start()
 
+    if tunnel:
+        click.echo(
+            "[ Lemming ] Press Ctrl+C to manually close the tunnel and shut down the server."
+        )
+
+    # Suppress repetitive access-log lines from UI polling endpoints.
     log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
     log_config["filters"] = {
         "quiet_poll": {"()": "lemming.api.QuietPollFilter"},
@@ -775,7 +745,8 @@ def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str)
     except KeyboardInterrupt:
         pass
     finally:
-        tunnel.stop()
+        if tunnel_proc:
+            tunnel_proc.stop()
 
 
 if __name__ == "__main__":

@@ -1168,7 +1168,7 @@ class TestLemmingShare(unittest.TestCase):
         ):
             result = self.runner.invoke(
                 main.cli,
-                self.base_args + ["share", "--timeout", "0"],
+                self.base_args + ["serve", "--tunnel", "cloudflare", "--timeout", "0"],
             )
 
             self.assertEqual(result.exit_code, 0)
@@ -1190,7 +1190,7 @@ class TestLemmingShare(unittest.TestCase):
         ):
             result = self.runner.invoke(
                 main.cli,
-                self.base_args + ["share", "--provider", "tailscale", "--timeout", "0"],
+                self.base_args + ["serve", "--tunnel", "tailscale", "--timeout", "0"],
             )
 
             self.assertEqual(result.exit_code, 0)
