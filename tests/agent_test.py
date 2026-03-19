@@ -1,4 +1,5 @@
 from lemming import agent
+from lemming import tasks
 
 
 def test_load_prompt():
@@ -43,14 +44,14 @@ def test_build_agent_command_with_quoted_flags_in_name():
 
 def test_prepare_prompt(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
-    data = {
-        "context": "My context",
-        "tasks": [
-            {"id": "1", "description": "T1", "status": "completed", "outcomes": ["O1"]},
-            {"id": "2", "description": "T2", "status": "pending"},
+    data = tasks.Roadmap(
+        context="My context",
+        tasks=[
+            tasks.Task(id="1", description="T1", status="completed", outcomes=["O1"]),
+            tasks.Task(id="2", description="T2", status="pending"),
         ],
-    }
-    task = data["tasks"][1]
+    )
+    task = data.tasks[1]
     prompt = agent.prepare_prompt(data, task, tasks_file)
     assert "My context" in prompt
     assert "T2" in prompt

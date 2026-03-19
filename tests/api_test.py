@@ -4,9 +4,9 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import time
 
 import pytest
-import yaml
 import fastapi.testclient
 
 from lemming import api
@@ -23,34 +23,36 @@ def test_tasks():
     test_tasks_file = pathlib.Path(test_dir) / "tasks_test.yml"
 
     # Scaffold a valid file
-    data = {
-        "context": "Initial context",
-        "tasks": [
-            {
-                "id": "task1",
-                "description": "Completed Task",
-                "status": "completed",
-                "attempts": 1,
-                "outcomes": ["All good"],
-            },
-            {
-                "id": "task2",
-                "description": "Pending Task",
-                "status": "pending",
-                "attempts": 0,
-                "outcomes": [],
-            },
-            {
-                "id": "task3",
-                "description": "In Progress Task",
-                "status": "in_progress",
-                "attempts": 1,
-                "outcomes": [],
-            },
+    data = tasks.Roadmap(
+        context="Initial context",
+        tasks=[
+            tasks.Task(
+                id="task1",
+                description="Completed Task",
+                status="completed",
+                attempts=1,
+                outcomes=["All good"],
+                completed_at=123456789.0,
+            ),
+            tasks.Task(
+                id="task2",
+                description="Pending Task",
+                status="pending",
+                attempts=0,
+                outcomes=[],
+            ),
+            tasks.Task(
+                id="task3",
+                description="In Progress Task",
+                status="in_progress",
+                attempts=1,
+                outcomes=[],
+                pid=os.getpid(),
+                last_heartbeat=time.time(),
+            ),
         ],
-    }
-    with open(test_tasks_file, "w", encoding="utf-8") as f:
-        yaml.dump(data, f)
+    )
+    tasks.save_tasks(test_tasks_file, data)
 
     # Override the TASKS_FILE in the api module
     original_tasks_file = api.app.state.tasks_file
@@ -142,24 +144,22 @@ def test_delete_completed_tasks(test_tasks):
     assert response.json() == {"status": "ok"}
 
     # Verify tasks in file
-    with open(test_tasks, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-        task_ids = [t["id"] for t in data["tasks"]]
-        assert "task1" not in task_ids
-        assert "task2" in task_ids
-        assert "task3" in task_ids
-        assert len(data["tasks"]) == 2
+    data = tasks.load_tasks(test_tasks)
+    task_ids = [t.id for t in data.tasks]
+    assert "task1" not in task_ids
+    assert "task2" in task_ids
+    assert "task3" in task_ids
+    assert len(data.tasks) == 2
 
 
 def test_delete_specific_task(test_tasks):
     response = client.delete("/api/tasks/task2")
     assert response.status_code == 200
 
-    with open(test_tasks, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-        task_ids = [t["id"] for t in data["tasks"]]
-        assert "task2" not in task_ids
-        assert len(data["tasks"]) == 2
+    data = tasks.load_tasks(test_tasks)
+    task_ids = [t.id for t in data.tasks]
+    assert "task2" not in task_ids
+    assert len(data.tasks) == 2
 
 
 def test_update_task_description(test_tasks):
@@ -169,10 +169,9 @@ def test_update_task_description(test_tasks):
     assert response.status_code == 200
     assert response.json()["description"] == "Updated Pending Task"
 
-    with open(test_tasks, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-        task2 = next(t for t in data["tasks"] if t["id"] == "task2")
-        assert task2["description"] == "Updated Pending Task"
+    data = tasks.load_tasks(test_tasks)
+    task2 = next(t for t in data.tasks if t.id == "task2")
+    assert task2.description == "Updated Pending Task"
 
 
 def test_update_completed_task_description_fails(test_tasks):
@@ -190,20 +189,19 @@ def test_uncomplete_task_via_api(test_tasks):
     assert response.json()["status"] == "pending"
     assert response.json()["attempts"] == 0
 
-    with open(test_tasks, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-        task1 = next(t for t in data["tasks"] if t["id"] == "task1")
-        assert task1["status"] == "pending"
-        assert task1["attempts"] == 0
+    data = tasks.load_tasks(test_tasks)
+    task1 = next(t for t in data.tasks if t.id == "task1")
+    assert task1.status == "pending"
+    assert task1.attempts == 0
 
 
 def test_build_project_data(test_tasks):
     """get_project_data returns correct structure used by GET /api/data."""
     result = tasks.get_project_data(api.app.state.tasks_file)
-    assert result["context"] == "Initial context"
-    assert len(result["tasks"]) == 3
-    assert "cwd" in result
-    assert isinstance(result["loop_running"], bool)
+    assert result.context == "Initial context"
+    assert len(result.tasks) == 3
+    assert result.cwd is not None
+    assert isinstance(result.loop_running, bool)
 
 
 def test_has_log_population(test_tasks):
@@ -438,14 +436,14 @@ def test_api_delete_log_cleanup(test_tasks):
     # 1. Add a task
     data = tasks.load_tasks(test_tasks_file)
     task_id = "api_delete_test"
-    data["tasks"].append(
-        {
-            "id": task_id,
-            "description": "api delete test",
-            "status": "pending",
-            "attempts": 0,
-            "outcomes": [],
-        }
+    data.tasks.append(
+        tasks.Task(
+            id=task_id,
+            description="api delete test",
+            status="pending",
+            attempts=0,
+            outcomes=[],
+        )
     )
     tasks.save_tasks(test_tasks_file, data)
 

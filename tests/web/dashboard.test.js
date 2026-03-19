@@ -545,6 +545,38 @@ describe("Lemming Web Dashboard", () => {
     assert.ok(!addOutcomeForm, "Add outcome form should NOT be present");
   });
 
+  test("hides outcomes section when no outcomes are present", async () => {
+    const tasks = [
+      {
+        id: "123",
+        description: "Task with no outcomes",
+        status: "pending",
+        attempts: 0,
+        outcomes: [],
+      },
+    ];
+
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+        expanded: { 123: true },
+        filteredTasks: tasks,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    const root =
+      fragment.querySelector("body") || fragment.firstElementChild || fragment;
+    await renderer.mount(fragment);
+
+    const taskItem = fragment.querySelector('[role="listitem"]');
+    const outcomesHeader = Array.from(taskItem.querySelectorAll("span")).find(
+      (s) => s.textContent.trim() === "Outcomes:",
+    );
+    assert.ok(!outcomesHeader, "Outcomes section header should NOT be present");
+  });
+
   test("hides edit button for completed tasks", async () => {
     const tasks = [
       {

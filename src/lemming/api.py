@@ -52,36 +52,12 @@ async def share_token_middleware(request: fastapi.Request, call_next):
     return fastapi.Response("Unauthorized", status_code=401)
 
 
-class Task(pydantic.BaseModel):
-    id: str | None = None
-    description: str
-    status: str = "pending"
-    attempts: int = 0
-    outcomes: list[str] = []
-    agent: str | None = None
-    pid: int | None = None
-    completed_at: float | None = None
-    run_time: float | None = None
-    started_at: float | None = None
-    last_heartbeat: float | None = None
-    has_log: bool = False
-    index: int | None = -1
-    tags: list[str] = []
-
-
-class ProjectData(pydantic.BaseModel):
-    context: str
-    tasks: list[Task]
-    cwd: str
-    loop_running: bool
-
-
 class RunRequest(pydantic.BaseModel):
     agent: str | None = "gemini"
     env: dict[str, str] | None = None
 
 
-@app.get("/api/data", response_model=ProjectData)
+@app.get("/api/data", response_model=tasks.ProjectData)
 def get_data():
     return tasks.get_project_data(app.state.tasks_file)
 
@@ -92,20 +68,21 @@ def get_agents():
 
 
 @app.post("/api/tasks")
-def add_task(task: Task):
+def add_task(task: tasks.Task):
     return tasks.add_task(
         app.state.tasks_file,
         task.description,
         task.agent,
         index=task.index,
-        tags=task.tags,
+        parent=task.parent,
     )
 
 
-@app.get("/api/tasks/{task_id}")
+@app.get("/api/tasks/{task_id}", response_model=tasks.Task)
 def get_task(task_id: str):
+
     data = tasks.load_tasks(app.state.tasks_file)
-    target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
+    target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
     if not target:
         raise fastapi.HTTPException(404, "Task not found")
     return target
@@ -120,8 +97,8 @@ def update_task(task_id: str, update: dict):
     require_outcomes = False
     if status in ("completed", "pending"):
         data = tasks.load_tasks(app.state.tasks_file)
-        target = next((t for t in data["tasks"] if t["id"].startswith(task_id)), None)
-        if target and target.get("status") != "completed":
+        target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
+        if target and target.status != "completed":
             require_outcomes = True
 
     try:
@@ -133,7 +110,7 @@ def update_task(task_id: str, update: dict):
             index=update.get("index"),
             status=status,
             require_outcomes=require_outcomes,
-            tags=update.get("tags"),
+            parent=update.get("parent"),
         )
     except ValueError as e:
         if "not found" in str(e):

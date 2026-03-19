@@ -14,7 +14,7 @@ def test_cancel_task(tmp_path):
     # 1. Add a task
     runner.invoke(main.cli, ["--tasks-file", str(tasks_file), "add", "Task to cancel"])
     data = tasks.load_tasks(tasks_file)
-    task_id = data["tasks"][0]["id"]
+    task_id = data.tasks[0].id
 
     # 2. Mock it as in_progress with a real-ish PID (current process for simplicity of testing the mark/unmark)
     # But wait, cancel_task actually tries to kill it.
@@ -41,8 +41,8 @@ def test_cancel_task(tmp_path):
 
     # 4. Verify status is pending and PID is gone
     data = tasks.load_tasks(tasks_file)
-    assert data["tasks"][0]["status"] == "pending"
-    assert "pid" not in data["tasks"][0]
+    assert data.tasks[0].status == "pending"
+    assert data.tasks[0].pid is None
 
     # 5. Verify process is killed
     time.sleep(0.1)

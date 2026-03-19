@@ -171,48 +171,44 @@ def run_agent_with_heartbeat(
 
 
 def prepare_prompt(
-    data: tasks.RoadmapDict, task: tasks.TaskDict, tasks_file: pathlib.Path
+    data: tasks.Roadmap, task: tasks.Task, tasks_file: pathlib.Path
 ) -> str:
     """Prepares the agent prompt based on the current roadmap state.
 
     Args:
-        data: The current RoadmapDict.
-        task: The TaskDict being executed.
+        data: The current Roadmap.
+        task: The Task being executed.
         tasks_file: Path to the tasks YAML file.
 
     Returns:
         The fully rendered prompt string.
     """
-    completed_tasks = [t for t in data["tasks"] if t["status"] == "completed"]
-    future_tasks = [
-        t for t in data["tasks"] if t["status"] == "pending" and t["id"] != task["id"]
-    ]
+    completed_tasks = [t for t in data.tasks if t.status == "completed"]
+    future_tasks = [t for t in data.tasks if t.status == "pending" and t.id != task.id]
 
-    roadmap_str = (
-        f"## Project Context\n{data.get('context', 'No context provided.')}\n\n"
-    )
+    roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
 
     if completed_tasks:
         roadmap_str += "## Completed Tasks (Historical context)\n"
         for i, t in enumerate(completed_tasks):
-            roadmap_str += f"- [x] {t['description']}\n"
-            if t.get("outcomes"):
+            roadmap_str += f"- [x] {t.description}\n"
+            if t.outcomes:
                 # Only show outcomes for the last 5 completed tasks to keep the prompt concise
                 if len(completed_tasks) - i <= 5:
-                    for outcome_item in t["outcomes"]:
+                    for outcome_item in t.outcomes:
                         roadmap_str += f"  - {outcome_item}\n"
         roadmap_str += "\n"
 
     if future_tasks:
         roadmap_str += "## Future Tasks (For architectural foresight only)\n"
         for t in future_tasks:
-            roadmap_str += f"- [ ] {t['description']}\n"
+            roadmap_str += f"- [ ] {t.description}\n"
         roadmap_str += "\n"
 
     outcomes_str = ""
-    if task.get("outcomes"):
+    if task.outcomes:
         outcomes_str = "### Outcomes from Previous Attempts on THIS Task\n"
-        for outcome_item in task["outcomes"]:
+        for outcome_item in task.outcomes:
             outcomes_str += f"- {outcome_item}\n"
         outcomes_str += "\n"
 
@@ -221,8 +217,8 @@ def prepare_prompt(
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)
         .replace("{{outcomes}}", outcomes_str)
-        .replace("{{description}}", task["description"])
+        .replace("{{description}}", task.description)
         .replace("{{tasks_file_name}}", tasks_file.name)
         .replace("{{tasks_file_path}}", tasks_file_str)
-        .replace("{{task_id}}", task["id"])
+        .replace("{{task_id}}", task.id)
     )

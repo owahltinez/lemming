@@ -60,7 +60,7 @@ subprocess.run([sys.executable, "-m", "lemming.main", "--tasks-file", "{str(task
 
     # Let's check the log file
     data = tasks.load_tasks(tasks_file)
-    task_id = data["tasks"][0]["id"]
+    task_id = data.tasks[0].id
 
     log_file = paths.get_log_file(tasks_file, task_id)
     assert log_file.exists()

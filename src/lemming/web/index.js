@@ -240,17 +240,16 @@
         const agent = prompt("Edit custom agent (optional):", task.agent || "");
         if (agent === null) return;
 
-        const currentTags = (task.tags || []).join(", ");
-        const tagsStr = prompt("Edit tags (comma-separated):", currentTags);
-        if (tagsStr === null) return;
+        const parent = prompt(
+          "Edit parent task ID (optional):",
+          task.parent || "",
+        );
+        if (parent === null) return;
 
         const update = {
           description: desc.trim() || task.description,
           agent: agent.trim() || null,
-          tags: tagsStr
-            .split(",")
-            .map((t) => t.trim())
-            .filter((t) => t !== ""),
+          parent: parent.trim() || null,
         };
 
         const res = await fetch(`/api/tasks/${task.id}`, {

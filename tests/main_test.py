@@ -48,19 +48,15 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Added task", result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            task_descs = [t["description"] for t in data["tasks"]]
-            self.assertIn("New Task", task_descs)
+        data = tasks.load_tasks(self.test_tasks_file)
+        task_descs = [t.description for t in data.tasks]
+        self.assertIn("New Task", task_descs)
 
     def test_delete_task(self):
         self.runner.invoke(main.cli, self.base_args + ["add", "To be removed"])
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            task_id = next(
-                t["id"] for t in data["tasks"] if t["description"] == "To be removed"
-            )
+        data = tasks.load_tasks(self.test_tasks_file)
+        task_id = next(t.id for t in data.tasks if t.description == "To be removed")
 
         delete_result = self.runner.invoke(
             main.cli, self.base_args + ["delete", task_id]
@@ -68,19 +64,17 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(delete_result.exit_code, 0)
         self.assertIn("Removed task", delete_result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            task_descs = [t["description"] for t in data["tasks"]]
-            self.assertNotIn("To be removed", task_descs)
+        data = tasks.load_tasks(self.test_tasks_file)
+        task_descs = [t.description for t in data.tasks]
+        self.assertNotIn("To be removed", task_descs)
 
     def test_task_complete(self):
         self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Done"])
         result = self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["status"], "completed")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, "completed")
 
     def test_task_complete_after_outcome(self):
         # Record outcome first
@@ -91,10 +85,9 @@ class TestLemming(unittest.TestCase):
         result = self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["status"], "completed")
-            self.assertIn("Did the thing", data["tasks"][0]["outcomes"])
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, "completed")
+        self.assertIn("Did the thing", data.tasks[0].outcomes)
 
     def test_task_fail(self):
         # Record failure outcome first
@@ -118,12 +111,9 @@ class TestLemming(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["status"], "pending")
-            self.assertIn(
-                "Failed due to missing dependency", data["tasks"][0]["outcomes"]
-            )
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, "pending")
+        self.assertIn("Failed due to missing dependency", data.tasks[0].outcomes)
 
     def test_info_no_args(self):
         result = self.runner.invoke(main.cli, self.base_args + ["status"])
@@ -152,9 +142,8 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Project context updated.", result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["context"], "Updated context via CLI")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.context, "Updated context via CLI")
 
     def test_set_context_from_file(self):
         context_file = pathlib.Path(self.test_dir) / "context.txt"
@@ -166,9 +155,8 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Project context updated.", result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["context"], "Context from file content")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.context, "Context from file content")
 
     def test_edit_task_description(self):
         result = self.runner.invoke(
@@ -178,9 +166,8 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Task 12345678 updated.", result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["description"], "Updated Task")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].description, "Updated Task")
 
     def test_edit_task_agent(self):
         result = self.runner.invoke(
@@ -188,18 +175,16 @@ class TestLemming(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["agent"], "custom-agent")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].agent, "custom-agent")
 
     def test_edit_task_index(self):
         # Add another task
         self.runner.invoke(main.cli, self.base_args + ["add", "Second Task"])
 
         # Get the ID of the second task
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            second_task_id = data["tasks"][1]["id"]
+        data = tasks.load_tasks(self.test_tasks_file)
+        second_task_id = data.tasks[1].id
 
         # Move second task to index 0
         result = self.runner.invoke(
@@ -207,16 +192,15 @@ class TestLemming(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["id"], second_task_id)
-            self.assertEqual(data["tasks"][1]["id"], "12345678")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].id, second_task_id)
+        self.assertEqual(data.tasks[1].id, "12345678")
 
     def test_edit_task_no_args(self):
         result = self.runner.invoke(main.cli, self.base_args + ["edit", "12345678"])
         self.assertEqual(result.exit_code, 1)
         self.assertIn(
-            "Error: At least one of --description, --agent, --index, or --tag must be provided.",
+            "Error: At least one of --description, --agent, --index, or --parent must be provided.",
             result.output,
         )
 
@@ -232,11 +216,10 @@ class TestLemming(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"], [])
-            # In our current implementation, delete --all also clears context
-            self.assertEqual(data["context"], "")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks, [])
+        # In our current implementation, delete --all also clears context
+        self.assertEqual(data.context, "")
 
     def test_uncomplete_command(self):
         # 1. Complete it
@@ -250,9 +233,8 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("marked as pending", result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["status"], "pending")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, "pending")
 
     def test_outcome_command(self):
         result = self.runner.invoke(
@@ -261,30 +243,26 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Outcome added to task", result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertIn("Observed behavior X", data["tasks"][0]["outcomes"])
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertIn("Observed behavior X", data.tasks[0].outcomes)
 
     def test_reset_command(self):
         # 1. Add some state
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            data["tasks"][0]["attempts"] = 5
-            data["tasks"][0]["outcomes"] = ["outcome 1"]
-            data["tasks"][0]["status"] = "completed"
-        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f)
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.tasks[0].attempts = 5
+        data.tasks[0].outcomes = ["outcome 1"]
+        data.tasks[0].status = "completed"
+        tasks.save_tasks(self.test_tasks_file, data)
 
         # 2. Reset
         result = self.runner.invoke(main.cli, self.base_args + ["reset", "12345678"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("attempts, outcomes, and logs cleared", result.output)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["attempts"], 0)
-            self.assertEqual(data["tasks"][0]["outcomes"], [])
-            self.assertEqual(data["tasks"][0]["status"], "pending")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].attempts, 0)
+        self.assertEqual(data.tasks[0].outcomes, [])
+        self.assertEqual(data.tasks[0].status, "pending")
 
     def test_add_task_with_agent(self):
         result = self.runner.invoke(
@@ -292,12 +270,9 @@ class TestLemming(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            new_task = next(
-                t for t in data["tasks"] if t["description"] == "Agent Task"
-            )
-            self.assertEqual(new_task["agent"], "aider")
+        data = tasks.load_tasks(self.test_tasks_file)
+        new_task = next(t for t in data.tasks if t.description == "Agent Task")
+        self.assertEqual(new_task.agent, "aider")
 
     def test_add_task_with_index(self):
         self.runner.invoke(
@@ -308,11 +283,10 @@ class TestLemming(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
 
-        with open(self.test_tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            self.assertEqual(data["tasks"][0]["description"], "First")
-            self.assertEqual(data["tasks"][1]["description"], "Middle")
-            self.assertEqual(data["tasks"][2]["description"], "Initial Task")
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].description, "First")
+        self.assertEqual(data.tasks[1].description, "Middle")
+        self.assertEqual(data.tasks[2].description, "Initial Task")
 
     def test_complete_requires_outcome(self):
         # 1. Try to complete without outcome
@@ -342,13 +316,14 @@ class TestLemming(unittest.TestCase):
         self.assertIn("description", prompt)
 
     def test_prepare_prompt(self):
-        data = {
-            "context": "Context",
-            "tasks": [{"id": "1", "description": "T1", "status": "pending"}],
-        }
-        prompt = agent.prepare_prompt(data, data["tasks"][0], self.test_tasks_file)
-        self.assertIn("Context", prompt)
+        data = tasks.Roadmap(
+            context="Context",
+            tasks=[tasks.Task(id="1", description="T1", status="pending")],
+        )
+        prompt = agent.prepare_prompt(data, data.tasks[0], self.test_tasks_file)
         self.assertIn("T1", prompt)
+        self.assertIn("Context", prompt)
+
         self.assertIn("roadmap", prompt.lower())
 
     def test_prompt_replacement_logic(self):
@@ -368,7 +343,7 @@ class TestLemming(unittest.TestCase):
         # Let's make it completed
         with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
-            data["tasks"][0]["status"] = "completed"
+            data.tasks[0].status = "completed"
             tasks.save_tasks(self.test_tasks_file, data)
 
         result = self.runner.invoke(
@@ -452,9 +427,8 @@ class TestLemming(unittest.TestCase):
         self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
-        task = data["tasks"][0]
-        self.assertIn("run_time", task)
-        self.assertGreaterEqual(task["run_time"], 0.2)
+        task = data.tasks[0]
+        self.assertGreaterEqual(task.run_time, 0.2)
 
         # Check status output
         result = self.runner.invoke(main.cli, self.base_args + ["status", "12345678"])
@@ -473,9 +447,8 @@ class TestLemming(unittest.TestCase):
         self.runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
-        task = data["tasks"][0]
-        self.assertIn("run_time", task)
-        self.assertGreaterEqual(task["run_time"], 0.1)
+        task = data.tasks[0]
+        self.assertGreaterEqual(task.run_time, 0.1)
 
     def test_run_time_cumulative(self):
         # First attempt
@@ -493,8 +466,8 @@ class TestLemming(unittest.TestCase):
         self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
-        task = data["tasks"][0]
-        self.assertGreaterEqual(task["run_time"], 0.2)
+        task = data.tasks[0]
+        self.assertGreaterEqual(task.run_time, 0.2)
 
     def test_run_time_reset(self):
         tasks.mark_task_in_progress(self.test_tasks_file, "12345678")
@@ -506,8 +479,8 @@ class TestLemming(unittest.TestCase):
         self.runner.invoke(main.cli, self.base_args + ["reset", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
-        task = data["tasks"][0]
-        self.assertEqual(task.get("run_time", 0), 0)
+        task = data.tasks[0]
+        self.assertEqual(task.run_time, 0)
 
     def test_delete_all(self):
         result = self.runner.invoke(main.cli, self.base_args + ["delete", "--all"])
@@ -515,18 +488,18 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Deleted all tasks", result.output)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data["context"], "")
-        self.assertEqual(data["tasks"], [])
+        self.assertEqual(data.context, "")
+        self.assertEqual(data.tasks, [])
 
     def test_delete_completed(self):
         # Setup data with mixed tasks
         with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
-            data["tasks"].append(
-                {"id": "t1", "description": "Completed", "status": "completed"}
+            data.tasks.append(
+                tasks.Task(id="t1", description="Completed", status="completed")
             )
-            data["tasks"].append(
-                {"id": "t2", "description": "Pending", "status": "pending"}
+            data.tasks.append(
+                tasks.Task(id="t2", description="Pending", status="pending")
             )
             tasks.save_tasks(self.test_tasks_file, data)
 
@@ -537,7 +510,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Deleted 1 completed task(s)", result.output)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        task_ids = [t["id"] for t in data["tasks"]]
+        task_ids = [t.id for t in data.tasks]
         self.assertNotIn("t1", task_ids)
         self.assertIn("t2", task_ids)
 
@@ -624,18 +597,18 @@ class TestLemming(unittest.TestCase):
         proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
         pid = proc.pid
 
-        data = {
-            "context": "test",
-            "tasks": [
-                {
-                    "id": "task_cancel",
-                    "description": "task cancel",
-                    "status": "in_progress",
-                    "pid": pid,
-                    "last_heartbeat": time.time(),
-                }
+        data = tasks.Roadmap(
+            context="test",
+            tasks=[
+                tasks.Task(
+                    id="task_cancel",
+                    description="task cancel",
+                    status="in_progress",
+                    pid=pid,
+                    last_heartbeat=time.time(),
+                )
             ],
-        }
+        )
         tasks.save_tasks(self.test_tasks_file, data)
 
         # Verify process is running
@@ -652,66 +625,68 @@ class TestLemming(unittest.TestCase):
 
         # Verify task status is pending and PID is removed
         updated_data = tasks.load_tasks(self.test_tasks_file)
-        task = updated_data["tasks"][0]
-        self.assertEqual(task["status"], "pending")
-        self.assertNotIn("pid", task)
-        self.assertNotIn("last_heartbeat", task)
+        task = updated_data.tasks[0]
+        self.assertEqual(task.status, "pending")
+        self.assertIsNone(task.pid)
+        self.assertIsNone(task.last_heartbeat)
 
     def test_cancel_task_no_pid(self):
-        data = {
-            "context": "test",
-            "tasks": [
-                {
-                    "id": "task_cancel_no_pid",
-                    "description": "task cancel no pid",
-                    "status": "in_progress",
-                    "last_heartbeat": time.time(),
-                }
+        data = tasks.Roadmap(
+            context="test",
+            tasks=[
+                tasks.Task(
+                    id="task_cancel_no_pid",
+                    description="task cancel no pid",
+                    status="in_progress",
+                    last_heartbeat=time.time(),
+                )
             ],
-        }
+        )
         tasks.save_tasks(self.test_tasks_file, data)
 
         self.assertTrue(tasks.cancel_task(self.test_tasks_file, "task_cancel_no_pid"))
 
         updated_data = tasks.load_tasks(self.test_tasks_file)
-        task = updated_data["tasks"][0]
-        self.assertEqual(task["status"], "pending")
-        self.assertNotIn("last_heartbeat", task)
+        task = updated_data.tasks[0]
+        self.assertEqual(task.status, "pending")
+        self.assertIsNone(task.last_heartbeat)
 
     def test_get_pending_task_normal(self):
-        data = {"tasks": [{"id": "t1", "description": "Task 1", "status": "pending"}]}
+        data = tasks.Roadmap(
+            tasks=[tasks.Task(id="t1", description="Task 1", status="pending")]
+        )
         task = tasks.get_pending_task(data)
         self.assertIsNotNone(task)
-        self.assertEqual(task["id"], "t1")
+        self.assertEqual(task.id, "t1")
 
     def test_get_pending_task_in_progress_not_stale(self):
-        data = {
-            "tasks": [
-                {
-                    "id": "t1",
-                    "description": "Task 1",
-                    "status": "in_progress",
-                    "last_heartbeat": time.time(),
-                }
+        data = tasks.Roadmap(
+            tasks=[
+                tasks.Task(
+                    id="t1",
+                    description="Task 1",
+                    status="in_progress",
+                    last_heartbeat=time.time(),
+                )
             ]
-        }
+        )
         task = tasks.get_pending_task(data)
         self.assertIsNone(task)
 
     def test_get_pending_task_in_progress_stale(self):
-        data = {
-            "tasks": [
-                {
-                    "id": "t1",
-                    "description": "Task 1",
-                    "status": "in_progress",
-                    "last_heartbeat": time.time() - (tasks.STALE_THRESHOLD + 1),
-                }
+        data = tasks.Roadmap(
+            tasks=[
+                tasks.Task(
+                    id="t1",
+                    description="Task 1",
+                    status="in_progress",
+                    last_heartbeat=time.time() - (tasks.STALE_THRESHOLD + 1),
+                )
             ]
-        }
+        )
         task = tasks.get_pending_task(data)
         self.assertIsNotNone(task)
-        self.assertEqual(task["id"], "t1")
+        self.assertEqual(task.id, "t1")
 
     def test_get_pending_task_dead_pid(self):
         import subprocess
@@ -720,35 +695,35 @@ class TestLemming(unittest.TestCase):
         p.wait()
         dead_pid = p.pid
 
-        data = {
-            "tasks": [
-                {
-                    "id": "t1",
-                    "description": "Task 1",
-                    "status": "in_progress",
-                    "last_heartbeat": time.time(),
-                    "pid": dead_pid,
-                }
+        data = tasks.Roadmap(
+            tasks=[
+                tasks.Task(
+                    id="t1",
+                    description="Task 1",
+                    status="in_progress",
+                    last_heartbeat=time.time(),
+                    pid=dead_pid,
+                )
             ]
-        }
+        )
         task = tasks.get_pending_task(data)
         self.assertIsNotNone(task)
-        self.assertEqual(task["id"], "t1")
+        self.assertEqual(task.id, "t1")
 
     def test_get_pending_task_alive_pid(self):
         alive_pid = os.getpid()
 
-        data = {
-            "tasks": [
-                {
-                    "id": "t1",
-                    "description": "Task 1",
-                    "status": "in_progress",
-                    "last_heartbeat": time.time(),
-                    "pid": alive_pid,
-                }
+        data = tasks.Roadmap(
+            tasks=[
+                tasks.Task(
+                    id="t1",
+                    description="Task 1",
+                    status="in_progress",
+                    last_heartbeat=time.time(),
+                    pid=alive_pid,
+                )
             ]
-        }
+        )
         task = tasks.get_pending_task(data)
         self.assertIsNone(task)
 
@@ -942,8 +917,8 @@ class TestLemmingRun(unittest.TestCase):
         def wait_side_effect():
             with tasks.lock_tasks(self.test_tasks_file):
                 data = tasks.load_tasks(self.test_tasks_file)
-                data["tasks"][0]["status"] = "completed"
-                data["tasks"][0]["completed_at"] = 123456789.0
+                data.tasks[0].status = "completed"
+                data.tasks[0].completed_at = 123456789.0
                 tasks.save_tasks(self.test_tasks_file, data)
             return 0
 
@@ -1013,11 +988,9 @@ class TestLemmingRun(unittest.TestCase):
         # 1. Mark a task as in_progress with a very old heartbeat
         with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
-            data["tasks"][0]["status"] = "in_progress"
-            data["tasks"][0]["last_heartbeat"] = time.time() - (
-                tasks.STALE_THRESHOLD + 10
-            )
-            data["tasks"][0]["pid"] = 999999  # Some fake PID
+            data.tasks[0].status = "in_progress"
+            data.tasks[0].last_heartbeat = time.time() - (tasks.STALE_THRESHOLD + 10)
+            data.tasks[0].pid = 999999  # Some fake PID
             tasks.save_tasks(self.test_tasks_file, data)
 
         # 2. Setup mock for the agent
@@ -1030,7 +1003,7 @@ class TestLemmingRun(unittest.TestCase):
             # Simulate task completion
             with tasks.lock_tasks(self.test_tasks_file):
                 data = tasks.load_tasks(self.test_tasks_file)
-                data["tasks"][0]["status"] = "completed"
+                data.tasks[0].status = "completed"
                 tasks.save_tasks(self.test_tasks_file, data)
             return 0
 
@@ -1048,7 +1021,7 @@ class TestLemmingRun(unittest.TestCase):
 
         # Verify it was indeed picked up
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data["tasks"][0]["status"], "completed")
+        self.assertEqual(data.tasks[0].status, "completed")
 
 
 class TestLemmingLogging(unittest.TestCase):

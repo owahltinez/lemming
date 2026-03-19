@@ -49,10 +49,8 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     help="Custom agent to use for this task (overrides the default run agent).",
 )
 @click.option(
-    "--tag",
-    "tags",
-    multiple=True,
-    help="Tag to add to the task (can be used multiple times).",
+    "--parent",
+    help="ID of the parent task.",
 )
 @click.pass_context
 def add(
@@ -60,7 +58,7 @@ def add(
     description: str,
     index: int,
     agent_name: str | None,
-    tags: tuple[str, ...],
+    parent: str | None,
 ):
     """Adds a new task to the roadmap queue.
 
@@ -68,13 +66,13 @@ def add(
         description: A text description of the task to perform.
         index: The position in the roadmap to insert the task.
         agent_name: An optional custom agent to use for this specific task.
-        tags: Optional tags to add to the task.
+        parent: Optional parent task ID.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
-    new_task = tasks.add_task(tasks_file, description, agent_name, index, list(tags))
-    task_id = new_task["id"]
+    new_task = tasks.add_task(tasks_file, description, agent_name, index, parent)
+    task_id = new_task.id
 
     if verbose:
         click.echo(f"Added task {task_id}: {description}")
@@ -88,10 +86,8 @@ def add(
 @click.option("--agent", "agent_name", help="New custom agent for the task.")
 @click.option("--index", type=int, help="New index in the task queue.")
 @click.option(
-    "--tag",
-    "tags",
-    multiple=True,
-    help="New tags for the task (replaces all existing tags).",
+    "--parent",
+    help="New parent task ID (use empty string to remove).",
 )
 @click.pass_context
 def edit(
@@ -100,26 +96,24 @@ def edit(
     description: str | None,
     agent_name: str | None,
     index: int | None,
-    tags: tuple[str, ...] | None,
+    parent: str | None,
 ):
-    """Edits an existing task's description, preferred agent, position, or tags.
+    """Edits an existing task's description, preferred agent, position, or parent.
 
     Args:
         task_id: The ID of the task to update.
         description: The new description (optional).
         agent_name: The new preferred agent (optional).
         index: The new position in the roadmap (optional).
-        tags: The new tags (optional, replaces all existing).
+        parent: The new parent task ID (optional).
     """
-    if description is None and agent_name is None and index is None and not tags:
+    if description is None and agent_name is None and index is None and parent is None:
         click.echo(
-            "Error: At least one of --description, --agent, --index, or --tag must be provided."
+            "Error: At least one of --description, --agent, --index, or --parent must be provided."
         )
         ctx.exit(1)
 
     tasks_file = ctx.obj["TASKS_FILE"]
-
-    passed_tags = list(tags) if tags else None
 
     try:
         target_task = tasks.update_task(
@@ -128,9 +122,9 @@ def edit(
             description=description,
             agent=agent_name,
             index=index,
-            tags=passed_tags,
+            parent=parent,
         )
-        click.echo(f"Task {target_task['id']} updated.")
+        click.echo(f"Task {target_task.id} updated.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
@@ -197,22 +191,22 @@ def status(ctx: click.Context, task_id: str | None):
     if not task_id:
         if verbose:
             click.secho("=== Project Context ===", fg="cyan", bold=True)
-            click.echo(project_data.get("context") or "No context set.")
+            click.echo(project_data.context or "No context set.")
             click.secho("\n=== Tasks ===", fg="cyan", bold=True)
 
-        if not project_data.get("tasks"):
+        if not project_data.tasks:
             if verbose:
                 click.echo("No tasks found.")
             return
 
-        for t in project_data["tasks"]:
-            if not verbose and t["status"] == "completed":
+        for t in project_data.tasks:
+            if not verbose and t.status == "completed":
                 continue
 
-            if t["status"] == "completed":
+            if t.status == "completed":
                 marker = "[x]"
                 status_color = "green"
-            elif t["status"] == "in_progress":
+            elif t.status == "in_progress":
                 marker = "[*]"
                 status_color = "cyan"
             else:
@@ -220,47 +214,45 @@ def status(ctx: click.Context, task_id: str | None):
                 status_color = "yellow"
 
             click.secho(f"{marker} ", fg=status_color, nl=False)
-            tag_str = ""
-            if t.get("tags"):
-                tag_str = f" [{','.join(t['tags'])}]"
-            click.echo(f"({t['id']}){tag_str} {t['description']}")
+            parent_str = ""
+            if t.parent:
+                parent_str = f" [parent:{t.parent}]"
+            click.echo(f"({t.id}){parent_str} {t.description}")
 
         if not verbose:
             completed_count = sum(
-                1 for t in project_data["tasks"] if t["status"] == "completed"
+                1 for t in project_data.tasks if t.status == "completed"
             )
             if completed_count > 0:
                 click.echo(f"({completed_count} completed tasks hidden)")
         return
 
-    target = next(
-        (t for t in project_data["tasks"] if t["id"].startswith(task_id)), None
-    )
+    target = next((t for t in project_data.tasks if t.id.startswith(task_id)), None)
 
     if not target:
         click.echo(f"Error: Task {task_id} not found.")
         return
 
-    click.secho(f"Task ID:     {target['id']}", bold=True)
-    click.echo(f"Status:      {target['status']}")
-    click.echo(f"Description: {target['description']}")
-    if target.get("tags"):
-        click.echo(f"Tags:        {', '.join(target['tags'])}")
-    if target.get("agent"):
-        click.echo(f"Custom Agent: {target['agent']}")
-    click.echo(f"Attempts:    {target['attempts']}")
+    click.secho(f"Task ID:     {target.id}", bold=True)
+    click.echo(f"Status:      {target.status}")
+    click.echo(f"Description: {target.description}")
+    if target.parent:
+        click.echo(f"Parent:      {target.parent}")
+    if target.agent:
+        click.echo(f"Custom Agent: {target.agent}")
+    click.echo(f"Attempts:    {target.attempts}")
 
-    log_file = paths.get_log_file(tasks_file, target["id"])
+    log_file = paths.get_log_file(tasks_file, target.id)
     click.echo(f"Has Log:     {'Yes' if log_file.exists() else 'No'}")
 
-    if target.get("completed_at"):
+    if target.completed_at:
         comp_time = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(target["completed_at"])
+            "%Y-%m-%d %H:%M:%S", time.localtime(target.completed_at)
         )
         click.echo(f"Completed At: {comp_time}")
-    run_time = target.get("run_time", 0)
-    if target.get("status") == "in_progress" and target.get("started_at"):
-        run_time += time.time() - target["started_at"]
+    run_time = target.run_time
+    if target.status == "in_progress" and target.started_at:
+        run_time += time.time() - target.started_at
 
     if run_time > 0:
         if run_time < 60:
@@ -269,9 +261,9 @@ def status(ctx: click.Context, task_id: str | None):
             rt_str = f"{int(run_time // 60)}m {int(run_time % 60)}s"
         click.echo(f"Run Time:     {rt_str}")
 
-    if target.get("outcomes"):
+    if target.outcomes:
         click.secho("\n--- Outcomes ---", fg="magenta", bold=True)
-        for outcome in target["outcomes"]:
+        for outcome in target.outcomes:
             click.echo(f"- {outcome}")
 
 
@@ -301,7 +293,7 @@ def context(ctx: click.Context, context_text: str | None, file: pathlib.Path | N
         click.echo("Project context updated.")
     else:
         data = tasks.load_tasks(tasks_file)
-        click.echo(data.get("context") or "No context set.")
+        click.echo(data.context or "No context set.")
 
 
 @cli.command(short_help="<taskid> Mark a task as completed")
@@ -319,7 +311,7 @@ def complete(ctx: click.Context, task_id: str):
         target_task = tasks.update_task(
             tasks_file, task_id, status="completed", require_outcomes=True
         )
-        click.echo(f"Task {target_task['id']} marked as completed.")
+        click.echo(f"Task {target_task.id} marked as completed.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
@@ -337,7 +329,7 @@ def uncomplete(ctx: click.Context, task_id: str):
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(tasks_file, task_id, status="pending")
-        click.echo(f"Task {target_task['id']} marked as pending.")
+        click.echo(f"Task {target_task.id} marked as pending.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
@@ -357,7 +349,7 @@ def outcome(ctx: click.Context, task_id: str, text: str):
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.add_outcome(tasks_file, task_id, text)
-        click.echo(f"Outcome added to task {target_task['id']}.")
+        click.echo(f"Outcome added to task {target_task.id}.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
@@ -377,7 +369,7 @@ def fail(ctx: click.Context, task_id: str):
         target_task = tasks.update_task(
             tasks_file, task_id, status="pending", require_outcomes=True
         )
-        click.echo(f"Failure recorded for task {target_task['id']}.")
+        click.echo(f"Failure recorded for task {target_task.id}.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
@@ -412,7 +404,7 @@ def reset(ctx: click.Context, task_id: str):
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.reset_task(tasks_file, task_id)
-        click.echo(f"Task {target_task['id']} attempts, outcomes, and logs cleared.")
+        click.echo(f"Task {target_task.id} attempts, outcomes, and logs cleared.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
@@ -501,7 +493,7 @@ def run(
             click.echo("All tasks completed!")
             break
 
-        task_id = current_task["id"]
+        task_id = current_task.id
 
         # Add a small random jitter to avoid race conditions between multiple instances
         time.sleep(random.uniform(0.1, 0.5))
@@ -515,7 +507,7 @@ def run(
                 )
             continue
 
-        if current_task["attempts"] > max_attempts:
+        if current_task.attempts > max_attempts:
             click.echo(
                 f"\nTask {task_id} failed after {max_attempts} attempts. Aborting run."
             )
@@ -524,12 +516,12 @@ def run(
 
         if verbose:
             click.echo(
-                f"\n--- Task {task_id} (Attempt {current_task['attempts']}/{max_attempts}) ---"
+                f"\n--- Task {task_id} (Attempt {current_task.attempts}/{max_attempts}) ---"
             )
-            click.echo(f"Working on: {current_task['description']}")
+            click.echo(f"Working on: {current_task.description}")
         else:
             click.echo(
-                f"[{task_id}] Attempt {current_task['attempts']}/{max_attempts}: {current_task['description']}"
+                f"[{task_id}] Attempt {current_task.attempts}/{max_attempts}: {current_task.description}"
             )
 
         prompt = agent.prepare_prompt(data, current_task, tasks_file)
@@ -540,7 +532,7 @@ def run(
             click.secho("====================\n", fg="blue", bold=True)
 
         cmd = agent.build_agent_command(
-            current_task.get("agent") or agent_name,
+            current_task.agent or agent_name,
             prompt,
             yolo,
             prompt_flag,
@@ -586,7 +578,7 @@ def run(
             click.echo("Error: Task disappeared from roadmap during execution.")
             break
 
-        if post_task["status"] == "completed":
+        if post_task.status == "completed":
             if verbose:
                 click.echo("Agent successfully reported task completion.")
             else:
@@ -601,7 +593,7 @@ def run(
                 click.echo(
                     "Agent finished execution but did NOT report completion. Retrying..."
                 )
-            if current_task["attempts"] < max_attempts and retry_delay > 0:
+            if post_task.attempts < max_attempts and retry_delay > 0:
                 if verbose:
                     click.echo(
                         f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
@@ -762,7 +754,7 @@ def share(ctx: click.Context, provider: str, timeout: str, port: int, host: str)
             tasks_file = api.app.state.tasks_file
             while True:
                 project_data = tasks.get_project_data(tasks_file)
-                if not project_data["loop_running"]:
+                if not project_data.loop_running:
                     break
                 time.sleep(5)
 
