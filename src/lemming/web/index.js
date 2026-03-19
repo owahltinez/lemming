@@ -235,11 +235,28 @@
 
       $.editTask = async function (task) {
         const desc = prompt("Edit task description:", task.description);
-        if (!desc || desc.trim() === task.description) return;
+        if (desc === null) return;
+
+        const agent = prompt("Edit custom agent (optional):", task.agent || "");
+        if (agent === null) return;
+
+        const currentTags = (task.tags || []).join(", ");
+        const tagsStr = prompt("Edit tags (comma-separated):", currentTags);
+        if (tagsStr === null) return;
+
+        const update = {
+          description: desc.trim() || task.description,
+          agent: agent.trim() || null,
+          tags: tagsStr
+            .split(",")
+            .map((t) => t.trim())
+            .filter((t) => t !== ""),
+        };
+
         const res = await fetch(`/api/tasks/${task.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: desc.trim() }),
+          body: JSON.stringify(update),
         });
         if (res.ok) {
           this.addToast("Task updated", "success");

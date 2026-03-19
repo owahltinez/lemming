@@ -125,9 +125,12 @@ def run_agent_with_heartbeat(
         f.flush()
 
     # Start the process in a new session so we can kill its entire process tree if needed.
+    env = os.environ.copy()
+    env["LEMMING_PARENT_TASK_ID"] = task_id
+
     process = subprocess.Popen(
         cmd,
-        env=os.environ,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

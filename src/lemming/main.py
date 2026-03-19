@@ -48,19 +48,32 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     "agent_name",
     help="Custom agent to use for this task (overrides the default run agent).",
 )
+@click.option(
+    "--tag",
+    "tags",
+    multiple=True,
+    help="Tag to add to the task (can be used multiple times).",
+)
 @click.pass_context
-def add(ctx: click.Context, description: str, index: int, agent_name: str | None):
+def add(
+    ctx: click.Context,
+    description: str,
+    index: int,
+    agent_name: str | None,
+    tags: tuple[str, ...],
+):
     """Adds a new task to the roadmap queue.
 
     Args:
         description: A text description of the task to perform.
         index: The position in the roadmap to insert the task.
         agent_name: An optional custom agent to use for this specific task.
+        tags: Optional tags to add to the task.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
-    new_task = tasks.add_task(tasks_file, description, agent_name, index)
+    new_task = tasks.add_task(tasks_file, description, agent_name, index, list(tags))
     task_id = new_task["id"]
 
     if verbose:
@@ -74,6 +87,12 @@ def add(ctx: click.Context, description: str, index: int, agent_name: str | None
 @click.option("--description", help="New description for the task.")
 @click.option("--agent", "agent_name", help="New custom agent for the task.")
 @click.option("--index", type=int, help="New index in the task queue.")
+@click.option(
+    "--tag",
+    "tags",
+    multiple=True,
+    help="New tags for the task (replaces all existing tags).",
+)
 @click.pass_context
 def edit(
     ctx: click.Context,
@@ -81,26 +100,35 @@ def edit(
     description: str | None,
     agent_name: str | None,
     index: int | None,
+    tags: tuple[str, ...] | None,
 ):
-    """Edits an existing task's description, preferred agent, or position.
+    """Edits an existing task's description, preferred agent, position, or tags.
 
     Args:
         task_id: The ID of the task to update.
         description: The new description (optional).
         agent_name: The new preferred agent (optional).
         index: The new position in the roadmap (optional).
+        tags: The new tags (optional, replaces all existing).
     """
-    if description is None and agent_name is None and index is None:
+    if description is None and agent_name is None and index is None and not tags:
         click.echo(
-            "Error: At least one of --description, --agent, or --index must be provided."
+            "Error: At least one of --description, --agent, --index, or --tag must be provided."
         )
         ctx.exit(1)
 
     tasks_file = ctx.obj["TASKS_FILE"]
 
+    passed_tags = list(tags) if tags else None
+
     try:
         target_task = tasks.update_task(
-            tasks_file, task_id, description=description, agent=agent_name, index=index
+            tasks_file,
+            task_id,
+            description=description,
+            agent=agent_name,
+            index=index,
+            tags=passed_tags,
         )
         click.echo(f"Task {target_task['id']} updated.")
     except ValueError as e:
@@ -192,7 +220,10 @@ def status(ctx: click.Context, task_id: str | None):
                 status_color = "yellow"
 
             click.secho(f"{marker} ", fg=status_color, nl=False)
-            click.echo(f"({t['id']}) {t['description']}")
+            tag_str = ""
+            if t.get("tags"):
+                tag_str = f" [{','.join(t['tags'])}]"
+            click.echo(f"({t['id']}){tag_str} {t['description']}")
 
         if not verbose:
             completed_count = sum(
@@ -213,6 +244,8 @@ def status(ctx: click.Context, task_id: str | None):
     click.secho(f"Task ID:     {target['id']}", bold=True)
     click.echo(f"Status:      {target['status']}")
     click.echo(f"Description: {target['description']}")
+    if target.get("tags"):
+        click.echo(f"Tags:        {', '.join(target['tags'])}")
     if target.get("agent"):
         click.echo(f"Custom Agent: {target['agent']}")
     click.echo(f"Attempts:    {target['attempts']}")

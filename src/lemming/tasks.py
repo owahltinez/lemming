@@ -70,6 +70,7 @@ class TaskDict(TypedDict, total=False):
     pid: int
     last_heartbeat: float
     has_log: bool
+    tags: list[str]
 
 
 class RoadmapDict(TypedDict, total=False):
@@ -414,6 +415,7 @@ def add_task(
     description: str,
     agent: str | None = None,
     index: int = -1,
+    tags: list[str] | None = None,
 ) -> TaskDict:
     """Adds a new task to the roadmap.
 
@@ -422,6 +424,7 @@ def add_task(
         description: Description of the task.
         agent: Optional preferred agent for this task.
         index: Position to insert the task at (default: append).
+        tags: Optional list of tags to add to the task.
 
     Returns:
         The newly created TaskDict.
@@ -434,12 +437,20 @@ def add_task(
         while task_id in existing_ids:
             task_id = generate_task_id()
 
+        # Detect if we are running inside an agent and tag automatically
+        all_tags = set(tags or [])
+        parent_id = os.environ.get("LEMMING_PARENT_TASK_ID")
+        if parent_id:
+            all_tags.add("agent")
+            all_tags.add(f"parent:{parent_id}")
+
         new_task: TaskDict = {
             "id": task_id,
             "description": description,
             "status": "pending",
             "attempts": 0,
             "outcomes": [],
+            "tags": sorted(list(all_tags)),
         }
         if agent:
             new_task["agent"] = agent
@@ -506,6 +517,7 @@ def update_task(
     index: int | None = None,
     status: str | None = None,
     require_outcomes: bool = False,
+    tags: list[str] | None = None,
 ) -> TaskDict:
     """Updates an existing task.
 
@@ -517,6 +529,7 @@ def update_task(
         index: New position in the task list.
         status: New status.
         require_outcomes: If True, raises ValueError if the task has no outcomes.
+        tags: New tags for the task.
 
     Returns:
         The updated TaskDict.
@@ -552,6 +565,8 @@ def update_task(
             target["description"] = description
         if agent is not None:
             target["agent"] = agent
+        if tags is not None:
+            target["tags"] = sorted(list(set(tags)))
 
         if status and status != target.get("status"):
             if target.get("status") == "in_progress":

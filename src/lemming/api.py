@@ -66,6 +66,7 @@ class Task(pydantic.BaseModel):
     last_heartbeat: float | None = None
     has_log: bool = False
     index: int | None = -1
+    tags: list[str] = []
 
 
 class ProjectData(pydantic.BaseModel):
@@ -93,7 +94,11 @@ def get_agents():
 @app.post("/api/tasks")
 def add_task(task: Task):
     return tasks.add_task(
-        app.state.tasks_file, task.description, task.agent, index=task.index
+        app.state.tasks_file,
+        task.description,
+        task.agent,
+        index=task.index,
+        tags=task.tags,
     )
 
 
@@ -128,6 +133,7 @@ def update_task(task_id: str, update: dict):
             index=update.get("index"),
             status=status,
             require_outcomes=require_outcomes,
+            tags=update.get("tags"),
         )
     except ValueError as e:
         if "not found" in str(e):
