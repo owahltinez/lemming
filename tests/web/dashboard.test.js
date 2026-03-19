@@ -574,7 +574,14 @@ describe("Lemming Web Dashboard", () => {
     const outcomesHeader = Array.from(taskItem.querySelectorAll("span")).find(
       (s) => s.textContent.trim() === "Outcomes:",
     );
-    assert.ok(!outcomesHeader, "Outcomes section header should NOT be present");
+    if (outcomesHeader) {
+      const outcomesDiv = outcomesHeader.parentElement;
+      assert.strictEqual(
+        outcomesDiv.style.display,
+        "none",
+        "Outcomes section should be hidden",
+      );
+    }
   });
 
   test("hides edit button for completed tasks", async () => {

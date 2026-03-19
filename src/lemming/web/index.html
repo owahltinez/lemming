@@ -8,14 +8,14 @@
     <script src="/static/mancha.js" css="basic+utils"></script>
     <script src="/static/index.js" defer></script>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans">
-    <div class="max-w-3xl mx-auto p-4">
-        <header class="mb-4" role="banner">
+<body class="bg-gray-50 text-gray-900 font-sans h-screen overflow-hidden">
+    <div class="max-w-3xl mx-auto p-4 h-full flex flex-col">
+        <header class="mb-4 shrink-0" role="banner">
             <h1 class="text-2xl font-bold text-indigo-600" title="Lemming Task Runner">Lemming Task Runner</h1>
         </header>
 
         <!-- Runner Metadata Card -->
-        <section class="mb-4 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden" aria-labelledby="metadata-heading">
+        <section class="mb-4 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden shrink-0" aria-labelledby="metadata-heading">
             <div class="py-2 px-4 border-b border-gray-200 bg-gray-50">
                 <h2 id="metadata-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Runner Metadata</h2>
             </div>
@@ -122,7 +122,7 @@
             </div>
         </section>
 
-        <section class="mb-4 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden" aria-labelledby="context-heading">
+        <section class="mb-4 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden shrink-0" aria-labelledby="context-heading">
             <div class="py-2 px-4 border-b border-gray-200 bg-gray-50">
                 <h2 id="context-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Project Context</h2>
             </div>
@@ -138,11 +138,11 @@
             </div>
         </section>
 
-        <section class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden" aria-labelledby="tasks-heading">
-            <div class="py-2 px-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+        <section class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col grow min-h-0" aria-labelledby="tasks-heading">
+            <div class="py-2 px-4 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
                 <div class="flex items-center gap-3 flex-grow">
-                    <h2 id="tasks-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-shrink-0">Task Queue</h2>
-                    <label class="flex items-center gap-1 cursor-pointer flex-shrink-0" title="Hide or show completed tasks">
+                    <h2 id="tasks-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider shrink-0">Task Queue</h2>
+                    <label class="flex items-center gap-1 cursor-pointer shrink-0" title="Hide or show completed tasks">
                         <input type="checkbox" :bind="hideCompleted" :on:change="saveHideCompletedPreference()" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-3 w-3" aria-label="Hide completed tasks">
                         <span class="font-medium text-gray-500 uppercase tracking-wider text-10px">Hide Completed</span>
                     </label>
@@ -160,7 +160,7 @@
                 </button>
             </div>
             
-            <div class="divide-y divide-gray-200" role="list">
+            <div class="divide-y divide-gray-200 grow overflow-auto" role="list">
                 <div :for="task in filteredTasks" :key="task.id" class="flex flex-col hover:bg-gray-50/50 transition-colors" role="listitem">
                     <div class="py-1 px-4 flex items-center justify-between" :attr:aria-label="'Task: ' + task.description" :attr:title="'Task: ' + task.description">
                         <div class="flex items-center gap-2 overflow-hidden flex-grow min-w-0">
@@ -184,7 +184,7 @@
                                 <div class="flex items-center gap-2">
                                     <span 
                                         role="status"
-                                        :attr:class="'px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ' + (task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500')))"
+                                        :attr:class="'px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ' + (task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500')))"
                                         :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending'))"
                                         :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'in_progress' ? 'Status: Running' : (task.attempts > 0 ? 'Status: Failed' : 'Status: Pending'))"
                                     >
@@ -209,7 +209,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="flex gap-1 flex-shrink-0">
+                        <div class="flex gap-1 shrink-0">
                             <button 
                                 type="button" 
                                 role="button" 
@@ -315,7 +315,7 @@
                             <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Parent Task ID:</span>
                             <span class="font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-10px border border-indigo-100 font-medium">{{ task.parent }}</span>
                         </div>
-                        <div :if="task.outcomes && task.outcomes.length > 0" class="mt-3">
+                        <div :show="task.outcomes?.length > 0" class="mt-3">
                             <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Outcomes:</span>
                             <ul class="list-disc ml-4 space-y-1 mb-2">
                                 <li :for="outcome in task.outcomes" class="text-gray-700">{{ outcome }}</li>
@@ -333,7 +333,7 @@
     <div class="fixed bottom-4 right-4 flex flex-col gap-2 z-50 pointer-events-none" role="log" aria-live="polite">
         <div :for="toast in toasts" :key="toast.id" :attr:class="'px-4 py-2 rounded-lg shadow-lg text-white text-sm pointer-events-auto min-w-48 max-w-[calc(100vw-2rem)] sm:max-w-xs flex justify-between items-center gap-3 transition-all duration-300 backdrop-blur ' + (toast.type === 'success' ? 'bg-green-600/70' : (toast.type === 'error' ? 'bg-red-600/70' : 'bg-indigo-600/70'))" role="alert">
             <span class="truncate flex-1 min-w-0" :attr:aria-label="toast.message" :attr:title="toast.message">{{ toast.message }}</span>
-            <button type="button" role="button" :on:click="toasts = toasts.filter((t) => (t.id !== toast.id))" class="text-white hover:text-gray-200 font-bold flex-shrink-0" title="Dismiss notification" aria-label="Dismiss notification">
+            <button type="button" role="button" :on:click="toasts = toasts.filter((t) => (t.id !== toast.id))" class="text-white hover:text-gray-200 font-bold shrink-0" title="Dismiss notification" aria-label="Dismiss notification">
                 <span aria-hidden="true">&times;</span>
             </button>
         </div>
