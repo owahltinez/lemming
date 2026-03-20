@@ -67,8 +67,15 @@ def get_agents():
     return ["gemini", "aider", "claude", "codex"]
 
 
+class AddTaskRequest(pydantic.BaseModel):
+    description: str
+    agent: str | None = None
+    index: int = -1
+    parent: str | None = None
+
+
 @app.post("/api/tasks")
-def add_task(task: tasks.Task):
+def add_task(task: AddTaskRequest):
     return tasks.add_task(
         app.state.tasks_file,
         task.description,

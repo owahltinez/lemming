@@ -68,6 +68,10 @@
         return $.formatDuration(total);
       };
 
+      $.getParent = (parentId) => {
+        return $.tasks.find((t) => t.id === parentId);
+      };
+
       $.copyToClipboard = function (text) {
         if (!navigator.clipboard) {
           const el = document.createElement("textarea");

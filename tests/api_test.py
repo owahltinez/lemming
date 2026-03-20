@@ -138,6 +138,27 @@ def test_get_data(test_tasks):
     assert data["loop_running"] is True
 
 
+def test_add_task(test_tasks):
+    response = client.post("/api/tasks", json={"description": "New task from test"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["description"] == "New task from test"
+    assert data["id"]  # id should be auto-generated
+    assert data["status"] == "pending"
+
+    # Verify task was persisted
+    roadmap = tasks.load_tasks(test_tasks)
+    assert any(t.description == "New task from test" for t in roadmap.tasks)
+
+
+def test_add_task_with_agent(test_tasks):
+    response = client.post(
+        "/api/tasks", json={"description": "Agent task", "agent": "claude"}
+    )
+    assert response.status_code == 200
+    assert response.json()["agent"] == "claude"
+
+
 def test_delete_completed_tasks(test_tasks):
     response = client.delete("/api/tasks/completed")
     assert response.status_code == 200
