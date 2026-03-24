@@ -28,6 +28,7 @@ class Task(pydantic.BaseModel):
     pid: int | None = None
     last_heartbeat: float | None = None
     has_log: bool = False
+    has_review_log: bool = False
     parent: str | None = None
     index: int | None = pydantic.Field(default=-1, exclude=True)
 
@@ -160,6 +161,7 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     for t in data.tasks:
         # Check if task has a log file
         t.has_log = paths.get_log_file(tasks_file, t.id).exists()
+        t.has_review_log = paths.get_log_file(tasks_file, f"review-{t.id}").exists()
 
         # Determine if the loop is running based on this task
         if t.status == "in_progress":

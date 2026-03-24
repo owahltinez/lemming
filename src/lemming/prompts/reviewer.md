@@ -43,4 +43,8 @@ Act only when you observe one of these situations:
 - Duplicate work that's already covered by existing pending tasks
 - Make changes based on what you think *might* go wrong
 
+**Recording review outcomes:** When you intervene on a task, record a brief summary of what you did and why using the `[REVIEW]` prefix:
+`lemming --tasks-file {{tasks_file_path}} outcome <id> "[REVIEW] <what you changed and why>"`
+This helps distinguish reviewer actions from runner findings. Do not record an outcome if you made no changes.
+
 After making changes (or deciding no changes are needed), exit immediately.
