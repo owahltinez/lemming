@@ -53,7 +53,7 @@ test.describe("Environment Overrides UI", () => {
       });
     });
 
-    await page.route("**/api/agents", async (route) => {
+    await page.route("**/api/runners", async (route) => {
       await route.fulfill({
         contentType: "application/json",
         json: ["gemini", "aider", "claude"],
@@ -114,7 +114,7 @@ test.describe("Environment Overrides UI", () => {
     expect(runRequestPayload.env).toEqual({
       MY_MOCK_KEY: "MY_MOCK_VALUE",
     });
-    expect(runRequestPayload.agent).toBe("gemini");
+    expect(runRequestPayload.runner).toBe("gemini");
   });
 
   test("removes an environment override", async ({ page }) => {
