@@ -330,7 +330,7 @@
                         <div :if="task.parent" class="mt-2">
                             <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Parent Task:</span>
                             <div class="flex items-center gap-2">
-                                <span class="font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-10px border border-indigo-100 font-medium">{{ task.parent }}</span>
+                                <span class="font-mono bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded text-10px border border-indigo-100 font-medium">{{ task.parent }}</span>
                                 <span :if="getParent(task.parent)" class="text-gray-500 italic truncate" :attr:title="getParent(task.parent).description">{{ getParent(task.parent).description }}</span>
                             </div>
                         </div>
