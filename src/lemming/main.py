@@ -590,6 +590,36 @@ def run(
     if env_overrides:
         os.environ.update(env_overrides)
 
+    tasks.acquire_loop_lock(tasks_file)
+    try:
+        _run_loop(
+            tasks_file,
+            verbose,
+            max_attempts,
+            retry_delay,
+            yolo,
+            runner_name,
+            no_defaults,
+            review,
+            review_runner,
+            runner_args,
+        )
+    finally:
+        tasks.release_loop_lock(tasks_file)
+
+
+def _run_loop(
+    tasks_file: pathlib.Path,
+    verbose: bool,
+    max_attempts: int,
+    retry_delay: int,
+    yolo: bool,
+    runner_name: str,
+    no_defaults: bool,
+    review: bool,
+    review_runner: str | None,
+    runner_args: tuple,
+) -> None:
     while True:
         data = tasks.load_tasks(tasks_file)
         current_task = tasks.get_pending_task(data)
