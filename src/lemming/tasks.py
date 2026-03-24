@@ -21,7 +21,7 @@ class Task(pydantic.BaseModel):
     status: str = "pending"
     attempts: int = 0
     outcomes: list[str] = pydantic.Field(default_factory=list)
-    agent: str | None = None
+    runner: str | None = None
     completed_at: float | None = None
     started_at: float | None = None
     run_time: float = 0.0
@@ -392,7 +392,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
 def add_task(
     tasks_file: pathlib.Path,
     description: str,
-    agent: str | None = None,
+    runner: str | None = None,
     index: int = -1,
     parent: str | None = None,
 ) -> Task:
@@ -401,7 +401,7 @@ def add_task(
     Args:
         tasks_file: Path to the tasks YAML file.
         description: Description of the task.
-        agent: Optional preferred agent for this task.
+        runner: Optional preferred runner for this task.
         index: Position to insert the task at (default: append).
         parent: Optional parent task ID.
 
@@ -423,7 +423,7 @@ def add_task(
         new_task = Task(
             id=task_id,
             description=description,
-            agent=agent,
+            runner=runner,
             parent=parent,
         )
 
@@ -481,7 +481,7 @@ def update_task(
     tasks_file: pathlib.Path,
     task_id: str,
     description: str | None = None,
-    agent: str | None = None,
+    runner: str | None = None,
     index: int | None = None,
     status: str | None = None,
     require_outcomes: bool = False,
@@ -493,7 +493,7 @@ def update_task(
         tasks_file: Path to the tasks YAML file.
         task_id: ID of the task to update.
         description: New description.
-        agent: New preferred agent.
+        runner: New preferred runner.
         index: New position in the task list.
         status: New status.
         require_outcomes: If True, raises ValueError if the task has no outcomes.
@@ -531,8 +531,8 @@ def update_task(
 
         if description is not None:
             target.description = description
-        if agent is not None:
-            target.agent = agent
+        if runner is not None:
+            target.runner = runner
         if parent is not None:
             if parent == "":
                 target.parent = None

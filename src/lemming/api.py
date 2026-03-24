@@ -53,7 +53,7 @@ async def share_token_middleware(request: fastapi.Request, call_next):
 
 
 class RunRequest(pydantic.BaseModel):
-    agent: str | None = "gemini"
+    runner: str | None = "gemini"
     env: dict[str, str] | None = None
     max_attempts: int | None = None
     review: bool = False
@@ -64,14 +64,14 @@ def get_data():
     return tasks.get_project_data(app.state.tasks_file)
 
 
-@app.get("/api/agents")
-def get_agents():
+@app.get("/api/runners")
+def get_runners():
     return ["gemini", "aider", "claude", "codex"]
 
 
 class AddTaskRequest(pydantic.BaseModel):
     description: str
-    agent: str | None = None
+    runner: str | None = None
     index: int = -1
     parent: str | None = None
 
@@ -81,7 +81,7 @@ def add_task(task: AddTaskRequest):
     return tasks.add_task(
         app.state.tasks_file,
         task.description,
-        task.agent,
+        task.runner,
         index=task.index,
         parent=task.parent,
     )
@@ -115,7 +115,7 @@ def update_task(task_id: str, update: dict):
             app.state.tasks_file,
             task_id,
             description=update.get("description"),
-            agent=update.get("agent"),
+            runner=update.get("runner"),
             index=update.get("index"),
             status=status,
             require_outcomes=require_outcomes,
@@ -191,8 +191,8 @@ def run_loop(request: RunRequest):
     if request.max_attempts is not None:
         cmd.extend(["--max-attempts", str(request.max_attempts)])
 
-    if request.agent:
-        cmd.extend(["--agent", request.agent])
+    if request.runner:
+        cmd.extend(["--runner", request.runner])
 
     if request.review:
         cmd.append("--review")

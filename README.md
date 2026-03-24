@@ -53,7 +53,7 @@ Start the autonomous loop.
 lemming run
 
 # Or use a different agent (flags after -- are passed to the agent)
-lemming run --agent aider -- --model claude-3-5-sonnet
+lemming run --runner aider -- --model claude-3-5-sonnet
 ```
 
 ---
@@ -87,24 +87,27 @@ Lemming maintains a human-readable `tasks.yml` file containing your project cont
 
 ---
 
-## The Review Agent
+## The Review Step
 
-For longer, multi-stage projects, the initial task list often can't anticipate everything. Tasks may fail in ways that retrying won't fix, or completing all tasks may not fully achieve the stated goal. The **review agent** addresses this by running after each task execution and adapting the roadmap when needed.
+For longer, multi-stage projects, the initial task list often can't anticipate everything. Tasks may fail in ways that retrying won't fix, or completing all tasks may not fully achieve the stated goal. The **review step** addresses this by running after each task execution and adapting the roadmap when needed.
 
 ```bash
-# Enable the review agent
+# Enable the review step
 lemming run --review
 
-# Or toggle the "Review Agent" checkbox in the Web UI
+# Use a different runner for reviews
+lemming run --review --review-runner claude
+
+# Or toggle the "Review" checkbox in the Web UI
 ```
 
-The review agent is **conservative by default** — if the roadmap is progressing normally, it does nothing. It only intervenes when it detects one of these situations:
+The reviewer is **conservative by default** — if the roadmap is progressing normally, it does nothing. It only intervenes when it detects one of these situations:
 
 *   **A task is stuck**: It has exhausted its retries and keeps failing for the same reason. The reviewer may rewrite the task description with a different approach, insert a prerequisite task, or remove it entirely.
 *   **The goal isn't met**: The project context states a clear goal, all tasks are complete, but the goal hasn't been fully achieved. The reviewer adds the minimum set of tasks needed to close the gap.
 *   **Tasks are obsolete**: A completed task's outcomes reveal that remaining pending tasks are unnecessary or incorrect. The reviewer cleans up the roadmap.
 
-The review agent uses the same underlying agent as the task runner and communicates through the same `lemming` CLI commands (`add`, `edit`, `delete`, `reset`). When a task hits its max retry limit, the reviewer gets one chance to heal it before the loop aborts.
+The reviewer uses the same underlying runner as the task executor (unless `--review-runner` is specified) and communicates through the same `lemming` CLI commands (`add`, `edit`, `delete`, `reset`). When a task hits its max retry limit, the reviewer gets one chance to heal it before the loop aborts.
 
 ---
 
@@ -113,31 +116,31 @@ The review agent uses the same underlying agent as the task runner and communica
 ### Roadmap Management
 *   **`status [<id>]`**: Roadmap overview or deep-dive into a specific task.
 *   **`context [<text>]`**: Set or view project-wide instructions. Supports `-f/--file`.
-*   **`add <desc>`**: Append a new task. Supports `--index` and `--agent`.
-*   **`edit <id>`**: Modify a task's description, agent, or position.
+*   **`add <desc>`**: Append a new task. Supports `--index` and `--runner`.
+*   **`edit <id>`**: Modify a task's description, runner, or position.
 *   **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk operations.
 *   **`outcome <id> <finding>`**: Record a technical detail (e.g., "Database schema is in /migrations").
 
 ### Task Status
 *   **`complete <id>`**: Mark a task as successful.
 *   **`fail <id>`**: Report a blocker or failure for retry.
-*   **`cancel <id>`**: Stop an in-progress task (kills the agent process).
+*   **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 *   **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
 
 ### Execution
 *   **`run`**: Start the orchestrator loop.
     *   `--max-attempts`: Retries per task (default 3).
-    *   `--agent`: The CLI tool to invoke.
-    *   `--review`: Enable the review agent (see below).
-    *   `--env`: Set environment variables for the agent (e.g., `--env OPENAI_API_KEY=sk-...`). Can be used multiple times.
-    *   `--`: Use `--` to pass any flag directly to the underlying agent.
+    *   `--runner`: The CLI tool to invoke.
+    *   `--review`: Enable the review step (see below).
+    *   `--env`: Set environment variables for the runner (e.g., `--env OPENAI_API_KEY=sk-...`). Can be used multiple times.
+    *   `--`: Use `--` to pass any flag directly to the underlying runner.
 *   **`serve`**: Launch the interactive Web UI.
     *   `--tunnel cloudflare|tailscale`: Expose the UI to the public internet via a secure tunnel.
     *   `--timeout`: Auto-shutdown after a duration (e.g., `8h`, `30m`). Defaults to `8h` with `--tunnel`, disabled otherwise.
 
 ---
 
-## Advanced: Agent Customization
+## Advanced: Runner Customization
 
 Lemming uses **fuzzy matching** to automatically inject the correct "YOLO" (auto-approve) and "Quiet" flags for popular tools:
 
@@ -146,7 +149,13 @@ Lemming uses **fuzzy matching** to automatically inject the correct "YOLO" (auto
 *   **Claude**: Adds `--dangerously-skip-permissions`
 *   **Codex**: Adds `--yolo`
 
-You can disable this behavior with `--no-defaults` or override the prompt flag with `--prompt-arg`.
+You can disable this behavior with `--no-defaults`, or use a **template** to fully control the command layout:
+
+```bash
+lemming run --runner "my-tool --input={{prompt}} --json"
+```
+
+When `{{prompt}}` is present in the runner string, Lemming replaces it with the prompt text and skips all default flag injection.
 
 ---
 

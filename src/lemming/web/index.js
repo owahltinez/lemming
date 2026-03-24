@@ -26,8 +26,8 @@
       $.cwd = "";
       $.newTask = "";
       $.loading = true;
-      $.agents = [];
-      $.selectedAgent = Storage.get("lemming_selected_agent", "gemini");
+      $.runners = [];
+      $.selectedRunner = Storage.get("lemming_selected_runner", "gemini");
       $.maxAttempts = Storage.get("lemming_max_attempts", 3);
       $.envOverrides = []; // Will hydrate below
       $.hideCompleted = Storage.get("lemming_hide_completed", false);
@@ -36,7 +36,7 @@
       $.expanded = {};
       $.loopRunning = false;
       $.editingTask = null;
-      $.editFormData = { description: "", agent: "", parent: "" };
+      $.editFormData = { description: "", runner: "", parent: "" };
 
       // --- Computed Properties ---
       $.completedCount = $.$computed(
@@ -158,15 +158,15 @@
         this.loading = false;
       };
 
-      $.fetchAgents = async function () {
-        const response = await fetch("/api/agents");
+      $.fetchRunners = async function () {
+        const response = await fetch("/api/runners");
         if (response.ok) {
-          this.agents = await response.json();
+          this.runners = await response.json();
         }
       };
 
-      $.saveAgentPreference = function () {
-        Storage.set("lemming_selected_agent", this.selectedAgent);
+      $.saveRunnerPreference = function () {
+        Storage.set("lemming_selected_runner", this.selectedRunner);
       };
       $.saveMaxAttemptsPreference = function () {
         Storage.set("lemming_max_attempts", this.maxAttempts);
@@ -251,7 +251,7 @@
         $.editingTask = task;
         $.editFormData = {
           description: task.description || "",
-          agent: task.agent || "",
+          runner: task.runner || "",
           parent: task.parent || "",
         };
         const modal = document.getElementById("edit-modal");
@@ -270,7 +270,7 @@
         const task = $.editingTask;
         const update = {
           description: $.editFormData.description.trim() || task.description,
-          agent: $.editFormData.agent.trim() || null,
+          runner: $.editFormData.runner.trim() || null,
           parent: $.editFormData.parent.trim() || null,
         };
 
@@ -329,7 +329,7 @@
         }
 
         const payload = {
-          agent: this.selectedAgent,
+          runner: this.selectedRunner,
           env: Object.keys(env).length > 0 ? env : undefined,
           review: this.reviewEnabled,
         };
@@ -362,7 +362,7 @@
       }
 
       // --- Initial Data Fetch ---
-      await Promise.all([$.fetchData(), $.fetchAgents()]);
+      await Promise.all([$.fetchData(), $.fetchRunners()]);
 
       // --- Mount to DOM ---
       await renderer.mount(document.body);

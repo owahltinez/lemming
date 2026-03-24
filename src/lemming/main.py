@@ -5,7 +5,7 @@ import time
 
 import click
 
-from . import agent
+from . import runner
 from . import paths
 from . import tasks
 
@@ -44,9 +44,9 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     help="Index to insert the task at (defaults to -1, the end).",
 )
 @click.option(
-    "--agent",
-    "agent_name",
-    help="Custom agent to use for this task (overrides the default run agent).",
+    "--runner",
+    "runner_name",
+    help="Custom runner to use for this task (overrides the default run runner).",
 )
 @click.option(
     "--parent",
@@ -57,7 +57,7 @@ def add(
     ctx: click.Context,
     description: str,
     index: int,
-    agent_name: str | None,
+    runner_name: str | None,
     parent: str | None,
 ):
     """Adds a new task to the roadmap queue.
@@ -65,13 +65,13 @@ def add(
     Args:
         description: A text description of the task to perform.
         index: The position in the roadmap to insert the task.
-        agent_name: An optional custom agent to use for this specific task.
+        runner_name: An optional custom runner to use for this specific task.
         parent: Optional parent task ID.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
-    new_task = tasks.add_task(tasks_file, description, agent_name, index, parent)
+    new_task = tasks.add_task(tasks_file, description, runner_name, index, parent)
     task_id = new_task.id
 
     if verbose:
@@ -83,7 +83,7 @@ def add(
 @cli.command(short_help="<taskid> Edit an existing task's details")
 @click.argument("task_id")
 @click.option("--description", help="New description for the task.")
-@click.option("--agent", "agent_name", help="New custom agent for the task.")
+@click.option("--runner", "runner_name", help="New custom runner for the task.")
 @click.option("--index", type=int, help="New index in the task queue.")
 @click.option(
     "--parent",
@@ -94,22 +94,22 @@ def edit(
     ctx: click.Context,
     task_id: str,
     description: str | None,
-    agent_name: str | None,
+    runner_name: str | None,
     index: int | None,
     parent: str | None,
 ):
-    """Edits an existing task's description, preferred agent, position, or parent.
+    """Edits an existing task's description, preferred runner, position, or parent.
 
     Args:
         task_id: The ID of the task to update.
         description: The new description (optional).
-        agent_name: The new preferred agent (optional).
+        runner_name: The new preferred runner (optional).
         index: The new position in the roadmap (optional).
         parent: The new parent task ID (optional).
     """
-    if description is None and agent_name is None and index is None and parent is None:
+    if description is None and runner_name is None and index is None and parent is None:
         click.echo(
-            "Error: At least one of --description, --agent, --index, or --parent must be provided."
+            "Error: At least one of --description, --runner, --index, or --parent must be provided."
         )
         ctx.exit(1)
 
@@ -120,7 +120,7 @@ def edit(
             tasks_file,
             task_id,
             description=description,
-            agent=agent_name,
+            runner=runner_name,
             index=index,
             parent=parent,
         )
@@ -238,8 +238,8 @@ def status(ctx: click.Context, task_id: str | None):
     click.echo(f"Description: {target.description}")
     if target.parent:
         click.echo(f"Parent:      {target.parent}")
-    if target.agent:
-        click.echo(f"Custom Agent: {target.agent}")
+    if target.runner:
+        click.echo(f"Custom Runner: {target.runner}")
     click.echo(f"Attempts:    {target.attempts}")
 
     log_file = paths.get_log_file(tasks_file, target.id)
@@ -379,7 +379,7 @@ def fail(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def cancel(ctx: click.Context, task_id: str):
-    """Kills the agent process for an in-progress task and resets it to pending.
+    """Kills the runner process for an in-progress task and resets it to pending.
 
     Args:
         task_id: The ID of the task to cancel.
@@ -413,22 +413,20 @@ def reset(ctx: click.Context, task_id: str):
 def _run_reviewer(
     tasks_file: pathlib.Path,
     finished_task_id: str,
-    agent_name: str,
+    runner_name: str,
     yolo: bool,
-    prompt_arg: str | None,
-    agent_args: tuple,
+    runner_args: tuple,
     no_defaults: bool,
     verbose: bool,
 ) -> None:
-    """Runs the reviewer agent to evaluate and adapt the roadmap.
+    """Runs the reviewer to evaluate and adapt the roadmap.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         finished_task_id: ID of the task that just finished.
-        agent_name: The CLI agent to invoke.
-        yolo: If True, skip agent confirmations.
-        prompt_arg: Explicit prompt argument for the agent.
-        agent_args: Raw arguments passed directly to the agent.
+        runner_name: The CLI runner to invoke.
+        yolo: If True, skip runner confirmations.
+        runner_args: Raw arguments passed directly to the runner.
         no_defaults: Skip default flag injection.
         verbose: If True, echo reviewer output.
     """
@@ -440,7 +438,7 @@ def _run_reviewer(
     if verbose:
         click.echo("\n--- Running roadmap review ---")
 
-    prompt = agent.prepare_review_prompt(data, finished_task, tasks_file)
+    prompt = runner.prepare_review_prompt(data, finished_task, tasks_file)
 
     if verbose:
         click.secho("\n=== Reviewer Prompt ===", fg="magenta", bold=True)
@@ -449,13 +447,21 @@ def _run_reviewer(
 
     # Use a synthetic task ID for the reviewer log so it doesn't pollute task logs
     review_id = f"review-{finished_task_id}"
-    cmd = agent.build_agent_command(
-        agent_name, prompt, yolo, prompt_arg, agent_args, no_defaults, verbose=verbose,
+    cmd = runner.build_runner_command(
+        runner_name,
+        prompt,
+        yolo,
+        runner_args,
+        no_defaults,
+        verbose=verbose,
     )
 
     try:
-        returncode, stdout, stderr = agent.run_agent_with_heartbeat(
-            cmd, tasks_file, review_id, verbose,
+        returncode, stdout, stderr = runner.run_with_heartbeat(
+            cmd,
+            tasks_file,
+            review_id,
+            verbose,
             echo_fn=lambda line: click.echo(line, nl=False),
         )
         if verbose:
@@ -479,59 +485,60 @@ def _run_reviewer(
     help="Seconds to wait before retrying a failed task (to handle rate limits).",
 )
 @click.option(
-    "--yolo/--no-yolo", default=True, help="Run the agent in YOLO/auto-approve mode."
+    "--yolo/--no-yolo", default=True, help="Run the runner in YOLO/auto-approve mode."
 )
 @click.option(
-    "--agent",
-    "agent_name",
+    "--runner",
+    "runner_name",
     default="gemini",
-    help="The underlying CLI agent to use (gemini, aider, claude, codex).",
+    help="The underlying CLI runner to use (gemini, aider, claude, codex).",
 )
 @click.option(
     "--env",
     multiple=True,
-    help="Environment variables to set for the agent (e.g. --env KEY=VALUE).",
+    help="Environment variables to set for the runner (e.g. --env KEY=VALUE).",
 )
 @click.option(
     "--no-defaults",
     is_flag=True,
-    help="Do not auto-inject default flags (like --yolo) based on agent name.",
-)
-@click.option(
-    "--prompt-arg",
-    default=None,
-    help="Argument to precede the prompt (e.g. '--message'). If omitted, uses agent defaults.",
+    help="Do not auto-inject default flags (like --yolo) based on runner name.",
 )
 @click.option(
     "--review/--no-review",
     default=False,
-    help="Run a reviewer agent after each task to adapt the roadmap.",
+    help="Run a reviewer after each task to adapt the roadmap.",
 )
-@click.argument("agent_args", nargs=-1, type=click.UNPROCESSED)
+@click.option(
+    "--review-runner",
+    "review_runner",
+    default=None,
+    help="Runner to use for reviews (defaults to --runner).",
+)
+@click.argument("runner_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run(
     ctx: click.Context,
     max_attempts: int,
     retry_delay: int,
     yolo: bool,
-    agent_name: str,
+    runner_name: str,
     env: tuple,
     no_defaults: bool,
-    prompt_arg: str | None,
     review: bool,
-    agent_args: tuple,
+    review_runner: str | None,
+    runner_args: tuple,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks.
 
     Args:
         max_attempts: Maximum retries per task.
         retry_delay: Delay between retries.
-        yolo: If True, skip agent confirmations.
-        agent_name: The CLI agent to invoke.
+        yolo: If True, skip runner confirmations.
+        runner_name: The CLI runner to invoke.
         env: Environment variables to inject.
         no_defaults: Skip default flag injection.
-        prompt_arg: Explicit prompt argument for the agent.
-        agent_args: Raw arguments passed directly to the agent.
+        review_runner: Runner to use for reviews (falls back to runner_name).
+        runner_args: Raw arguments passed directly to the runner.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
@@ -565,8 +572,13 @@ def run(
                     f"\nTask {task_id} reached {max_attempts} attempts. Running reviewer..."
                 )
                 _run_reviewer(
-                    tasks_file, task_id, agent_name, yolo, prompt_arg,
-                    agent_args, no_defaults, verbose,
+                    tasks_file,
+                    task_id,
+                    review_runner or runner_name,
+                    yolo,
+                    runner_args,
+                    no_defaults,
+                    verbose,
                 )
                 # Re-check: if the reviewer reset/edited/replaced the task, continue
                 data = tasks.load_tasks(tasks_file)
@@ -607,19 +619,18 @@ def run(
                 f"[{task_id}] Attempt {current_task.attempts}/{max_attempts}: {current_task.description}"
             )
 
-        prompt = agent.prepare_prompt(data, current_task, tasks_file)
+        prompt = runner.prepare_prompt(data, current_task, tasks_file)
 
         if verbose:
-            click.secho("\n=== Agent Prompt ===", fg="blue", bold=True)
+            click.secho("\n=== Runner Prompt ===", fg="blue", bold=True)
             click.echo(prompt)
             click.secho("====================\n", fg="blue", bold=True)
 
-        cmd = agent.build_agent_command(
-            current_task.agent or agent_name,
+        cmd = runner.build_runner_command(
+            current_task.runner or runner_name,
             prompt,
             yolo,
-            prompt_arg,
-            agent_args,
+            runner_args,
             no_defaults,
             verbose=verbose,
         )
@@ -627,7 +638,7 @@ def run(
         returncode = 0
         stdout, stderr = "", ""
         try:
-            returncode, stdout, stderr = agent.run_agent_with_heartbeat(
+            returncode, stdout, stderr = runner.run_with_heartbeat(
                 cmd,
                 tasks_file,
                 task_id,
@@ -641,18 +652,18 @@ def run(
                     if stderr:
                         click.echo(stderr, err=True)
                 click.echo(
-                    f"\n{agent_name.capitalize()} execution failed with exit code {returncode}"
+                    f"\n{runner_name.capitalize()} execution failed with exit code {returncode}"
                 )
                 if returncode == 127:
                     click.echo(
-                        f"\nNOTE: Command '{agent_name}' not found.\n"
+                        f"\nNOTE: Command '{runner_name}' not found.\n"
                         "If you are using a shell alias, Python subprocesses cannot see it.\n"
                         "Fixes:\n"
-                        f"1. Use the absolute path: `lemming run --agent /path/to/{agent_name}`\n"
-                        f"2. Create an executable wrapper script for '{agent_name}' in your PATH."
+                        f"1. Use the absolute path: `lemming run --runner /path/to/{runner_name}`\n"
+                        f"2. Create an executable wrapper script for '{runner_name}' in your PATH."
                     )
         except Exception as e:
-            click.echo(f"\nAn error occurred while executing {agent_name}: {e}")
+            click.echo(f"\nAn error occurred while executing {runner_name}: {e}")
 
         # Post-execution validation
         post_task = tasks.finish_task_attempt(tasks_file, task_id)
@@ -663,7 +674,7 @@ def run(
 
         if post_task.status == "completed":
             if verbose:
-                click.echo("Agent successfully reported task completion.")
+                click.echo("Runner successfully reported task completion.")
             else:
                 click.echo(f"[{task_id}] Task completed successfully!")
         else:
@@ -674,7 +685,7 @@ def run(
                     click.echo(stderr, err=True)
             if verbose:
                 click.echo(
-                    "Agent finished execution but did NOT report completion. Retrying..."
+                    "Runner finished execution but did NOT report completion. Retrying..."
                 )
             if post_task.attempts < max_attempts and retry_delay > 0:
                 if verbose:
@@ -686,8 +697,13 @@ def run(
         # Run the reviewer after each task execution
         if review:
             _run_reviewer(
-                tasks_file, task_id, agent_name, yolo, prompt_arg,
-                agent_args, no_defaults, verbose,
+                tasks_file,
+                task_id,
+                review_runner or runner_name,
+                yolo,
+                runner_args,
+                no_defaults,
+                verbose,
             )
 
 

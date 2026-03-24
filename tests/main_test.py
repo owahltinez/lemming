@@ -10,7 +10,7 @@ import unittest.mock
 import yaml
 import click.testing
 
-from lemming import agent
+from lemming import runner
 from lemming import api
 from lemming import main
 from lemming import paths
@@ -19,7 +19,7 @@ from lemming import tasks
 
 class TestLemming(unittest.TestCase):
     def setUp(self):
-        self.runner = click.testing.CliRunner()
+        self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
         self.base_args = ["--verbose", "--tasks-file", str(self.test_tasks_file)]
@@ -44,7 +44,7 @@ class TestLemming(unittest.TestCase):
         shutil.rmtree(self.test_dir)
 
     def test_add_task(self):
-        result = self.runner.invoke(main.cli, self.base_args + ["add", "New Task"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["add", "New Task"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Added task", result.output)
 
@@ -53,12 +53,12 @@ class TestLemming(unittest.TestCase):
         self.assertIn("New Task", task_descs)
 
     def test_delete_task(self):
-        self.runner.invoke(main.cli, self.base_args + ["add", "To be removed"])
+        self.cli_runner.invoke(main.cli, self.base_args + ["add", "To be removed"])
 
         data = tasks.load_tasks(self.test_tasks_file)
         task_id = next(t.id for t in data.tasks if t.description == "To be removed")
 
-        delete_result = self.runner.invoke(
+        delete_result = self.cli_runner.invoke(
             main.cli, self.base_args + ["delete", task_id]
         )
         self.assertEqual(delete_result.exit_code, 0)
@@ -69,8 +69,12 @@ class TestLemming(unittest.TestCase):
         self.assertNotIn("To be removed", task_descs)
 
     def test_task_complete(self):
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Done"])
-        result = self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Done"]
+        )
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["complete", "12345678"]
+        )
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
@@ -78,11 +82,13 @@ class TestLemming(unittest.TestCase):
 
     def test_task_complete_after_outcome(self):
         # Record outcome first
-        self.runner.invoke(
+        self.cli_runner.invoke(
             main.cli, self.base_args + ["outcome", "12345678", "Did the thing"]
         )
         # Then complete
-        result = self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["complete", "12345678"]
+        )
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
@@ -91,7 +97,7 @@ class TestLemming(unittest.TestCase):
 
     def test_task_fail(self):
         # Record failure outcome first
-        self.runner.invoke(
+        self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
@@ -101,7 +107,7 @@ class TestLemming(unittest.TestCase):
             ],
         )
         # Then fail
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
@@ -116,7 +122,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("Failed due to missing dependency", data.tasks[0].outcomes)
 
     def test_info_no_args(self):
-        result = self.runner.invoke(main.cli, self.base_args + ["status"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["status"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("=== Project Context ===", result.output)
         self.assertIn("Initial context", result.output)
@@ -124,19 +130,21 @@ class TestLemming(unittest.TestCase):
         self.assertIn("(12345678) Initial Task", result.output)
 
     def test_info_with_id(self):
-        result = self.runner.invoke(main.cli, self.base_args + ["status", "12345678"])
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["status", "12345678"]
+        )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Task ID:     12345678", result.output)
         self.assertIn("Status:      pending", result.output)
         self.assertIn("Description: Initial Task", result.output)
 
     def test_context_no_args(self):
-        result = self.runner.invoke(main.cli, self.base_args + ["context"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["context"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Initial context", result.output)
 
     def test_set_context(self):
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["context", "Updated context via CLI"]
         )
         self.assertEqual(result.exit_code, 0)
@@ -149,7 +157,7 @@ class TestLemming(unittest.TestCase):
         context_file = pathlib.Path(self.test_dir) / "context.txt"
         context_file.write_text("Context from file content", encoding="utf-8")
 
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["context", "--file", str(context_file)]
         )
         self.assertEqual(result.exit_code, 0)
@@ -159,7 +167,7 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(data.context, "Context from file content")
 
     def test_edit_task_description(self):
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli,
             self.base_args + ["edit", "12345678", "--description", "Updated Task"],
         )
@@ -169,25 +177,25 @@ class TestLemming(unittest.TestCase):
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].description, "Updated Task")
 
-    def test_edit_task_agent(self):
-        result = self.runner.invoke(
-            main.cli, self.base_args + ["edit", "12345678", "--agent", "custom-agent"]
+    def test_edit_task_runner(self):
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["edit", "12345678", "--runner", "custom-runner"]
         )
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].agent, "custom-agent")
+        self.assertEqual(data.tasks[0].runner, "custom-runner")
 
     def test_edit_task_index(self):
         # Add another task
-        self.runner.invoke(main.cli, self.base_args + ["add", "Second Task"])
+        self.cli_runner.invoke(main.cli, self.base_args + ["add", "Second Task"])
 
         # Get the ID of the second task
         data = tasks.load_tasks(self.test_tasks_file)
         second_task_id = data.tasks[1].id
 
         # Move second task to index 0
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["edit", second_task_id, "--index", "0"]
         )
         self.assertEqual(result.exit_code, 0)
@@ -197,21 +205,23 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(data.tasks[1].id, "12345678")
 
     def test_edit_task_no_args(self):
-        result = self.runner.invoke(main.cli, self.base_args + ["edit", "12345678"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["edit", "12345678"])
         self.assertEqual(result.exit_code, 1)
         self.assertIn(
-            "Error: At least one of --description, --agent, --index, or --parent must be provided.",
+            "Error: At least one of --description, --runner, --index, or --parent must be provided.",
             result.output,
         )
 
     def test_clear_tasks_by_default(self):
         # Add a task
-        self.runner.invoke(main.cli, self.base_args + ["add", "Task to clear"])
+        self.cli_runner.invoke(main.cli, self.base_args + ["add", "Task to clear"])
         # Set context
-        self.runner.invoke(main.cli, self.base_args + ["context", "Context to keep"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["context", "Context to keep"]
+        )
 
         # Run clear without flags
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, ["--tasks-file", str(self.test_tasks_file), "delete", "--all"]
         )
         self.assertEqual(result.exit_code, 0)
@@ -223,11 +233,13 @@ class TestLemming(unittest.TestCase):
 
     def test_uncomplete_command(self):
         # 1. Complete it
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Done"])
-        self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Done"]
+        )
+        self.cli_runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
 
         # 2. Uncomplete it
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["uncomplete", "12345678"]
         )
         self.assertEqual(result.exit_code, 0)
@@ -237,7 +249,7 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(data.tasks[0].status, "pending")
 
     def test_outcome_command(self):
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["outcome", "12345678", "Observed behavior X"]
         )
         self.assertEqual(result.exit_code, 0)
@@ -255,7 +267,9 @@ class TestLemming(unittest.TestCase):
         tasks.save_tasks(self.test_tasks_file, data)
 
         # 2. Reset
-        result = self.runner.invoke(main.cli, self.base_args + ["reset", "12345678"])
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["reset", "12345678"]
+        )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("attempts, outcomes, and logs cleared", result.output)
 
@@ -264,21 +278,21 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(data.tasks[0].outcomes, [])
         self.assertEqual(data.tasks[0].status, "pending")
 
-    def test_add_task_with_agent(self):
-        result = self.runner.invoke(
-            main.cli, self.base_args + ["add", "Agent Task", "--agent", "aider"]
+    def test_add_task_with_runner(self):
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["add", "Runner Task", "--runner", "aider"]
         )
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        new_task = next(t for t in data.tasks if t.description == "Agent Task")
-        self.assertEqual(new_task.agent, "aider")
+        new_task = next(t for t in data.tasks if t.description == "Runner Task")
+        self.assertEqual(new_task.runner, "aider")
 
     def test_add_task_with_index(self):
-        self.runner.invoke(
+        self.cli_runner.invoke(
             main.cli, self.base_args + ["add", "First", "--index", "0"]
         )  # This will be at 0, old 12345678 will be at 1
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["add", "Middle", "--index", "1"]
         )
         self.assertEqual(result.exit_code, 0)
@@ -290,28 +304,36 @@ class TestLemming(unittest.TestCase):
 
     def test_complete_requires_outcome(self):
         # 1. Try to complete without outcome
-        result = self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["complete", "12345678"]
+        )
         self.assertEqual(result.exit_code, 1)
         self.assertIn("has no recorded outcomes", result.output)
 
         # 2. Add outcome and try again
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Done"])
-        result = self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Done"]
+        )
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["complete", "12345678"]
+        )
         self.assertEqual(result.exit_code, 0)
 
     def test_fail_requires_outcome(self):
         # 1. Try to fail without outcome
-        result = self.runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
         self.assertEqual(result.exit_code, 1)
         self.assertIn("has no recorded outcomes", result.output)
 
         # 2. Add outcome and try again
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Failed"])
-        result = self.runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Failed"]
+        )
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
         self.assertEqual(result.exit_code, 0)
 
     def test_load_prompt(self):
-        prompt = agent.load_prompt("taskrunner")
+        prompt = runner.load_prompt("taskrunner")
         self.assertIn("roadmap", prompt)
         self.assertIn("description", prompt)
 
@@ -320,7 +342,7 @@ class TestLemming(unittest.TestCase):
             context="Context",
             tasks=[tasks.Task(id="1", description="T1", status="pending")],
         )
-        prompt = agent.prepare_prompt(data, data.tasks[0], self.test_tasks_file)
+        prompt = runner.prepare_prompt(data, data.tasks[0], self.test_tasks_file)
         self.assertIn("T1", prompt)
         self.assertIn("Context", prompt)
 
@@ -333,7 +355,7 @@ class TestLemming(unittest.TestCase):
 
     def test_verbose_info(self):
         # Test without verbose (should be quiet by default)
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, ["--tasks-file", str(self.test_tasks_file), "status"]
         )
         self.assertNotIn("=== Project Context ===", result.output)
@@ -346,14 +368,14 @@ class TestLemming(unittest.TestCase):
             data.tasks[0].status = "completed"
             tasks.save_tasks(self.test_tasks_file, data)
 
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, ["--tasks-file", str(self.test_tasks_file), "status"]
         )
         self.assertNotIn("Initial Task", result.output)
         self.assertIn("(1 completed tasks hidden)", result.output)
 
         # Test with verbose
-        result_v = self.runner.invoke(
+        result_v = self.cli_runner.invoke(
             main.cli, ["--verbose", "--tasks-file", str(self.test_tasks_file), "status"]
         )
         self.assertIn("=== Project Context ===", result_v.output)
@@ -361,14 +383,14 @@ class TestLemming(unittest.TestCase):
 
     def test_verbose_add(self):
         # Default is quiet (just ID)
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, ["--tasks-file", str(self.test_tasks_file), "add", "new task"]
         )
         self.assertEqual(len(result.output.strip()), 8)  # hex ID of length 8
         self.assertNotIn("Added task", result.output)
 
         # Verbose shows the message
-        result_v = self.runner.invoke(
+        result_v = self.cli_runner.invoke(
             main.cli,
             [
                 "--verbose",
@@ -382,13 +404,13 @@ class TestLemming(unittest.TestCase):
 
     def test_run_default_quiet(self):
         # Run is quiet by default, but should still report attempt
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli,
             [
                 "--tasks-file",
                 str(self.test_tasks_file),
                 "run",
-                "--agent",
+                "--runner",
                 "true",
                 "--max-attempts",
                 "1",
@@ -399,32 +421,32 @@ class TestLemming(unittest.TestCase):
 
     def test_run_verbose_global(self):
         # Run with global verbose shows more
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli,
             [
                 "--verbose",
                 "--tasks-file",
                 str(self.test_tasks_file),
                 "run",
-                "--agent",
+                "--runner",
                 "true",
                 "--max-attempts",
                 "1",
             ],
         )
         self.assertIn("--- Task 12345678", result.output)
-        self.assertIn("=== Agent Prompt ===", result.output)
+        self.assertIn("=== Runner Prompt ===", result.output)
 
     def test_run_attempts_limit(self):
-        # Run with max-attempts=2. The agent 'true' does not use lemming CLI
+        # Run with max-attempts=2. The runner 'true' does not use lemming CLI
         # to complete the task, so it counts as an execution without completion.
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli,
             [
                 "--tasks-file",
                 str(self.test_tasks_file),
                 "run",
-                "--agent",
+                "--runner",
                 "true",
                 "--max-attempts",
                 "2",
@@ -446,15 +468,19 @@ class TestLemming(unittest.TestCase):
         time.sleep(0.2)
 
         # Record outcome and complete
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Done"])
-        self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Done"]
+        )
+        self.cli_runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
         task = data.tasks[0]
         self.assertGreaterEqual(task.run_time, 0.2)
 
         # Check status output
-        result = self.runner.invoke(main.cli, self.base_args + ["status", "12345678"])
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["status", "12345678"]
+        )
         self.assertIn("Run Time:", result.output)
         self.assertIn("s", result.output)
 
@@ -466,8 +492,10 @@ class TestLemming(unittest.TestCase):
         time.sleep(0.1)
 
         # Record outcome and fail
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Failed"])
-        self.runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Failed"]
+        )
+        self.cli_runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
         task = data.tasks[0]
@@ -477,16 +505,18 @@ class TestLemming(unittest.TestCase):
         # First attempt
         tasks.mark_task_in_progress(self.test_tasks_file, "12345678")
         time.sleep(0.1)
-        self.runner.invoke(
+        self.cli_runner.invoke(
             main.cli, self.base_args + ["outcome", "12345678", "Failed 1"]
         )
-        self.runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
+        self.cli_runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
 
         # Second attempt
         tasks.mark_task_in_progress(self.test_tasks_file, "12345678")
         time.sleep(0.1)
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Done"])
-        self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Done"]
+        )
+        self.cli_runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
         task = data.tasks[0]
@@ -495,18 +525,20 @@ class TestLemming(unittest.TestCase):
     def test_run_time_reset(self):
         tasks.mark_task_in_progress(self.test_tasks_file, "12345678")
         time.sleep(0.1)
-        self.runner.invoke(main.cli, self.base_args + ["outcome", "12345678", "Done"])
-        self.runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "Done"]
+        )
+        self.cli_runner.invoke(main.cli, self.base_args + ["complete", "12345678"])
 
         # Reset
-        self.runner.invoke(main.cli, self.base_args + ["reset", "12345678"])
+        self.cli_runner.invoke(main.cli, self.base_args + ["reset", "12345678"])
 
         data = tasks.load_tasks(self.test_tasks_file)
         task = data.tasks[0]
         self.assertEqual(task.run_time, 0)
 
     def test_delete_all(self):
-        result = self.runner.invoke(main.cli, self.base_args + ["delete", "--all"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["delete", "--all"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Deleted all tasks", result.output)
 
@@ -526,7 +558,7 @@ class TestLemming(unittest.TestCase):
             )
             tasks.save_tasks(self.test_tasks_file, data)
 
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["delete", "--completed"]
         )
         self.assertEqual(result.exit_code, 0)
@@ -538,26 +570,26 @@ class TestLemming(unittest.TestCase):
         self.assertIn("t2", task_ids)
 
     def test_delete_no_args_shows_error(self):
-        result = self.runner.invoke(main.cli, self.base_args + ["delete"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["delete"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("Provide a task ID", result.output)
 
     def test_delete_all_and_completed_mutually_exclusive(self):
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["delete", "--all", "--completed"]
         )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("mutually exclusive", result.output)
 
     def test_gemini_full_path(self):
-        cmd = agent.build_agent_command("/usr/bin/gemini", "hello", yolo=True)
+        cmd = runner.build_runner_command("/usr/bin/gemini", "hello", yolo=True)
         self.assertEqual(cmd[0], "/usr/bin/gemini")
         self.assertIn("--yolo", cmd)
         self.assertNotIn("--quiet", cmd)
         self.assertIn("hello", cmd)
 
     def test_aider_full_path(self):
-        cmd = agent.build_agent_command("/opt/aider", "hello", yolo=True)
+        cmd = runner.build_runner_command("/opt/aider", "hello", yolo=True)
         self.assertEqual(cmd[0], "/opt/aider")
         self.assertIn("--yes", cmd)
         self.assertIn("--quiet", cmd)
@@ -565,21 +597,21 @@ class TestLemming(unittest.TestCase):
         self.assertIn("hello", cmd)
 
     def test_claude_yolo(self):
-        cmd = agent.build_agent_command("claude", "hello", yolo=True)
+        cmd = runner.build_runner_command("claude", "hello", yolo=True)
         self.assertEqual(cmd[0], "claude")
         self.assertIn("--dangerously-skip-permissions", cmd)
         self.assertIn("--print", cmd)
         self.assertIn("hello", cmd)
 
     def test_codex_yolo(self):
-        cmd = agent.build_agent_command("codex", "hello", yolo=True)
+        cmd = runner.build_runner_command("codex", "hello", yolo=True)
         self.assertEqual(cmd[0], "codex")
         self.assertIn("--yolo", cmd)
         self.assertIn("--instructions", cmd)
         self.assertIn("hello", cmd)
 
     def test_fuzzy_gemini_match(self):
-        cmd = agent.build_agent_command("gemini-v2", "hello", yolo=True)
+        cmd = runner.build_runner_command("gemini-v2", "hello", yolo=True)
         self.assertEqual(cmd[0], "gemini-v2")
         self.assertIn("--yolo", cmd)
         self.assertIn("--no-sandbox", cmd)
@@ -588,24 +620,26 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(cmd[-1], "hello")
 
     def test_no_defaults_flag(self):
-        cmd = agent.build_agent_command("gemini", "hello", yolo=True, no_defaults=True)
+        cmd = runner.build_runner_command(
+            "gemini", "hello", yolo=True, no_defaults=True
+        )
         self.assertEqual(cmd, ["gemini", "hello"])
 
-    def test_custom_prompt_arg(self):
-        cmd = agent.build_agent_command(
-            "custom-agent", "hello", yolo=True, prompt_arg="--input"
+    def test_template_prompt_arg(self):
+        cmd = runner.build_runner_command(
+            "custom-runner --input {{prompt}}", "hello", yolo=True
         )
-        self.assertEqual(cmd, ["custom-agent", "--input", "hello"])
+        self.assertEqual(cmd, ["custom-runner", "--input", "hello"])
 
-    def test_custom_prompt_arg_no_dash(self):
-        cmd = agent.build_agent_command(
-            "custom-agent", "hello", yolo=True, prompt_arg="input"
+    def test_template_prompt_in_flag(self):
+        cmd = runner.build_runner_command(
+            "custom-runner --input={{prompt}}", "hello", yolo=True
         )
-        self.assertEqual(cmd, ["custom-agent", "--input", "hello"])
+        self.assertEqual(cmd, ["custom-runner", "--input=hello"])
 
-    def test_agent_args(self):
-        cmd = agent.build_agent_command(
-            "gemini", "hello", yolo=True, agent_args=("--model", "flash")
+    def test_runner_args(self):
+        cmd = runner.build_runner_command(
+            "gemini", "hello", yolo=True, runner_args=("--model", "flash")
         )
         self.assertEqual(cmd[0], "gemini")
         self.assertIn("--model", cmd)
@@ -803,7 +837,7 @@ class TestLemming(unittest.TestCase):
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
 
-        result = self.runner.invoke(main.cli, self.base_args + ["status"])
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["status"])
         self.assertEqual(result.exit_code, 0)
 
         # Order should be:
@@ -832,7 +866,7 @@ class TestLemming(unittest.TestCase):
 
 class TestTasksLocation(unittest.TestCase):
     def setUp(self):
-        self.runner = click.testing.CliRunner()
+        self.cli_runner = click.testing.CliRunner()
         # Remove LEMMING_HOME if set by conftest to allow Path.home mocking
         self.env_patcher = unittest.mock.patch.dict(os.environ)
         self.env_patcher.start()
@@ -844,7 +878,7 @@ class TestTasksLocation(unittest.TestCase):
 
     @unittest.mock.patch("pathlib.Path.home")
     def test_default_location_no_local_file(self, mock_home):
-        with self.runner.isolated_filesystem() as td:
+        with self.cli_runner.isolated_filesystem() as td:
             temp_home = pathlib.Path(td).resolve() / "fake_home"
             temp_home.mkdir()
             mock_home.return_value = temp_home
@@ -853,7 +887,7 @@ class TestTasksLocation(unittest.TestCase):
             cwd_path = str(pathlib.Path.cwd().resolve())
             path_hash = hashlib.sha256(cwd_path.encode()).hexdigest()[:12]
 
-            self.runner.invoke(main.cli, ["add", "Test Task"])
+            self.cli_runner.invoke(main.cli, ["add", "Test Task"])
 
             expected_local_path = pathlib.Path("tasks.yml")
             expected_global_path = (
@@ -866,7 +900,7 @@ class TestTasksLocation(unittest.TestCase):
 
     @unittest.mock.patch("pathlib.Path.home")
     def test_different_directories_different_hashes(self, mock_home):
-        with self.runner.isolated_filesystem() as td:
+        with self.cli_runner.isolated_filesystem() as td:
             temp_home = pathlib.Path(td).resolve() / "fake_home"
             temp_home.mkdir()
             mock_home.return_value = temp_home
@@ -881,7 +915,7 @@ class TestTasksLocation(unittest.TestCase):
             os.chdir(proj1)
             cwd1 = str(pathlib.Path.cwd().resolve())
             hash1 = hashlib.sha256(cwd1.encode()).hexdigest()[:12]
-            self.runner.invoke(main.cli, ["add", "Task 1"])
+            self.cli_runner.invoke(main.cli, ["add", "Task 1"])
             path1 = temp_home / ".local" / "lemming" / hash1 / "tasks.yml"
             self.assertTrue(path1.exists())
 
@@ -889,7 +923,7 @@ class TestTasksLocation(unittest.TestCase):
             os.chdir(proj2)
             cwd2 = str(pathlib.Path.cwd().resolve())
             hash2 = hashlib.sha256(cwd2.encode()).hexdigest()[:12]
-            self.runner.invoke(main.cli, ["add", "Task 2"])
+            self.cli_runner.invoke(main.cli, ["add", "Task 2"])
             path2 = temp_home / ".local" / "lemming" / hash2 / "tasks.yml"
             self.assertTrue(path2.exists())
 
@@ -899,7 +933,7 @@ class TestTasksLocation(unittest.TestCase):
 
 class TestLemmingRun(unittest.TestCase):
     def setUp(self):
-        self.runner = click.testing.CliRunner()
+        self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
@@ -925,7 +959,7 @@ class TestLemmingRun(unittest.TestCase):
 
     @unittest.mock.patch("subprocess.Popen")
     def test_run_success(self, mock_popen):
-        # Simulate agent reporting success
+        # Simulate runner reporting success
         mock_process = unittest.mock.MagicMock()
         mock_process.poll.side_effect = [
             None,
@@ -948,18 +982,18 @@ class TestLemmingRun(unittest.TestCase):
         mock_process.wait.side_effect = wait_side_effect
         mock_popen.return_value = mock_process
 
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, ["--verbose"] + self.base_args + ["run", "--max-attempts", "1"]
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("All tasks completed!", result.output)
 
-        self.assertIn("Agent successfully reported task completion.", result.output)
+        self.assertIn("Runner successfully reported task completion.", result.output)
 
     @unittest.mock.patch("subprocess.Popen")
     @unittest.mock.patch("time.sleep", return_value=None)  # Skip delay
     def test_run_retry_and_fail(self, mock_sleep, mock_popen):
-        # Agent finishes but doesn't report completion
+        # Runner finishes but doesn't report completion
         mock_process = unittest.mock.MagicMock()
         mock_process.poll.return_value = 0
         mock_process.returncode = 0
@@ -967,7 +1001,7 @@ class TestLemmingRun(unittest.TestCase):
         mock_process.communicate.return_value = ("stdout", "stderr")
         mock_popen.return_value = mock_process
 
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli,
             self.base_args + ["run", "--max-attempts", "2", "--retry-delay", "0"],
         )
@@ -987,7 +1021,7 @@ class TestLemmingRun(unittest.TestCase):
         mock_popen.return_value = mock_process
 
         # It should retry if status is still pending
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["run", "--max-attempts", "1"]
         )
         self.assertIn("execution failed with exit code 1", result.output)
@@ -1001,7 +1035,7 @@ class TestLemmingRun(unittest.TestCase):
             2, "No such file or directory", "gemini"
         )
 
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, self.base_args + ["run", "--max-attempts", "1"]
         )
         self.assertIn("An error occurred while executing gemini", result.output)
@@ -1016,7 +1050,7 @@ class TestLemmingRun(unittest.TestCase):
             data.tasks[0].pid = 999999  # Some fake PID
             tasks.save_tasks(self.test_tasks_file, data)
 
-        # 2. Setup mock for the agent
+        # 2. Setup mock for the runner
         mock_process = unittest.mock.MagicMock()
         mock_process.poll.side_effect = [None, 0]
         mock_process.returncode = 0
@@ -1034,7 +1068,7 @@ class TestLemmingRun(unittest.TestCase):
         mock_popen.return_value = mock_process
 
         # 3. Run lemming
-        result = self.runner.invoke(
+        result = self.cli_runner.invoke(
             main.cli, ["--verbose"] + self.base_args + ["run", "--max-attempts", "1"]
         )
 
@@ -1049,7 +1083,7 @@ class TestLemmingRun(unittest.TestCase):
 
 class TestLemmingLogging(unittest.TestCase):
     def setUp(self):
-        self.runner = click.testing.CliRunner()
+        self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
@@ -1060,19 +1094,19 @@ class TestLemmingLogging(unittest.TestCase):
 
     def test_task_logging(self):
         # 1. Add a task
-        res = self.runner.invoke(main.cli, self.base_args + ["add", "Test logging"])
+        res = self.cli_runner.invoke(main.cli, self.base_args + ["add", "Test logging"])
         self.assertEqual(res.exit_code, 0)
         task_id = res.output.strip()
 
-        # 2. Run the task using a simple echo agent
-        res = self.runner.invoke(
+        # 2. Run the task using a simple echo runner
+        res = self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
                 "run",
                 "--max-attempts",
                 "1",
-                "--agent",
+                "--runner",
                 "echo",
                 "Hello from log test",
             ],
@@ -1086,16 +1120,16 @@ class TestLemmingLogging(unittest.TestCase):
 
     def test_log_cleanup(self):
         # Test reset cleanup
-        res = self.runner.invoke(main.cli, self.base_args + ["add", "Test cleanup"])
+        res = self.cli_runner.invoke(main.cli, self.base_args + ["add", "Test cleanup"])
         task_id = res.output.strip()
-        self.runner.invoke(
+        self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
                 "run",
                 "--max-attempts",
                 "1",
-                "--agent",
+                "--runner",
                 "echo",
                 "cleanup test",
             ],
@@ -1104,25 +1138,25 @@ class TestLemmingLogging(unittest.TestCase):
         log_file = paths.get_log_file(self.test_tasks_file, task_id)
         self.assertTrue(log_file.exists())
 
-        self.runner.invoke(main.cli, self.base_args + ["reset", task_id])
+        self.cli_runner.invoke(main.cli, self.base_args + ["reset", task_id])
         self.assertFalse(log_file.exists())
 
         # Delete the first task so it doesn't get picked up again
-        self.runner.invoke(main.cli, self.base_args + ["delete", task_id])
+        self.cli_runner.invoke(main.cli, self.base_args + ["delete", task_id])
 
         # Test delete cleanup
-        res = self.runner.invoke(
+        res = self.cli_runner.invoke(
             main.cli, self.base_args + ["add", "Test delete cleanup"]
         )
         task_id_2 = res.output.strip()
-        self.runner.invoke(
+        self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
                 "run",
                 "--max-attempts",
                 "1",
-                "--agent",
+                "--runner",
                 "echo",
                 "delete test",
             ],
@@ -1131,14 +1165,14 @@ class TestLemmingLogging(unittest.TestCase):
         log_file_2 = paths.get_log_file(self.test_tasks_file, task_id_2)
         self.assertTrue(log_file_2.exists())
 
-        self.runner.invoke(main.cli, self.base_args + ["delete", task_id_2])
+        self.cli_runner.invoke(main.cli, self.base_args + ["delete", task_id_2])
         self.assertFalse(log_file_2.exists())
 
     def test_delete_all_cleanup(self):
         # Add two tasks
-        res1 = self.runner.invoke(main.cli, self.base_args + ["add", "Task 1"])
+        res1 = self.cli_runner.invoke(main.cli, self.base_args + ["add", "Task 1"])
         id1 = res1.output.strip()
-        res2 = self.runner.invoke(main.cli, self.base_args + ["add", "Task 2"])
+        res2 = self.cli_runner.invoke(main.cli, self.base_args + ["add", "Task 2"])
         id2 = res2.output.strip()
 
         # Create logs manually to ensure they exist
@@ -1151,7 +1185,7 @@ class TestLemmingLogging(unittest.TestCase):
         self.assertTrue(log2.exists())
 
         # Delete all
-        self.runner.invoke(main.cli, self.base_args + ["delete", "--all"])
+        self.cli_runner.invoke(main.cli, self.base_args + ["delete", "--all"])
 
         self.assertFalse(log1.exists())
         self.assertFalse(log2.exists())
@@ -1159,7 +1193,7 @@ class TestLemmingLogging(unittest.TestCase):
 
 class TestLemmingShare(unittest.TestCase):
     def setUp(self):
-        self.runner = click.testing.CliRunner()
+        self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
@@ -1189,7 +1223,7 @@ class TestLemmingShare(unittest.TestCase):
         with unittest.mock.patch("time.sleep", return_value=None), unittest.mock.patch(
             "os._exit", side_effect=SystemExit
         ):
-            result = self.runner.invoke(
+            result = self.cli_runner.invoke(
                 main.cli,
                 self.base_args + ["serve", "--tunnel", "cloudflare", "--timeout", "0"],
             )
@@ -1211,7 +1245,7 @@ class TestLemmingShare(unittest.TestCase):
         with unittest.mock.patch("time.sleep", return_value=None), unittest.mock.patch(
             "os._exit", side_effect=SystemExit
         ):
-            result = self.runner.invoke(
+            result = self.cli_runner.invoke(
                 main.cli,
                 self.base_args + ["serve", "--tunnel", "tailscale", "--timeout", "0"],
             )

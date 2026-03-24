@@ -152,12 +152,12 @@ def test_add_task(test_tasks):
     assert any(t.description == "New task from test" for t in roadmap.tasks)
 
 
-def test_add_task_with_agent(test_tasks):
+def test_add_task_with_runner(test_tasks):
     response = client.post(
-        "/api/tasks", json={"description": "Agent task", "agent": "claude"}
+        "/api/tasks", json={"description": "Runner task", "runner": "claude"}
     )
     assert response.status_code == 200
-    assert response.json()["agent"] == "claude"
+    assert response.json()["runner"] == "claude"
 
 
 def test_delete_completed_tasks(test_tasks):
@@ -283,7 +283,7 @@ def test_quiet_poll_filter():
         pathname="",
         lineno=0,
         msg='%s - "%s %s HTTP/%s" %d',
-        args=("127.0.0.1:55964", "GET", "/api/agents", "1.1", 200),
+        args=("127.0.0.1:55964", "GET", "/api/runners", "1.1", 200),
         exc_info=None,
     )
     assert filt.filter(record_other) is True
@@ -484,12 +484,12 @@ def test_api_delete_log_cleanup(test_tasks):
 
 def test_run_loop(test_tasks):
     with patch("subprocess.Popen") as mock_popen:
-        response = client.post("/api/run", json={"agent": "claude", "max_attempts": 5})
+        response = client.post("/api/run", json={"runner": "claude", "max_attempts": 5})
         assert response.status_code == 200
         assert response.json() == {"status": "started"}
 
         args = mock_popen.call_args[0][0]
-        assert "--agent" in args
+        assert "--runner" in args
         assert "claude" in args
         assert "--max-attempts" in args
         assert "5" in args

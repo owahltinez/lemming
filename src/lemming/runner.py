@@ -62,88 +62,95 @@ def _shlex_join_pretty(cmd: list[str]) -> str:
     return " ".join(_pretty_quote(arg) for arg in cmd)
 
 
-def build_agent_command(
-    agent_name: str,
+def build_runner_command(
+    runner_name: str,
     prompt: str,
     yolo: bool,
-    prompt_arg: str | None = None,
-    agent_args: tuple | None = None,
+    runner_args: tuple | None = None,
     no_defaults: bool = False,
     verbose: bool = False,
 ) -> list[str]:
-    """Constructs the CLI command for the specified agent.
+    """Constructs the CLI command for the specified runner.
 
     Args:
-        agent_name: Name or path of the agent executable.
-        prompt: The full prompt text to pass to the agent.
+        runner_name: Name or path of the runner executable. May contain a
+            ``{{prompt}}`` placeholder; when present, the template is
+            shlex-split and the placeholder token is replaced with the
+            prompt text.  Default flag injection is skipped in template
+            mode.
+        prompt: The full prompt text to pass to the runner.
         yolo: Whether to enable auto-approval/YOLO mode.
-        prompt_arg: Explicit argument to use for the prompt (e.g., "--message").
-        agent_args: Extra arguments to pass to the agent.
-        no_defaults: If True, do not inject default flags for known agents.
-        verbose: If True, enable verbose output for supported agents.
+        runner_args: Extra arguments to pass to the runner.
+        no_defaults: If True, do not inject default flags for known runners.
+        verbose: If True, enable verbose output for supported runners.
 
     Returns:
         A list of command-line arguments.
     """
-    parts = shlex.split(agent_name)
+    # Template mode: {{prompt}} in runner_name means the user controls the
+    # full command layout.  Split, substitute, and return early.
+    if "{{prompt}}" in runner_name:
+        parts = shlex.split(runner_name)
+        cmd = [p.replace("{{prompt}}", prompt) for p in parts]
+        if runner_args:
+            cmd.extend(runner_args)
+        return cmd
+
+    parts = shlex.split(runner_name)
     cmd = [parts[0]]
     extra_parts = parts[1:]
-    default_prompt_arg = None
+    prompt_arg = None
 
-    agent_base = os.path.basename(parts[0])
+    runner_base = os.path.basename(parts[0])
 
     if not no_defaults:
-        if agent_base.startswith("gemini"):
+        if runner_base.startswith("gemini"):
             if yolo:
                 cmd.extend(["--yolo", "--no-sandbox"])
-            default_prompt_arg = "--prompt"
-        elif agent_base.startswith("aider"):
+            prompt_arg = "--prompt"
+        elif runner_base.startswith("aider"):
             if yolo:
                 cmd.append("--yes")
             if not verbose:
                 cmd.append("--quiet")
-            default_prompt_arg = "--message"
-        elif agent_base.startswith("claude"):
+            prompt_arg = "--message"
+        elif runner_base.startswith("claude"):
             if yolo:
                 cmd.append("--dangerously-skip-permissions")
             cmd.extend(["--output-format=stream-json", "--verbose"])
-            default_prompt_arg = "--print"
-        elif agent_base.startswith("codex"):
+            prompt_arg = "--print"
+        elif runner_base.startswith("codex"):
             if yolo:
                 cmd.append("--yolo")
-            default_prompt_arg = "--instructions"
+            prompt_arg = "--instructions"
 
     if extra_parts:
         cmd.extend(extra_parts)
-    if agent_args:
-        cmd.extend(agent_args)
+    if runner_args:
+        cmd.extend(runner_args)
 
-    p_arg = prompt_arg if prompt_arg is not None else default_prompt_arg
-
-    if p_arg:
-        if not p_arg.startswith("-"):
-            p_arg = "--" + p_arg
-        cmd.extend([p_arg, prompt])
+    if prompt_arg:
+        cmd.extend([prompt_arg, prompt])
     else:
         cmd.append(prompt)
 
     return cmd
 
 
-def run_agent_with_heartbeat(
+def run_with_heartbeat(
     cmd: list[str],
     tasks_file: pathlib.Path,
     task_id: str,
     verbose: bool,
     echo_fn: Callable[[str], None] = print,
 ) -> tuple[int, str, str]:
-    """Runs the agent process and updates the task heartbeat periodically.
+    """Runs the runner process and updates the task heartbeat periodically.
 
     Args:
         cmd: The command to execute as a list of strings.
         tasks_file: Path to the tasks YAML file.
         task_id: ID of the task being executed.
-        verbose: If True, echo agent output to the console.
+        verbose: If True, echo runner output to the console.
         echo_fn: Function to use for echoing output (defaults to print).
 
     Returns:
@@ -199,7 +206,7 @@ def run_agent_with_heartbeat(
                     if verbose:
                         echo_fn(line)
     except Exception as e:
-        error_msg = f"\nError reading agent output: {e}\n"
+        error_msg = f"\nError reading runner output: {e}\n"
         full_log.append(error_msg)
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(error_msg)
@@ -261,7 +268,7 @@ def prepare_review_prompt(
 def prepare_prompt(
     data: tasks.Roadmap, task: tasks.Task, tasks_file: pathlib.Path
 ) -> str:
-    """Prepares the agent prompt based on the current roadmap state.
+    """Prepares the runner prompt based on the current roadmap state.
 
     Args:
         data: The current Roadmap.

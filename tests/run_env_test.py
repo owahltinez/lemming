@@ -46,7 +46,7 @@ subprocess.run([sys.executable, "-m", "lemming.main", "--tasks-file", "{str(task
             "--tasks-file",
             str(tasks_file),
             "run",
-            "--agent",
+            "--runner",
             sys.executable,
             "--env",
             "MOCK_KEY=MOCK_VALUE",
