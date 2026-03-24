@@ -126,6 +126,7 @@ The reviewer uses the same underlying runner as the task executor (unless `--rev
 *   **`fail <id>`**: Report a blocker or failure for retry.
 *   **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 *   **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
+*   **`logs <id>`**: Print a task's execution log to stdout. Supports `--name runner|review` (default: `runner`).
 
 ### Execution
 *   **`run`**: Start the orchestrator loop.

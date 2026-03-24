@@ -14,11 +14,15 @@ lemming --tasks-file {{tasks_file_path}} edit <id> --description "..." # Rewrite
 lemming --tasks-file {{tasks_file_path}} delete <id>                   # Remove a task
 lemming --tasks-file {{tasks_file_path}} reset <id>                    # Clear attempts/outcomes for retry
 lemming --tasks-file {{tasks_file_path}} outcome <id> "<finding>"      # Record a finding
+lemming --tasks-file {{tasks_file_path}} logs <id>                     # Print the runner log for a task
+lemming --tasks-file {{tasks_file_path}} logs <id> --name review       # Print the review log instead
 ```
 
 ### Your Role
 
 **Default behavior: do nothing.** If the roadmap is progressing normally, exit immediately without running any commands. Unnecessary changes are harmful — they waste time, reset working state, and add confusion. Silence is the correct response when things are on track.
+
+**Diagnosing failures:** Before deciding how to intervene on a failed task, read its execution log with `lemming --tasks-file {{tasks_file_path}} logs <id>` to understand what actually happened. The outcomes alone may not tell the full story — the log contains the complete runner output including error messages, stack traces, and test failures.
 
 Act only when you observe one of these situations:
 
