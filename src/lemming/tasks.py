@@ -11,6 +11,7 @@ from filelock import FileLock
 from . import paths
 
 STALE_THRESHOLD = 30  # seconds
+LOOP_LOCK_FILENAME = ".lemming_loop.lock"
 
 
 class Task(pydantic.BaseModel):
@@ -91,6 +92,34 @@ def is_pid_alive(pid: int) -> bool:
     return True
 
 
+def _get_loop_lock_path(tasks_file: pathlib.Path) -> pathlib.Path:
+    project_dir = paths.get_project_dir(tasks_file)
+    project_dir.mkdir(parents=True, exist_ok=True)
+    return project_dir / LOOP_LOCK_FILENAME
+
+
+def acquire_loop_lock(tasks_file: pathlib.Path) -> None:
+    """Write a loop lock file with the current PID."""
+    _get_loop_lock_path(tasks_file).write_text(str(os.getpid()))
+
+
+def release_loop_lock(tasks_file: pathlib.Path) -> None:
+    """Remove the loop lock file."""
+    _get_loop_lock_path(tasks_file).unlink(missing_ok=True)
+
+
+def is_loop_running(tasks_file: pathlib.Path) -> bool:
+    """Check if an orchestrator loop is actively running."""
+    lock_path = _get_loop_lock_path(tasks_file)
+    if not lock_path.exists():
+        return False
+    try:
+        pid = int(lock_path.read_text().strip())
+        return is_pid_alive(pid)
+    except (ValueError, OSError):
+        return False
+
+
 def update_run_time(task: Task, end_time: float | None = None) -> None:
     """Accumulates the execution run time for a given task.
 
@@ -157,14 +186,14 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     data = load_tasks(tasks_file)
     now = time.time()
 
-    loop_running = False
+    loop_running = is_loop_running(tasks_file)
     for t in data.tasks:
         # Check which log files exist
         t.has_runner_log = paths.get_log_file(tasks_file, t.id, "runner").exists()
         t.has_review_log = paths.get_log_file(tasks_file, t.id, "review").exists()
 
-        # Determine if the loop is running based on this task
-        if t.status == "in_progress":
+        # Also detect running tasks as a secondary signal (e.g. external callers)
+        if not loop_running and t.status == "in_progress":
             is_stale = False
             if t.last_heartbeat and (now - t.last_heartbeat > STALE_THRESHOLD):
                 is_stale = True
