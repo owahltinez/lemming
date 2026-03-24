@@ -83,6 +83,28 @@ Lemming maintains a human-readable `tasks.yml` file containing your project cont
 2.  **Invoke the agent**: It launches your chosen agent CLI with that prompt, monitors it with heartbeats, and streams output to a log file.
 3.  **Collect results**: The agent reports back via the Lemming CLI — recording findings with `lemming outcome`, then marking the task with `lemming complete` or `lemming fail`. Agents can also schedule new tasks with `lemming add`, breaking down complex work into smaller steps that Lemming will pick up automatically.
 4.  **Retry or advance**: On failure, Lemming retries the task (up to `--max-attempts`) with accumulated outcomes as context, so the agent learns from previous attempts. On success, it moves to the next task.
+5.  **Review (optional)**: When `--review` is enabled, a review agent runs after each task to evaluate the roadmap and adapt it if needed (see below).
+
+---
+
+## The Review Agent
+
+For longer, multi-stage projects, the initial task list often can't anticipate everything. Tasks may fail in ways that retrying won't fix, or completing all tasks may not fully achieve the stated goal. The **review agent** addresses this by running after each task execution and adapting the roadmap when needed.
+
+```bash
+# Enable the review agent
+lemming run --review
+
+# Or toggle the "Review Agent" checkbox in the Web UI
+```
+
+The review agent is **conservative by default** — if the roadmap is progressing normally, it does nothing. It only intervenes when it detects one of these situations:
+
+*   **A task is stuck**: It has exhausted its retries and keeps failing for the same reason. The reviewer may rewrite the task description with a different approach, insert a prerequisite task, or remove it entirely.
+*   **The goal isn't met**: The project context states a clear goal, all tasks are complete, but the goal hasn't been fully achieved. The reviewer adds the minimum set of tasks needed to close the gap.
+*   **Tasks are obsolete**: A completed task's outcomes reveal that remaining pending tasks are unnecessary or incorrect. The reviewer cleans up the roadmap.
+
+The review agent uses the same underlying agent as the task runner and communicates through the same `lemming` CLI commands (`add`, `edit`, `delete`, `reset`). When a task hits its max retry limit, the reviewer gets one chance to heal it before the loop aborts.
 
 ---
 
@@ -106,6 +128,7 @@ Lemming maintains a human-readable `tasks.yml` file containing your project cont
 *   **`run`**: Start the orchestrator loop.
     *   `--max-attempts`: Retries per task (default 3).
     *   `--agent`: The CLI tool to invoke.
+    *   `--review`: Enable the review agent (see below).
     *   `--env`: Set environment variables for the agent (e.g., `--env OPENAI_API_KEY=sk-...`). Can be used multiple times.
     *   `--`: Use `--` to pass any flag directly to the underlying agent.
 *   **`serve`**: Launch the interactive Web UI.
