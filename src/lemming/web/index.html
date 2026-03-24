@@ -186,8 +186,8 @@
                 </button>
             </div>
             
-            <div class="divide-y divide-gray-200 dark:divide-gray-700 grow overflow-auto" role="list">
-                <div :for="task in filteredTasks" :key="task.id" class="flex flex-col" role="listitem">
+            <div class="grow overflow-auto" role="list">
+                <div :for="task in filteredTasks" :key="task.id" class="flex flex-col border-b border-gray-200 dark:border-gray-700" role="listitem">
                     <div class="py-1 px-4 flex items-center justify-between" :attr:aria-label="'Task: ' + task.description" :attr:title="'Task: ' + task.description">
                         <div class="flex items-center gap-2 overflow-hidden flex-grow min-w-0">
                             <button 
@@ -312,7 +312,7 @@
                     </div>
                     
                     <!-- Task Details -->
-                    <div :show="expanded[task.id]" class="px-12 pb-3 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800">
+                    <div :show="expanded[task.id]" class="px-12 pb-3 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900">
                         <div class="mt-2 text-gray-700 dark:text-gray-300 font-normal break-words whitespace-pre-wrap">{{ task.description }}</div>
                         <div class="mt-2 flex flex-wrap gap-4">
                             <div :if="task.runner">
