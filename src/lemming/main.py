@@ -441,9 +441,9 @@ def reset(ctx: click.Context, task_id: str):
     help="Do not auto-inject default flags (like --yolo) based on agent name.",
 )
 @click.option(
-    "--prompt-flag",
+    "--prompt-arg",
     default=None,
-    help="Flag to precede the prompt (e.g. '--message'). If omitted, uses agent defaults.",
+    help="Argument to precede the prompt (e.g. '--message'). If omitted, uses agent defaults.",
 )
 @click.argument("agent_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
@@ -455,9 +455,9 @@ def run(
     agent_name: str,
     env: tuple,
     no_defaults: bool,
-    prompt_flag: str | None,
+    prompt_arg: str | None,
     agent_args: tuple,
-):
+) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks.
 
     Args:
@@ -467,7 +467,7 @@ def run(
         agent_name: The CLI agent to invoke.
         env: Environment variables to inject.
         no_defaults: Skip default flag injection.
-        prompt_flag: Explicit prompt flag for the agent.
+        prompt_arg: Explicit prompt argument for the agent.
         agent_args: Raw arguments passed directly to the agent.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -535,7 +535,7 @@ def run(
             current_task.agent or agent_name,
             prompt,
             yolo,
-            prompt_flag,
+            prompt_arg,
             agent_args,
             no_defaults,
             verbose=verbose,
@@ -665,6 +665,7 @@ def serve(
     from . import providers
 
     api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
+    api.app.state.verbose = ctx.obj["VERBOSE"]
 
     tunnel_proc = None
     if tunnel:

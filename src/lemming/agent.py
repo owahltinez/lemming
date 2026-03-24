@@ -33,7 +33,7 @@ def build_agent_command(
     agent_name: str,
     prompt: str,
     yolo: bool,
-    prompt_flag: str | None = None,
+    prompt_arg: str | None = None,
     agent_args: tuple | None = None,
     no_defaults: bool = False,
     verbose: bool = False,
@@ -44,7 +44,7 @@ def build_agent_command(
         agent_name: Name or path of the agent executable.
         prompt: The full prompt text to pass to the agent.
         yolo: Whether to enable auto-approval/YOLO mode.
-        prompt_flag: Explicit flag to use for the prompt (e.g., "--message").
+        prompt_arg: Explicit argument to use for the prompt (e.g., "--message").
         agent_args: Extra arguments to pass to the agent.
         no_defaults: If True, do not inject default flags for known agents.
         verbose: If True, enable verbose output for supported agents.
@@ -55,7 +55,7 @@ def build_agent_command(
     parts = shlex.split(agent_name)
     cmd = [parts[0]]
     extra_parts = parts[1:]
-    default_prompt_flag = None
+    default_prompt_arg = None
 
     agent_base = os.path.basename(parts[0])
 
@@ -63,34 +63,34 @@ def build_agent_command(
         if agent_base.startswith("gemini"):
             if yolo:
                 cmd.extend(["--yolo", "--no-sandbox"])
-            default_prompt_flag = "--prompt"
+            default_prompt_arg = "--prompt"
         elif agent_base.startswith("aider"):
             if yolo:
                 cmd.append("--yes")
             if not verbose:
                 cmd.append("--quiet")
-            default_prompt_flag = "--message"
+            default_prompt_arg = "--message"
         elif agent_base.startswith("claude"):
             if yolo:
                 cmd.append("--dangerously-skip-permissions")
             cmd.extend(["--output-format=stream-json", "--verbose"])
-            default_prompt_flag = "--print"
+            default_prompt_arg = "--print"
         elif agent_base.startswith("codex"):
             if yolo:
                 cmd.append("--yolo")
-            default_prompt_flag = "--instructions"
+            default_prompt_arg = "--instructions"
 
     if extra_parts:
         cmd.extend(extra_parts)
     if agent_args:
         cmd.extend(agent_args)
 
-    p_flag = prompt_flag if prompt_flag is not None else default_prompt_flag
+    p_arg = prompt_arg if prompt_arg is not None else default_prompt_arg
 
-    if p_flag:
-        if not p_flag.startswith("-"):
-            p_flag = "--" + p_flag
-        cmd.extend([p_flag, prompt])
+    if p_arg:
+        if not p_arg.startswith("-"):
+            p_arg = "--" + p_arg
+        cmd.extend([p_arg, prompt])
     else:
         cmd.append(prompt)
 
@@ -120,9 +120,14 @@ def run_agent_with_heartbeat(
     log_file = paths.get_log_file(tasks_file, task_id)
 
     # Use a separator for new attempts
+    command_str = shlex.join(cmd)
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"\n--- Attempt started at {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        f.write(f"Command: {command_str}\n")
         f.flush()
+
+    if verbose:
+        echo_fn(f"Executing: {command_str}\n\n")
 
     # Start the process in a new session so we can kill its entire process tree if needed.
     env = os.environ.copy()

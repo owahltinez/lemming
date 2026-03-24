@@ -568,15 +568,15 @@ class TestLemming(unittest.TestCase):
         cmd = agent.build_agent_command("gemini", "hello", yolo=True, no_defaults=True)
         self.assertEqual(cmd, ["gemini", "hello"])
 
-    def test_custom_prompt_flag(self):
+    def test_custom_prompt_arg(self):
         cmd = agent.build_agent_command(
-            "custom-agent", "hello", yolo=True, prompt_flag="--input"
+            "custom-agent", "hello", yolo=True, prompt_arg="--input"
         )
         self.assertEqual(cmd, ["custom-agent", "--input", "hello"])
 
-    def test_custom_prompt_flag_no_dash(self):
+    def test_custom_prompt_arg_no_dash(self):
         cmd = agent.build_agent_command(
-            "custom-agent", "hello", yolo=True, prompt_flag="input"
+            "custom-agent", "hello", yolo=True, prompt_arg="input"
         )
         self.assertEqual(cmd, ["custom-agent", "--input", "hello"])
 

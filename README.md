@@ -123,4 +123,4 @@ Lemming uses **fuzzy matching** to automatically inject the correct "YOLO" (auto
 *   **Claude**: Adds `--dangerously-skip-permissions`
 *   **Codex**: Adds `--yolo`
 
-You can disable this behavior with `--no-defaults` or override the prompt flag with `--prompt-flag`.
+You can disable this behavior with `--no-defaults` or override the prompt flag with `--prompt-arg`.

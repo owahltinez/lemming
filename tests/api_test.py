@@ -1,3 +1,4 @@
+from unittest.mock import patch
 import logging
 import os
 import pathlib
@@ -479,3 +480,16 @@ def test_api_delete_log_cleanup(test_tasks):
     assert not log_file.exists()
 
     api.app.state.tasks_file = original_tasks_file
+
+
+def test_run_loop(test_tasks):
+    with patch("subprocess.Popen") as mock_popen:
+        response = client.post("/api/run", json={"agent": "claude", "max_attempts": 5})
+        assert response.status_code == 200
+        assert response.json() == {"status": "started"}
+
+        args = mock_popen.call_args[0][0]
+        assert "--agent" in args
+        assert "claude" in args
+        assert "--max-attempts" in args
+        assert "5" in args

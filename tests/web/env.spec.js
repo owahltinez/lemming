@@ -107,7 +107,7 @@ test.describe("Environment Overrides UI", () => {
     expect(localStorageData).toContain("MY_MOCK_VALUE");
 
     const runResponsePromise = page.waitForResponse("**/api/run");
-    await page.getByRole("button", { name: "Run Loop" }).click();
+    await page.getByRole("button", { name: "Execute Tasks" }).click();
     await runResponsePromise;
 
     expect(runRequestPayload).not.toBeNull();
@@ -171,7 +171,7 @@ test.describe("Environment Overrides UI", () => {
     await page.waitForTimeout(600);
 
     const runResponsePromise = page.waitForResponse("**/api/run");
-    await page.getByRole("button", { name: "Run Loop" }).click();
+    await page.getByRole("button", { name: "Execute Tasks" }).click();
     await runResponsePromise;
 
     expect(runRequestPayload).not.toBeNull();

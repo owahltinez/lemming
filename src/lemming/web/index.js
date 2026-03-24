@@ -28,6 +28,7 @@
       $.loading = true;
       $.agents = [];
       $.selectedAgent = Storage.get("lemming_selected_agent", "gemini");
+      $.maxAttempts = Storage.get("lemming_max_attempts", 3);
       $.envOverrides = []; // Will hydrate below
       $.hideCompleted = Storage.get("lemming_hide_completed", false);
       $.toasts = [];
@@ -163,6 +164,9 @@
 
       $.saveAgentPreference = function () {
         Storage.set("lemming_selected_agent", this.selectedAgent);
+      };
+      $.saveMaxAttemptsPreference = function () {
+        Storage.set("lemming_max_attempts", this.maxAttempts);
       };
       $.saveHideCompletedPreference = function () {
         Storage.set("lemming_hide_completed", this.hideCompleted);
@@ -307,13 +311,23 @@
         for (const o of this.envOverrides) {
           if (o.key?.trim()) env[o.key.trim()] = o.value || "";
         }
+
+        const payload = {
+          agent: this.selectedAgent,
+          env: Object.keys(env).length > 0 ? env : undefined,
+        };
+
+        if (this.maxAttempts) {
+          const parsed = Number.parseInt(this.maxAttempts, 10);
+          if (!Number.isNaN(parsed) && parsed > 0) {
+            payload.max_attempts = parsed;
+          }
+        }
+
         const res = await fetch("/api/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            agent: this.selectedAgent,
-            env: Object.keys(env).length > 0 ? env : undefined,
-          }),
+          body: JSON.stringify(payload),
         });
         if (res.ok) {
           this.addToast("Run started!", "success");

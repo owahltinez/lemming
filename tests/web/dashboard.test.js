@@ -462,13 +462,13 @@ describe("Lemming Web Dashboard", () => {
       fragment.querySelector("body") || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
-    const runLoopBtn = fragment.querySelector('[aria-label="Run Loop"]');
-    assert.ok(runLoopBtn, "Run Loop button should exist");
+    const runLoopBtn = fragment.querySelector('[aria-label="Execute Tasks"]');
+    assert.ok(runLoopBtn, "Execute Tasks button should exist");
     assert.ok(
       runLoopBtn.hasAttribute("disabled"),
-      "Run Loop button should be disabled when loopRunning is true",
+      "Execute Tasks button should be disabled when loopRunning is true",
     );
-    assert.strictEqual(runLoopBtn.textContent.trim(), "Loop Running");
+    assert.strictEqual(runLoopBtn.textContent.trim(), "Executing...");
     assert.ok(
       runLoopBtn.classList.contains("bg-gray-400"),
       "Should have gray background when disabled",
@@ -490,16 +490,16 @@ describe("Lemming Web Dashboard", () => {
     if (root2.hasAttribute(":data")) root2.removeAttribute(":data");
     await renderer2.mount(fragment2);
 
-    const runLoopBtn2 = fragment2.querySelector('[aria-label="Run Loop"]');
+    const runLoopBtn2 = fragment2.querySelector('[aria-label="Execute Tasks"]');
     const isDisabled2 =
       runLoopBtn2.hasAttribute("disabled") &&
       runLoopBtn2.getAttribute("disabled") !== "false";
     assert.strictEqual(
       isDisabled2,
       false,
-      "Run Loop button should not be disabled when loopRunning is false",
+      "Execute Tasks button should not be disabled when loopRunning is false",
     );
-    assert.strictEqual(runLoopBtn2.textContent.trim(), "Run Loop");
+    assert.strictEqual(runLoopBtn2.textContent.trim(), "Execute Tasks");
     assert.ok(
       runLoopBtn2.classList.contains("bg-indigo-600"),
       "Should have indigo background when enabled",

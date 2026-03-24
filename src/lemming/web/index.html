@@ -16,50 +16,63 @@
 
         <!-- Runner Metadata Card -->
         <section class="mb-4 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden shrink-0" aria-labelledby="metadata-heading">
-            <div class="py-2 px-4 border-b border-gray-200 bg-gray-50">
+            <div class="py-2 px-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                 <h2 id="metadata-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Runner Metadata</h2>
+                <button 
+                    type="submit" 
+                    form="run-form" 
+                    :prop:disabled="loopRunning"
+                    :attr:class="'px-3 py-1 transition duration-200 border-none rounded-md text-xs font-medium whitespace-nowrap ' + (loopRunning ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-indigo-600 text-white hover:bg-indigo-700')"
+                    :attr:title="loopRunning ? 'Tasks are already executing' : 'Execute autonomous tasks'" 
+                    aria-label="Execute Tasks"
+                >
+                    {{ loopRunning ? 'Executing...' : 'Execute Tasks' }}
+                </button>
             </div>
             <div class="p-4 space-y-4">
-                <div class="flex flex-wrap gap-6 items-end">
+                <form class="flex flex-wrap gap-6 items-start" :on:submit.prevent="runLemming()" id="run-form" aria-label="Run autonomous loop">
                     <div class="flex-grow min-w-0 md:min-w-[200px]">
                         <label class="block text-xs font-semibold text-gray-400 uppercase mb-1">Current Working Directory</label>
                         <a href="/files/" target="_blank" class="block text-sm font-mono truncate hover:text-indigo-600 transition duration-200" :attr:title="cwd || ''">{{ cwd }}</a>
                     </div>
-                    <div class="flex-1 min-w-[200px]">
+                    <div class="flex-1 min-w-[150px]">
                         <label class="block text-xs font-semibold text-gray-400 uppercase mb-1">Task Summary</label>
                         <div class="text-sm font-medium text-gray-700">
                             {{ completedCount }} / {{ tasks.length }} Completed
                         </div>
                     </div>
-                    <div class="flex-1 min-w-[200px]">
-                        <label class="block text-xs font-semibold text-gray-400 uppercase mb-1">Default Agent</label>
-                        <form class="flex gap-2" :on:submit.prevent="runLemming()" aria-label="Run autonomous loop">
-                            <input 
-                                type="text"
-                                list="agent-options"
-                                :bind="selectedAgent" 
-                                :on:change="saveAgentPreference()"
-                                placeholder="Agent command..."
-                                title="Agent command to use for the autonomous loop"
-                                aria-label="Agent command"
-                                class="px-2 py-1 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 flex-1"
-                            >
-                            <datalist id="agent-options">
-                                <option :for="agent in agents" :attr:value="agent"></option>
-                            </datalist>
-                            <button 
-                                type="submit" 
-                                role="button" 
-                                :prop:disabled="loopRunning"
-                                :attr:class="'px-3 py-1 transition duration-200 border-none rounded-md text-sm font-medium whitespace-nowrap ' + (loopRunning ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-indigo-600 text-white hover:bg-indigo-700')"
-                                :attr:title="loopRunning ? 'Autonomous loop is already running' : 'Start autonomous loop'" 
-                                aria-label="Run Loop"
-                            >
-                                {{ loopRunning ? 'Loop Running' : 'Run Loop' }}
-                            </button>
-                        </form>
+                    <!-- Agent Command -->
+                    <div class="flex-1 min-w-[180px]">
+                        <label class="block text-xs font-semibold text-gray-400 uppercase mb-1">Agent Command</label>
+                        <input 
+                            type="text"
+                            list="agent-options"
+                            :bind="selectedAgent" 
+                            :on:change="saveAgentPreference()"
+                            placeholder="Agent command..."
+                            title="Agent command to use for the autonomous loop"
+                            aria-label="Agent command"
+                            class="px-2 py-1 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 w-full"
+                        >
+                        <datalist id="agent-options">
+                            <option :for="agent in agents" :attr:value="agent"></option>
+                        </datalist>
                     </div>
-                </div>
+                    <!-- Max Attempts -->
+                    <div class="w-24 shrink-0">
+                        <label class="block text-xs font-semibold text-gray-400 uppercase mb-1 whitespace-nowrap">Max Attempts</label>
+                        <input
+                            type="number"
+                            min="1"
+                            :bind="maxAttempts"
+                            :on:change="saveMaxAttemptsPreference()"
+                            placeholder="Max"
+                            title="Maximum number of attempts per task"
+                            aria-label="Max attempts"
+                            class="px-2 py-1 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 w-full"
+                        >
+                    </div>
+                </form>
                 
                 <div class="pt-2 border-t border-gray-100">
                     <label class="block text-xs font-semibold text-gray-400 uppercase mb-2">Environment Overrides</label>

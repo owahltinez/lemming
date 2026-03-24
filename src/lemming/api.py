@@ -55,6 +55,7 @@ async def share_token_middleware(request: fastapi.Request, call_next):
 class RunRequest(pydantic.BaseModel):
     agent: str | None = "gemini"
     env: dict[str, str] | None = None
+    max_attempts: int | None = None
 
 
 @app.get("/api/data", response_model=tasks.ProjectData)
@@ -175,10 +176,19 @@ def run_loop(request: RunRequest):
         sys.executable,
         "-m",
         "lemming.main",
-        "--tasks-file",
-        str(app.state.tasks_file),
     ]
-    cmd.append("run")
+    if getattr(app.state, "verbose", False):
+        cmd.append("--verbose")
+    cmd.extend(
+        [
+            "--tasks-file",
+            str(app.state.tasks_file),
+            "run",
+        ]
+    )
+
+    if request.max_attempts is not None:
+        cmd.extend(["--max-attempts", str(request.max_attempts)])
 
     if request.agent:
         cmd.extend(["--agent", request.agent])
