@@ -8,7 +8,7 @@
     <script src="/static/mancha.js" css="utils"></script>
     <script src="/static/index.js" defer></script>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col">
+<body class="bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col">
     <div class="max-w-3xl mx-auto p-4 flex-grow w-full flex flex-col">
         <header class="mb-4 shrink-0" role="banner">
             <h1 class="text-2xl font-bold text-indigo-600 dark:text-indigo-400" title="Lemming Task Runner">Lemming Task Runner</h1>
@@ -16,7 +16,7 @@
 
         <!-- Runner Metadata Card -->
         <section class="mb-4 bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0" aria-labelledby="metadata-heading">
-            <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex justify-between items-center">
+            <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
                 <h2 id="metadata-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Runner Metadata</h2>
                 <div class="flex items-center gap-3">
                     <label class="flex items-center gap-1 cursor-pointer shrink-0" title="Run a reviewer after each task to adapt the roadmap">
@@ -149,7 +149,7 @@
         </section>
 
         <section class="mb-4 bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0" aria-labelledby="context-heading">
-            <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                 <h2 id="context-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Project Context</h2>
             </div>
             <div class="p-4">
@@ -165,7 +165,7 @@
         </section>
 
         <section class="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col grow min-h-0" aria-labelledby="tasks-heading">
-            <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 shrink-0">
+            <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900 shrink-0">
                 <div class="flex items-center gap-3 flex-grow">
                     <h2 id="tasks-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider shrink-0">Task Queue</h2>
                     <label class="flex items-center gap-1 cursor-pointer shrink-0" title="Hide or show completed tasks">
@@ -312,7 +312,7 @@
                     </div>
                     
                     <!-- Task Details -->
-                    <div :show="expanded[task.id]" class="px-12 pb-3 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                    <div :show="expanded[task.id]" class="px-12 pb-3 text-xs text-gray-600 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800">
                         <div class="mt-2 text-gray-700 dark:text-gray-300 font-normal break-words whitespace-pre-wrap">{{ task.description }}</div>
                         <div class="mt-2 flex flex-wrap gap-4">
                             <div :if="task.runner">
