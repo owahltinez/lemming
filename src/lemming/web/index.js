@@ -34,6 +34,8 @@
       $.toasts = [];
       $.expanded = {};
       $.loopRunning = false;
+      $.editingTask = null;
+      $.editFormData = { description: "", agent: "", parent: "" };
 
       // --- Computed Properties ---
       $.completedCount = $.$computed(
@@ -241,23 +243,31 @@
         }
       };
 
-      $.editTask = async function (task) {
-        const desc = prompt("Edit task description:", task.description);
-        if (desc === null) return;
+      $.editTask = (task) => {
+        $.editingTask = task;
+        $.editFormData = {
+          description: task.description || "",
+          agent: task.agent || "",
+          parent: task.parent || "",
+        };
+        const modal = document.getElementById("edit-modal");
+        if (modal) modal.showModal();
+      };
 
-        const agent = prompt("Edit custom agent (optional):", task.agent || "");
-        if (agent === null) return;
+      $.closeEditModal = () => {
+        const modal = document.getElementById("edit-modal");
+        if (modal) modal.close();
+        $.editingTask = null;
+      };
 
-        const parent = prompt(
-          "Edit parent task ID (optional):",
-          task.parent || "",
-        );
-        if (parent === null) return;
+      $.submitEditTask = async function () {
+        if (!$.editingTask) return;
 
+        const task = $.editingTask;
         const update = {
-          description: desc.trim() || task.description,
-          agent: agent.trim() || null,
-          parent: parent.trim() || null,
+          description: $.editFormData.description.trim() || task.description,
+          agent: $.editFormData.agent.trim() || null,
+          parent: $.editFormData.parent.trim() || null,
         };
 
         const res = await fetch(`/api/tasks/${task.id}`, {
@@ -269,6 +279,8 @@
           this.addToast("Task updated", "success");
           await this.fetchData();
         }
+
+        $.closeEditModal();
       };
 
       $.uncompleteTask = async function (id) {
