@@ -204,28 +204,31 @@
                                 <div class="flex items-center gap-2">
                                     <span 
                                         role="status"
-                                        :attr:class="'px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ' + (task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500')))"
+                                        class="px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 text-center min-w-20 inline-block"
+                                        :class="task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'))"
                                         :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending'))"
                                         :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'in_progress' ? 'Status: Running' : (task.attempts > 0 ? 'Status: Failed' : 'Status: Pending'))"
                                     >
                                         {{ task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending')) }}
                                     </span>
-                                    <p class="text-gray-400 font-mono uppercase text-10px flex items-center gap-1" :attr:aria-label="'Task ID ' + task.id + ', ' + task.attempts + ' attempts'" title="Task ID and number of attempts">
-                                        {{ task.id }} 
-                                        <button 
-                                            type="button" 
-                                            role="button" 
-                                            :on:click="copyToClipboard(task.id)" 
-                                            class="p-0.5 text-gray-400 hover:text-indigo-600 hover:bg-gray-100 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
-                                            title="Copy Task ID"
-                                            aria-label="Copy Task ID"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                            </svg>
-                                        </button>
-                                        &middot; Attempts: {{ task.attempts }}
-                                        <span :if="task.parent" class="flex items-center gap-1" :attr:title="'Parent Task: ' + (getParent(task.parent)?.description || task.parent)">
+                                    <p class="text-gray-400 font-mono uppercase text-10px flex items-center flex-wrap gap-1 whitespace-nowrap" :attr:aria-label="'Task ID ' + task.id + ', ' + task.attempts + ' attempts'" title="Task ID and number of attempts">
+                                        <span class="inline-flex items-center gap-1">
+                                            {{ task.id }}
+                                            <button
+                                                type="button"
+                                                role="button"
+                                                :on:click="copyToClipboard(task.id)"
+                                                class="p-0.5 text-gray-400 hover:text-indigo-600 hover:bg-gray-100 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
+                                                title="Copy Task ID"
+                                                aria-label="Copy Task ID"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                </svg>
+                                            </button>
+                                        </span>
+                                        <span>&middot; Attempts: {{ task.attempts }}</span>
+                                        <span :if="task.parent" :attr:title="'Parent Task: ' + (getParent(task.parent)?.description || task.parent)">
                                             &middot; Parent: {{ task.parent }}
                                         </span>
                                     </p>
@@ -270,20 +273,20 @@
                                 aria-label="Mark as Pending"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" role="img">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
                                 </svg>
                             </button>
-                            <button 
-                                type="button" 
-                                role="button" 
+                            <button
+                                type="button"
+                                role="button"
                                 :show="task.status !== 'completed' && task.status !== 'in_progress' && task.attempts > 0"
-                                :on:click="clearTask(task.id)" 
+                                :on:click="clearTask(task.id)"
                                 class="p-1 text-gray-600 hover:text-orange-500 hover:bg-orange-100 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
                                 title="Clear Task Attempts"
                                 aria-label="Clear Task Attempts"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" role="img">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                             </button>
                             <button 
