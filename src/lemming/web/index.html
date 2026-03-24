@@ -127,7 +127,14 @@
                             aria-label="New task description"
                             class="flex-1 px-2 py-1 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"
                         >
-                        <button type="submit" role="button" class="px-3 py-1 bg-indigo-600 text-white hover:bg-indigo-700 transition duration-200 border-none rounded-md text-sm font-medium whitespace-nowrap" title="Add new task" aria-label="Add task">
+                        <button 
+                            type="submit" 
+                            role="button" 
+                            :prop:disabled="!newTask || !newTask.trim()"
+                            :attr:class="'px-3 py-1 transition duration-200 border-none rounded-md text-sm font-medium whitespace-nowrap ' + (!newTask || !newTask.trim() ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-indigo-600 text-white hover:bg-indigo-700')"
+                            title="Add new task" 
+                            aria-label="Add task"
+                        >
                             Add Task
                         </button>
                     </form>
