@@ -415,6 +415,29 @@ class TestLemming(unittest.TestCase):
         self.assertIn("--- Task 12345678", result.output)
         self.assertIn("=== Agent Prompt ===", result.output)
 
+    def test_run_attempts_limit(self):
+        # Run with max-attempts=2. The agent 'true' does not use lemming CLI
+        # to complete the task, so it counts as an execution without completion.
+        result = self.runner.invoke(
+            main.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "run",
+                "--agent",
+                "true",
+                "--max-attempts",
+                "2",
+                "--retry-delay",
+                "0",
+            ],
+        )
+        self.assertIn("failed after 2 attempts", result.output)
+
+        # Bug verification: attempts should be exactly max_attempts (2), not 3.
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].attempts, 2)
+
     def test_run_time_complete(self):
         # Mark in progress
         tasks.mark_task_in_progress(self.test_tasks_file, "12345678")

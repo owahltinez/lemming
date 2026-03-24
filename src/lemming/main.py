@@ -495,6 +495,12 @@ def run(
 
         task_id = current_task.id
 
+        if current_task.attempts >= max_attempts:
+            click.echo(
+                f"\nTask {task_id} failed after {max_attempts} attempts. Aborting run."
+            )
+            break
+
         # Add a small random jitter to avoid race conditions between multiple instances
         time.sleep(random.uniform(0.1, 0.5))
 
@@ -506,13 +512,6 @@ def run(
                     f"Task {task_id} already claimed by another instance. Skipping."
                 )
             continue
-
-        if current_task.attempts > max_attempts:
-            click.echo(
-                f"\nTask {task_id} failed after {max_attempts} attempts. Aborting run."
-            )
-            tasks.finish_task_attempt(tasks_file, task_id)
-            break
 
         if verbose:
             click.echo(
