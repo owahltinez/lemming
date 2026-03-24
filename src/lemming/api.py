@@ -156,8 +156,9 @@ def clear_task_endpoint(task_id: str):
 
 
 @app.get("/api/tasks/{task_id}/log")
-def get_task_log(task_id: str):
-    log_file = paths.get_log_file(app.state.tasks_file, task_id)
+def get_task_log(task_id: str, name: str | None = None):
+    log_id = f"{name}-{task_id}" if name else task_id
+    log_file = paths.get_log_file(app.state.tasks_file, log_id)
     if not log_file.exists():
         return {"log": ""}
     return {"log": log_file.read_text(encoding="utf-8")}

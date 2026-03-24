@@ -445,8 +445,6 @@ def _run_reviewer(
         click.echo(prompt)
         click.secho("========================\n", fg="magenta", bold=True)
 
-    # Use a synthetic task ID for the reviewer log so it doesn't pollute task logs
-    review_id = f"review-{finished_task_id}"
     cmd = runner.build_runner_command(
         runner_name,
         prompt,
@@ -460,9 +458,10 @@ def _run_reviewer(
         returncode, stdout, stderr = runner.run_with_heartbeat(
             cmd,
             tasks_file,
-            review_id,
+            finished_task_id,
             verbose,
             echo_fn=lambda line: click.echo(line, nl=False),
+            phase="review",
         )
         if verbose:
             if returncode == 0:
