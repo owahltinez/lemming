@@ -33,21 +33,26 @@ def _pretty_quote(s: str) -> str:
     """Quotes a string for shell execution, preferring readable double quotes if it contains single quotes."""
     if not s:
         return "''"
-    
+
     # If shlex.quote says it doesn't need quotes, return as-is
     if shlex.quote(s) == s:
         return s
-        
+
     # If it contains single quotes, try to use double quotes for better readability
     if "'" in s:
         # If it has !, double quotes might trigger history expansion in interactive bash
         if "!" in s:
             return shlex.quote(s)
-            
+
         # We need to escape \, ", $, ` inside double quotes
-        escaped = s.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
+        escaped = (
+            s.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("$", "\\$")
+            .replace("`", "\\`")
+        )
         return f'"{escaped}"'
-        
+
     # Default to standard shlex.quote
     return shlex.quote(s)
 

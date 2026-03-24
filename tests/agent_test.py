@@ -63,24 +63,41 @@ def test_pretty_quote():
     # Test fallback to shlex
     assert agent._pretty_quote("simple") == "simple"
     assert agent._pretty_quote("has space") == "'has space'"
-    
+
     # Test readable double quotes for single quotes
-    assert agent._pretty_quote("has 'single' quotes") == '"has \'single\' quotes"'
-    assert agent._pretty_quote("You are 'Lemming'") == '"You are \'Lemming\'"'
-    
+    assert agent._pretty_quote("has 'single' quotes") == "\"has 'single' quotes\""
+    assert agent._pretty_quote("You are 'Lemming'") == "\"You are 'Lemming'\""
+
     # Test string with double quotes (should fall back to single quotes)
     assert agent._pretty_quote('has "double" quotes') == "'has \"double\" quotes'"
-    
+
     # Test escaping specials inside double quotes
-    assert agent._pretty_quote("has 'single' and \"double\" quotes") == '"has \'single\' and \\"double\\" quotes"'
-    
+    assert (
+        agent._pretty_quote("has 'single' and \"double\" quotes")
+        == '"has \'single\' and \\"double\\" quotes"'
+    )
+
     # Test exclamation mark fallback
     assert agent._pretty_quote("Hello!") == "'Hello!'"
     import shlex
-    assert agent._pretty_quote("has 'single' and !") == shlex.quote("has 'single' and !")
+
+    assert agent._pretty_quote("has 'single' and !") == shlex.quote(
+        "has 'single' and !"
+    )
 
 
 def test_shlex_join_pretty():
     cmd = ["example-cli", "--dangerously-skip-permissions", "--print", "You are 'Lemming'"]
     joined = agent._shlex_join_pretty(cmd)
     assert joined == 'example-cli --dangerously-skip-permissions --print "You are \'Lemming\'"'
+    cmd = [
+        "example-cli",
+        "--dangerously-skip-permissions",
+        "--print",
+        "You are 'Lemming'",
+    ]
+    joined = agent._shlex_join_pretty(cmd)
+    assert (
+        joined
+        == "example-cli --dangerously-skip-permissions --print \"You are 'Lemming'\""
+    )
