@@ -29,6 +29,34 @@ def load_prompt(name: str) -> str:
     return prompt_path.read_text(encoding="utf-8")
 
 
+def _pretty_quote(s: str) -> str:
+    """Quotes a string for shell execution, preferring readable double quotes if it contains single quotes."""
+    if not s:
+        return "''"
+    
+    # If shlex.quote says it doesn't need quotes, return as-is
+    if shlex.quote(s) == s:
+        return s
+        
+    # If it contains single quotes, try to use double quotes for better readability
+    if "'" in s:
+        # If it has !, double quotes might trigger history expansion in interactive bash
+        if "!" in s:
+            return shlex.quote(s)
+            
+        # We need to escape \, ", $, ` inside double quotes
+        escaped = s.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
+        return f'"{escaped}"'
+        
+    # Default to standard shlex.quote
+    return shlex.quote(s)
+
+
+def _shlex_join_pretty(cmd: list[str]) -> str:
+    """Joins command arguments into a single string with pretty quoting."""
+    return " ".join(_pretty_quote(arg) for arg in cmd)
+
+
 def build_agent_command(
     agent_name: str,
     prompt: str,
@@ -120,7 +148,7 @@ def run_agent_with_heartbeat(
     log_file = paths.get_log_file(tasks_file, task_id)
 
     # Use a separator for new attempts
-    command_str = shlex.join(cmd)
+    command_str = _shlex_join_pretty(cmd)
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"\n--- Attempt started at {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
         f.write(f"Command: {command_str}\n")
