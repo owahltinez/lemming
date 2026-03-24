@@ -27,7 +27,7 @@ class Task(pydantic.BaseModel):
     run_time: float = 0.0
     pid: int | None = None
     last_heartbeat: float | None = None
-    has_log: bool = False
+    has_runner_log: bool = False
     has_review_log: bool = False
     parent: str | None = None
     index: int | None = pydantic.Field(default=-1, exclude=True)
@@ -159,9 +159,9 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
 
     loop_running = False
     for t in data.tasks:
-        # Check if task has a log file
-        t.has_log = paths.get_log_file(tasks_file, t.id).exists()
-        t.has_review_log = paths.get_log_file(tasks_file, f"review-{t.id}").exists()
+        # Check which log files exist
+        t.has_runner_log = paths.get_log_file(tasks_file, t.id, "runner").exists()
+        t.has_review_log = paths.get_log_file(tasks_file, t.id, "review").exists()
 
         # Determine if the loop is running based on this task
         if t.status == "in_progress":
@@ -356,15 +356,16 @@ def update_heartbeat(
 
 
 def clear_log(tasks_file: pathlib.Path, task_id: str) -> None:
-    """Deletes the log file for a given task.
+    """Deletes all log files (runner, review) for a given task.
 
     Args:
         tasks_file: Path to the tasks YAML file.
-        task_id: The ID of the task whose log should be cleared.
+        task_id: The ID of the task whose logs should be cleared.
     """
-    log_file = paths.get_log_file(tasks_file, task_id)
-    if log_file.exists():
-        log_file.unlink()
+    for name in ("runner", "review"):
+        log_file = paths.get_log_file(tasks_file, task_id, name)
+        if log_file.exists():
+            log_file.unlink()
 
 
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:

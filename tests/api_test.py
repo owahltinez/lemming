@@ -231,19 +231,22 @@ def test_has_log_population(test_tasks):
     response = client.get("/api/data")
     data = response.json()
     for task in data["tasks"]:
-        assert task["has_log"] is False
+        assert task["has_runner_log"] is False
+        assert task["has_review_log"] is False
 
-    # Create a log for task1
-    log_file = paths.get_log_file(api.app.state.tasks_file, "task1")
+    # Create a runner log for task1
+    log_file = paths.get_log_file(api.app.state.tasks_file, "task1", "runner")
     log_file.write_text("Some logs")
 
     response = client.get("/api/data")
     data = response.json()
     task1 = next(t for t in data["tasks"] if t["id"] == "task1")
-    assert task1["has_log"] is True
+    assert task1["has_runner_log"] is True
+    assert task1["has_review_log"] is False
 
     task2 = next(t for t in data["tasks"] if t["id"] == "task2")
-    assert task2["has_log"] is False
+    assert task2["has_runner_log"] is False
+    assert task2["has_review_log"] is False
 
 
 def test_quiet_poll_filter():

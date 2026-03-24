@@ -25,7 +25,7 @@
 
         <section class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col grow min-h-0">
             <div class="py-2 px-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center shrink-0">
-                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Log Output</h2>
+                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ $.$$name }} Log</h2>
                 <div :if="task.status === 'in_progress'" class="flex items-center gap-2">
                     <span class="relative flex h-2 w-2">
                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -53,6 +53,7 @@
 
                     $.task = { id: '', status: '', description: '' };
                     $.taskLog = '';
+                    $.$$name = $.$$name ?? 'runner';
                     $.loading = true;
 
                     const getTaskId = () => {
@@ -73,11 +74,11 @@
 
                     $.fetchLog = async () => {
                         const taskId = getTaskId();
-                        const response = await fetch(`/api/tasks/${taskId}/log`);
+                        const response = await fetch(`/api/tasks/${taskId}/log?name=${$.$$name}`);
                         if (response.ok) {
                             const data = await response.json();
                             const newLog = data.log || 'No log available yet.';
-                            
+
                             // Only update if changed to avoid unnecessary re-renders
                             if (newLog !== $.taskLog) {
                                 $.taskLog = newLog;
@@ -93,15 +94,15 @@
                     $.refresh = async () => {
                         await $.fetchTask();
                         await $.fetchLog();
-                        
+
                         // Auto-refresh if in progress
                         if ($.task.status === 'in_progress') {
                             setTimeout($.refresh, 2000);
                         }
                     };
 
-                    await $.refresh();
                     await renderer.mount(document.body);
+                    await $.refresh();
                 }
             });
         })();

@@ -331,16 +331,22 @@
                                 <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Run Time:</span>
                                 <span class="text-gray-700">{{ formatTaskRunTime(task) }}</span>
                             </div>
-                            <div>
-                                <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Task Log:</span>
-                                <a 
-                                    :attr:href="task.has_log ? '/tasks/' + task.id + '/log' : 'javascript:void(0)'"
-                                    :attr:target="task.has_log ? '_blank' : ''"
-                                    :attr:class="'transition duration-200 ' + (task.has_log ? 'text-indigo-600 hover:text-indigo-800 font-medium' : 'text-gray-300 cursor-not-allowed no-underline')"
-                                    :attr:title="task.has_log ? 'View full task log in a new tab' : 'No log available for this task'"
-                                >
-                                    {{ task.has_log ? 'View Log' : 'No Log' }}
-                                </a>
+                            <div :if="task.has_runner_log || task.has_review_log || task.status === 'in_progress'">
+                                <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Logs:</span>
+                                <div class="flex items-center gap-3">
+                                    <a :if="task.has_runner_log || task.status === 'in_progress'"
+                                        :attr:href="'/tasks/' + task.id + '/log?name=runner'"
+                                        target="_blank"
+                                        class="text-indigo-600 hover:text-indigo-800 font-medium transition duration-200"
+                                        title="View runner log"
+                                    >Runner</a>
+                                    <a :if="task.has_review_log"
+                                        :attr:href="'/tasks/' + task.id + '/log?name=review'"
+                                        target="_blank"
+                                        class="text-indigo-600 hover:text-indigo-800 font-medium transition duration-200"
+                                        title="View review log"
+                                    >Review</a>
+                                </div>
                             </div>
                         </div>
                         <div :if="task.parent" class="mt-2">

@@ -59,19 +59,22 @@ def get_default_tasks_file() -> pathlib.Path:
     return get_lemming_home() / path_hash / "tasks.yml"
 
 
-def get_log_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
+def get_log_file(
+    tasks_file: pathlib.Path, task_id: str, name: str = "runner"
+) -> pathlib.Path:
     """Returns the log file path for a specific task.
 
     Args:
         tasks_file: Path to the tasks YAML file associated with the task.
         task_id: The unique task ID.
+        name: The log name (e.g. "runner", "review").
 
     Returns:
         A pathlib.Path to the log file for the given task.
     """
     project_dir = get_project_dir(tasks_file)
     project_dir.mkdir(parents=True, exist_ok=True)
-    return project_dir / f"{task_id}.log"
+    return project_dir / f"{task_id}-{name}.log"
 
 
 def in_git_repo() -> bool:

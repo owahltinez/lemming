@@ -41,8 +41,12 @@ def test_get_default_tasks_file_local(tmp_path):
 def test_get_log_file(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     log_file = paths.get_log_file(tasks_file, "task123")
-    assert log_file.name == "task123.log"
+    assert log_file.name == "task123-runner.log"
     assert log_file.parent.exists()
+
+    review_log = paths.get_log_file(tasks_file, "task123", "review")
+    assert review_log.name == "task123-review.log"
+    assert review_log.parent == log_file.parent
 
 
 def test_in_git_repo_and_is_ignored(tmp_path):

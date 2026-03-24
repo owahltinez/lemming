@@ -143,7 +143,7 @@ def run_with_heartbeat(
     task_id: str,
     verbose: bool,
     echo_fn: Callable[[str], None] = print,
-    phase: str | None = None,
+    log_name: str = "runner",
 ) -> tuple[int, str, str]:
     """Runs the runner process and updates the task heartbeat periodically.
 
@@ -153,15 +153,13 @@ def run_with_heartbeat(
         task_id: ID of the task being executed (used for heartbeat and parent env var).
         verbose: If True, echo runner output to the console.
         echo_fn: Function to use for echoing output (defaults to print).
-        phase: Optional phase label (e.g. "review"). When set, the log file is
-            written to ``{phase}-{task_id}.log`` instead of ``{task_id}.log``.
+        log_name: The log name (e.g. "runner", "review").
 
     Returns:
         A tuple of (returncode, stdout_log, stderr_log). Note: stderr is currently
         merged into stdout_log.
     """
-    log_id = f"{phase}-{task_id}" if phase else task_id
-    log_file = paths.get_log_file(tasks_file, log_id)
+    log_file = paths.get_log_file(tasks_file, task_id, log_name)
 
     # Use a separator for new attempts
     command_str = _shlex_join_pretty(cmd)

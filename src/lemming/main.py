@@ -242,8 +242,12 @@ def status(ctx: click.Context, task_id: str | None):
         click.echo(f"Custom Runner: {target.runner}")
     click.echo(f"Attempts:    {target.attempts}")
 
-    log_file = paths.get_log_file(tasks_file, target.id)
-    click.echo(f"Has Log:     {'Yes' if log_file.exists() else 'No'}")
+    log_parts = []
+    if paths.get_log_file(tasks_file, target.id, "runner").exists():
+        log_parts.append("runner")
+    if paths.get_log_file(tasks_file, target.id, "review").exists():
+        log_parts.append("review")
+    click.echo(f"Logs:        {', '.join(log_parts) if log_parts else 'None'}")
 
     if target.completed_at:
         comp_time = time.strftime(
@@ -265,6 +269,38 @@ def status(ctx: click.Context, task_id: str | None):
         click.secho("\n--- Outcomes ---", fg="magenta", bold=True)
         for outcome in target.outcomes:
             click.echo(f"- {outcome}")
+
+
+@cli.command(short_help="<taskid> Print a task's log to stdout")
+@click.argument("task_id")
+@click.option(
+    "--name",
+    default="runner",
+    type=click.Choice(["runner", "review"]),
+    help="Which log to display (default: runner).",
+)
+@click.pass_context
+def logs(ctx: click.Context, task_id: str, name: str):
+    """Prints the log for a task to stdout.
+
+    Args:
+        task_id: The ID (or prefix) of the task.
+        name: Which log to display ("runner" or "review").
+    """
+    tasks_file = ctx.obj["TASKS_FILE"]
+
+    data = tasks.load_tasks(tasks_file)
+    target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
+    if not target:
+        click.echo(f"Error: Task {task_id} not found.")
+        ctx.exit(1)
+
+    log_file = paths.get_log_file(tasks_file, target.id, name)
+    if not log_file.exists():
+        click.echo(f"No {name} log for task {target.id}.")
+        ctx.exit(1)
+
+    click.echo(log_file.read_text(encoding="utf-8"), nl=False)
 
 
 @cli.command(short_help="[<text>] View or set the project context")
@@ -461,7 +497,7 @@ def _run_reviewer(
             finished_task_id,
             verbose,
             echo_fn=lambda line: click.echo(line, nl=False),
-            phase="review",
+            log_name="review",
         )
         if verbose:
             if returncode == 0:
