@@ -301,7 +301,7 @@ test.describe("Screenshot Generation", () => {
             json: mockTasks.find((t) => t.id === taskId),
           });
         });
-        await page.route(`**/api/tasks/${taskId}/log`, async (route) => {
+        await page.route(`**/api/tasks/${taskId}/log*`, async (route) => {
           await route.fulfill({
             contentType: "application/json",
             json: { log: cleanLog },
