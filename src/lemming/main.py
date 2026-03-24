@@ -410,6 +410,63 @@ def reset(ctx: click.Context, task_id: str):
         ctx.exit(1)
 
 
+def _run_reviewer(
+    tasks_file: pathlib.Path,
+    finished_task_id: str,
+    agent_name: str,
+    yolo: bool,
+    prompt_arg: str | None,
+    agent_args: tuple,
+    no_defaults: bool,
+    verbose: bool,
+) -> None:
+    """Runs the reviewer agent to evaluate and adapt the roadmap.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        finished_task_id: ID of the task that just finished.
+        agent_name: The CLI agent to invoke.
+        yolo: If True, skip agent confirmations.
+        prompt_arg: Explicit prompt argument for the agent.
+        agent_args: Raw arguments passed directly to the agent.
+        no_defaults: Skip default flag injection.
+        verbose: If True, echo reviewer output.
+    """
+    data = tasks.load_tasks(tasks_file)
+    finished_task = next((t for t in data.tasks if t.id == finished_task_id), None)
+    if not finished_task:
+        return
+
+    if verbose:
+        click.echo("\n--- Running roadmap review ---")
+
+    prompt = agent.prepare_review_prompt(data, finished_task, tasks_file)
+
+    if verbose:
+        click.secho("\n=== Reviewer Prompt ===", fg="magenta", bold=True)
+        click.echo(prompt)
+        click.secho("========================\n", fg="magenta", bold=True)
+
+    # Use a synthetic task ID for the reviewer log so it doesn't pollute task logs
+    review_id = f"review-{finished_task_id}"
+    cmd = agent.build_agent_command(
+        agent_name, prompt, yolo, prompt_arg, agent_args, no_defaults, verbose=verbose,
+    )
+
+    try:
+        returncode, stdout, stderr = agent.run_agent_with_heartbeat(
+            cmd, tasks_file, review_id, verbose,
+            echo_fn=lambda line: click.echo(line, nl=False),
+        )
+        if verbose:
+            if returncode == 0:
+                click.echo("Reviewer finished.")
+            else:
+                click.echo(f"Reviewer exited with code {returncode}.")
+    except Exception as e:
+        click.echo(f"Reviewer error: {e}")
+
+
 @cli.command(
     short_help="Run the autonomous task execution loop",
 )
@@ -445,6 +502,11 @@ def reset(ctx: click.Context, task_id: str):
     default=None,
     help="Argument to precede the prompt (e.g. '--message'). If omitted, uses agent defaults.",
 )
+@click.option(
+    "--review/--no-review",
+    default=False,
+    help="Run a reviewer agent after each task to adapt the roadmap.",
+)
 @click.argument("agent_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run(
@@ -456,6 +518,7 @@ def run(
     env: tuple,
     no_defaults: bool,
     prompt_arg: str | None,
+    review: bool,
     agent_args: tuple,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks.
@@ -496,10 +559,31 @@ def run(
         task_id = current_task.id
 
         if current_task.attempts >= max_attempts:
-            click.echo(
-                f"\nTask {task_id} failed after {max_attempts} attempts. Aborting run."
-            )
-            break
+            if review:
+                # Give the reviewer a chance to heal the task before aborting
+                click.echo(
+                    f"\nTask {task_id} reached {max_attempts} attempts. Running reviewer..."
+                )
+                _run_reviewer(
+                    tasks_file, task_id, agent_name, yolo, prompt_arg,
+                    agent_args, no_defaults, verbose,
+                )
+                # Re-check: if the reviewer reset/edited/replaced the task, continue
+                data = tasks.load_tasks(tasks_file)
+                healed_task = next((t for t in data.tasks if t.id == task_id), None)
+                if healed_task and healed_task.attempts >= max_attempts:
+                    click.echo(
+                        f"Task {task_id} still at max attempts after review. Aborting run."
+                    )
+                    break
+                # Reviewer healed it (reset attempts, deleted it, etc.) — continue the loop
+                click.echo(f"Reviewer intervened on task {task_id}. Continuing...")
+                continue
+            else:
+                click.echo(
+                    f"\nTask {task_id} failed after {max_attempts} attempts. Aborting run."
+                )
+                break
 
         # Add a small random jitter to avoid race conditions between multiple instances
         time.sleep(random.uniform(0.1, 0.5))
@@ -598,6 +682,13 @@ def run(
                         f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
                     )
                 time.sleep(retry_delay)
+
+        # Run the reviewer after each task execution
+        if review:
+            _run_reviewer(
+                tasks_file, task_id, agent_name, yolo, prompt_arg,
+                agent_args, no_defaults, verbose,
+            )
 
 
 def parse_timeout(t_str: str) -> float:

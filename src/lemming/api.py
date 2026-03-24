@@ -56,6 +56,7 @@ class RunRequest(pydantic.BaseModel):
     agent: str | None = "gemini"
     env: dict[str, str] | None = None
     max_attempts: int | None = None
+    review: bool = False
 
 
 @app.get("/api/data", response_model=tasks.ProjectData)
@@ -192,6 +193,9 @@ def run_loop(request: RunRequest):
 
     if request.agent:
         cmd.extend(["--agent", request.agent])
+
+    if request.review:
+        cmd.append("--review")
 
     env = os.environ.copy()
     if request.env:

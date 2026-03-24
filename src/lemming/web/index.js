@@ -31,6 +31,7 @@
       $.maxAttempts = Storage.get("lemming_max_attempts", 3);
       $.envOverrides = []; // Will hydrate below
       $.hideCompleted = Storage.get("lemming_hide_completed", false);
+      $.reviewEnabled = Storage.get("lemming_review_enabled", false);
       $.toasts = [];
       $.expanded = {};
       $.loopRunning = false;
@@ -172,6 +173,9 @@
       };
       $.saveHideCompletedPreference = function () {
         Storage.set("lemming_hide_completed", this.hideCompleted);
+      };
+      $.saveReviewPreference = function () {
+        Storage.set("lemming_review_enabled", this.reviewEnabled);
       };
 
       let envSaveTimeout;
@@ -327,6 +331,7 @@
         const payload = {
           agent: this.selectedAgent,
           env: Object.keys(env).length > 0 ? env : undefined,
+          review: this.reviewEnabled,
         };
 
         if (this.maxAttempts) {

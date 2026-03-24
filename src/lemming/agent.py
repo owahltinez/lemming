@@ -208,6 +208,56 @@ def run_agent_with_heartbeat(
     return process.returncode, "".join(full_log), ""
 
 
+def prepare_review_prompt(
+    data: tasks.Roadmap, finished_task: tasks.Task, tasks_file: pathlib.Path
+) -> str:
+    """Prepares the reviewer prompt after a task finishes.
+
+    Args:
+        data: The current Roadmap.
+        finished_task: The Task that just finished executing.
+        tasks_file: Path to the tasks YAML file.
+
+    Returns:
+        The fully rendered reviewer prompt string.
+    """
+    roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
+
+    roadmap_str += "## All Tasks\n"
+    for t in data.tasks:
+        if t.status == "completed":
+            marker = "[COMPLETED]"
+        elif t.status == "in_progress":
+            marker = "[IN PROGRESS]"
+        elif t.attempts > 0:
+            marker = f"[PENDING - {t.attempts} attempt(s) so far]"
+        else:
+            marker = "[PENDING]"
+
+        roadmap_str += f"- {marker} ({t.id}) {t.description}\n"
+        if t.outcomes:
+            for o in t.outcomes:
+                roadmap_str += f"  - {o}\n"
+
+    finished_str = f"Task ID: {finished_task.id}\n"
+    finished_str += f"Description: {finished_task.description}\n"
+    finished_str += f"Result: {finished_task.status}\n"
+    finished_str += f"Attempts: {finished_task.attempts}\n"
+    if finished_task.outcomes:
+        finished_str += "Outcomes:\n"
+        for o in finished_task.outcomes:
+            finished_str += f"- {o}\n"
+
+    tasks_file_str = shlex.quote(str(tasks_file))
+    prompt_template = load_prompt("reviewer")
+    return (
+        prompt_template.replace("{{roadmap}}", roadmap_str)
+        .replace("{{finished_task}}", finished_str)
+        .replace("{{tasks_file_name}}", tasks_file.name)
+        .replace("{{tasks_file_path}}", tasks_file_str)
+    )
+
+
 def prepare_prompt(
     data: tasks.Roadmap, task: tasks.Task, tasks_file: pathlib.Path
 ) -> str:
