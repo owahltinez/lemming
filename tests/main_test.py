@@ -961,6 +961,7 @@ class TestLemmingRun(unittest.TestCase):
     def test_run_success(self, mock_popen):
         # Simulate runner reporting success
         mock_process = unittest.mock.MagicMock()
+        mock_process.pid = 12345
         mock_process.poll.side_effect = [
             None,
             0,
@@ -995,6 +996,7 @@ class TestLemmingRun(unittest.TestCase):
     def test_run_retry_and_fail(self, mock_sleep, mock_popen):
         # Runner finishes but doesn't report completion
         mock_process = unittest.mock.MagicMock()
+        mock_process.pid = 12345
         mock_process.poll.return_value = 0
         mock_process.returncode = 0
         mock_process.stdout = iter(["stdout\n"])
@@ -1014,6 +1016,7 @@ class TestLemmingRun(unittest.TestCase):
     @unittest.mock.patch("subprocess.Popen")
     def test_run_subprocess_error(self, mock_popen):
         mock_process = unittest.mock.MagicMock()
+        mock_process.pid = 12345
         mock_process.poll.return_value = 1
         mock_process.returncode = 1
         mock_process.stdout = iter(["error output\n"])
@@ -1052,6 +1055,7 @@ class TestLemmingRun(unittest.TestCase):
 
         # 2. Setup mock for the runner
         mock_process = unittest.mock.MagicMock()
+        mock_process.pid = 12345
         mock_process.poll.side_effect = [None, 0]
         mock_process.returncode = 0
         mock_process.stdout = iter(["success\n"])

@@ -186,10 +186,24 @@ def run_with_heartbeat(
 
     full_log: list[str] = []
 
+    # Store the subprocess PID in the task so cancel_task can kill it.
+    # The orchestrator initially stores its own PID, but the subprocess runs
+    # in a new session (start_new_session=True) so it must be killed separately.
+    tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
+
     def heartbeat_loop():
         """Updates the task heartbeat while the process is running."""
         while process.poll() is None:
-            tasks.update_heartbeat(tasks_file, task_id)
+            if not tasks.update_heartbeat(tasks_file, task_id):
+                # Task was cancelled — kill the runner subprocess tree
+                try:
+                    os.killpg(os.getpgid(process.pid), __import__("signal").SIGTERM)
+                except OSError:
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+                return
             time.sleep(tasks.STALE_THRESHOLD // 2)
 
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)

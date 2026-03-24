@@ -325,20 +325,32 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> Task | None:
         return task
 
 
-def update_heartbeat(tasks_file: pathlib.Path, task_id: str) -> None:
+def update_heartbeat(
+    tasks_file: pathlib.Path, task_id: str, pid: int | None = None
+) -> bool:
     """Updates the heartbeat timestamp for a task.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task to update.
+        pid: Optional new PID to store (e.g. the runner subprocess PID).
+
+    Returns:
+        True if the task is still in_progress, False if it was cancelled or
+        otherwise changed (caller should stop work).
     """
     with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
         for task in data.tasks:
             if task.id == task_id:
+                if task.status != "in_progress":
+                    return False
                 task.last_heartbeat = time.time()
+                if pid is not None:
+                    task.pid = pid
                 break
         save_tasks(tasks_file, data)
+    return True
 
 
 def clear_log(tasks_file: pathlib.Path, task_id: str) -> None:
