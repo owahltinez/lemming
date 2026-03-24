@@ -593,8 +593,16 @@ def run(
     tasks.acquire_loop_lock(tasks_file)
     try:
         _run_loop(
-            tasks_file, verbose, max_attempts, retry_delay, yolo,
-            runner_name, no_defaults, review, review_runner, runner_args,
+            tasks_file,
+            verbose,
+            max_attempts,
+            retry_delay,
+            yolo,
+            runner_name,
+            no_defaults,
+            review,
+            review_runner,
+            runner_args,
         )
     finally:
         tasks.release_loop_lock(tasks_file)
