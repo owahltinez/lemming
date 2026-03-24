@@ -46,7 +46,7 @@
                         </tr>
                         <tr :for="item in contents" class="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                             <td class="px-4 py-2">
-                                <a :attr:href="'/files/' + item.path" :attr:class="'flex items-center gap-2 ' + (item.is_dir ? 'text-indigo-600 font-medium' : 'text-gray-700')" :attr:target="item.is_dir ? '' : '_blank'">
+                                <a :attr:href="'/files/' + item.path" :attr:class="'flex items-center gap-2 ' + (item.is_dir ? 'text-indigo-600 font-medium' : 'text-gray-700 dark:text-gray-300')" :attr:target="item.is_dir ? '' : '_blank'">
                                     <svg :if="item.is_dir" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                                     </svg>
