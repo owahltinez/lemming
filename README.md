@@ -124,3 +124,13 @@ Lemming uses **fuzzy matching** to automatically inject the correct "YOLO" (auto
 *   **Codex**: Adds `--yolo`
 
 You can disable this behavior with `--no-defaults` or override the prompt flag with `--prompt-arg`.
+
+---
+
+## Screenshots
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard-desktop.png)
+
+### Task Log
+![Task Log](docs/screenshots/task-log-desktop.png)
