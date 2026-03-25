@@ -18,7 +18,9 @@
       }
 
       // --- Persistence Management (scoped by project) ---
-      const storagePrefix = $.$$project ? `lemming[${$.$$project}]_` : "lemming_";
+      const storagePrefix = $.$$project
+        ? `lemming[${$.$$project}]_`
+        : "lemming_";
       const Storage = {
         get(key, fallback) {
           try {
@@ -384,7 +386,7 @@
         if (modal) modal.showModal();
       };
 
-      $.closeFolderPicker = function () {
+      $.closeFolderPicker = () => {
         const modal = document.getElementById("folder-picker-modal");
         if (modal) modal.close();
       };
@@ -411,7 +413,7 @@
         await this.fetchFolderPickerDirs(parts.join("/"));
       };
 
-      $.folderPickerSelect = function (path) {
+      $.folderPickerSelect = (path) => {
         // Navigate to the same page with the new project param.
         const url = new URL(window.location.href);
         if (path) {
@@ -426,7 +428,10 @@
         const parts = $.folderPickerPath.split("/").filter(Boolean);
         const crumbs = [{ name: "root", path: "" }];
         for (let i = 0; i < parts.length; i++) {
-          crumbs.push({ name: parts[i], path: parts.slice(0, i + 1).join("/") });
+          crumbs.push({
+            name: parts[i],
+            path: parts.slice(0, i + 1).join("/"),
+          });
         }
         return crumbs;
       });
@@ -440,11 +445,11 @@
         }));
       }
 
-      // --- Initial Data Fetch ---
-      await Promise.all([$.fetchData(), $.fetchRunners()]);
-
-      // --- Mount to DOM ---
+      // --- Mount to DOM (syncs $$project from URL) ---
       await renderer.mount(document.body);
+
+      // --- Initial Data Fetch (after mount so $$project is available) ---
+      await Promise.all([$.fetchData(), $.fetchRunners()]);
 
       // --- Auto-refresh via polling ---
       setInterval(() => $.fetchData(), 2000);

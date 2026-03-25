@@ -105,7 +105,7 @@ describe("Lemming Web Dashboard", () => {
   });
 
   test("initial state", async () => {
-    const renderer = new Renderer(createInitialState());
+    const renderer = new Renderer(createInitialState({ loading: false }));
 
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
 
@@ -124,21 +124,23 @@ describe("Lemming Web Dashboard", () => {
     assert.ok(noTasks, "Should show 'No tasks yet'");
     assert.ok(noTasks.textContent.includes("No tasks yet"));
 
-    const cwdDisplay = fragment.querySelector(
-      '[title="Lemming Task Runner"] + section div div div.text-sm.font-mono',
-    );
-    // Wait, the selector might be fragile. Let's find it by the label.
+    // Find the "Project Directory" label and verify the path display and file browser link.
     const labels = Array.from(fragment.querySelectorAll("label"));
     const cwdLabel = labels.find((l) =>
-      l.textContent.includes("Current Working Directory"),
+      l.textContent.includes("Project Directory"),
     );
-    assert.ok(cwdLabel, "CWD label should exist");
-    const cwdLink = cwdLabel.nextElementSibling;
-    assert.strictEqual(cwdLink.tagName.toLowerCase(), "a");
-    assert.strictEqual(cwdLink.getAttribute("href"), "/files/");
-    assert.strictEqual(cwdLink.getAttribute("target"), "_blank");
-    assert.strictEqual(cwdLink.textContent.trim(), "/test/cwd");
-    assert.strictEqual(cwdLink.getAttribute("title"), "/test/cwd");
+    assert.ok(cwdLabel, "Project Directory label should exist");
+    const filesLink = cwdLabel
+      .closest("div")
+      .querySelector('a[title="Browse files"]');
+    assert.ok(filesLink, "Browse files link should exist");
+    assert.strictEqual(filesLink.getAttribute("href"), "/files/");
+    assert.strictEqual(filesLink.getAttribute("target"), "_blank");
+    const cwdSpan = cwdLabel
+      .closest("div")
+      .parentElement.querySelector("span.font-mono");
+    assert.ok(cwdSpan, "CWD span should exist");
+    assert.strictEqual(cwdSpan.textContent.trim(), "/test/cwd");
   });
 
   test("renders tasks correctly", async () => {
