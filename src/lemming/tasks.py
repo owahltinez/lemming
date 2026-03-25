@@ -1,4 +1,5 @@
 import contextlib
+import fcntl
 import os
 import pathlib
 import secrets
@@ -6,7 +7,6 @@ import time
 
 import pydantic
 import yaml
-from filelock import FileLock
 
 from . import paths
 
@@ -63,8 +63,12 @@ def lock_tasks(tasks_file: pathlib.Path):
         tasks_file.write_text("{}", encoding="utf-8")
 
     lock_path = tasks_file.with_suffix(".lock")
-    with FileLock(lock_path):
-        yield
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def generate_task_id() -> str:
