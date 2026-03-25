@@ -512,7 +512,7 @@ def _run_reviewer(
     short_help="Run the autonomous task execution loop",
 )
 @click.option(
-    "--max-attempts", default=3, help="Maximum number of retries for a single task."
+    "--retries", default=3, help="Maximum number of retries for a single task."
 )
 @click.option(
     "--retry-delay",
@@ -539,7 +539,8 @@ def _run_reviewer(
     help="Do not auto-inject default flags (like --yolo) based on runner name.",
 )
 @click.option(
-    "--review/--no-review",
+    "--auto-review/--no-auto-review",
+    "review",
     default=False,
     help="Run a reviewer after each task to adapt the roadmap.",
 )
@@ -553,7 +554,7 @@ def _run_reviewer(
 @click.pass_context
 def run(
     ctx: click.Context,
-    max_attempts: int,
+    retries: int,
     retry_delay: int,
     yolo: bool,
     runner_name: str,
@@ -566,7 +567,7 @@ def run(
     """Starts the orchestrator loop to autonomously execute pending tasks.
 
     Args:
-        max_attempts: Maximum retries per task.
+        retries: Maximum retries per task.
         retry_delay: Delay between retries.
         yolo: If True, skip runner confirmations.
         runner_name: The CLI runner to invoke.
@@ -595,7 +596,7 @@ def run(
         _run_loop(
             tasks_file,
             verbose,
-            max_attempts,
+            retries,
             retry_delay,
             yolo,
             runner_name,
@@ -611,7 +612,7 @@ def run(
 def _run_loop(
     tasks_file: pathlib.Path,
     verbose: bool,
-    max_attempts: int,
+    retries: int,
     retry_delay: int,
     yolo: bool,
     runner_name: str,
@@ -630,11 +631,11 @@ def _run_loop(
 
         task_id = current_task.id
 
-        if current_task.attempts >= max_attempts:
+        if current_task.attempts >= retries:
             if review:
                 # Give the reviewer a chance to heal the task before aborting
                 click.echo(
-                    f"\nTask {task_id} reached {max_attempts} attempts. Running reviewer..."
+                    f"\nTask {task_id} reached {retries} attempts. Running reviewer..."
                 )
                 _run_reviewer(
                     tasks_file,
@@ -648,7 +649,7 @@ def _run_loop(
                 # Re-check: if the reviewer reset/edited/replaced the task, continue
                 data = tasks.load_tasks(tasks_file)
                 healed_task = next((t for t in data.tasks if t.id == task_id), None)
-                if healed_task and healed_task.attempts >= max_attempts:
+                if healed_task and healed_task.attempts >= retries:
                     click.echo(
                         f"Task {task_id} still at max attempts after review. Aborting run."
                     )
@@ -658,7 +659,7 @@ def _run_loop(
                 continue
             else:
                 click.echo(
-                    f"\nTask {task_id} failed after {max_attempts} attempts. Aborting run."
+                    f"\nTask {task_id} failed after {retries} attempts. Aborting run."
                 )
                 break
 
@@ -676,12 +677,12 @@ def _run_loop(
 
         if verbose:
             click.echo(
-                f"\n--- Task {task_id} (Attempt {current_task.attempts}/{max_attempts}) ---"
+                f"\n--- Task {task_id} (Attempt {current_task.attempts}/{retries}) ---"
             )
             click.echo(f"Working on: {current_task.description}")
         else:
             click.echo(
-                f"[{task_id}] Attempt {current_task.attempts}/{max_attempts}: {current_task.description}"
+                f"[{task_id}] Attempt {current_task.attempts}/{retries}: {current_task.description}"
             )
 
         prompt = runner.prepare_prompt(data, current_task, tasks_file)
@@ -752,7 +753,7 @@ def _run_loop(
                 click.echo(
                     "Runner finished execution but did NOT report completion. Retrying..."
                 )
-            if post_task.attempts < max_attempts and retry_delay > 0:
+            if post_task.attempts < retries and retry_delay > 0:
                 if verbose:
                     click.echo(
                         f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."

@@ -412,7 +412,7 @@ class TestLemming(unittest.TestCase):
                 "run",
                 "--runner",
                 "true",
-                "--max-attempts",
+                "--retries",
                 "1",
             ],
         )
@@ -430,7 +430,7 @@ class TestLemming(unittest.TestCase):
                 "run",
                 "--runner",
                 "true",
-                "--max-attempts",
+                "--retries",
                 "1",
             ],
         )
@@ -438,7 +438,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("=== Runner Prompt ===", result.output)
 
     def test_run_attempts_limit(self):
-        # Run with max-attempts=2. The runner 'true' does not use lemming CLI
+        # Run with retries=2. The runner 'true' does not use lemming CLI
         # to complete the task, so it counts as an execution without completion.
         result = self.cli_runner.invoke(
             main.cli,
@@ -448,7 +448,7 @@ class TestLemming(unittest.TestCase):
                 "run",
                 "--runner",
                 "true",
-                "--max-attempts",
+                "--retries",
                 "2",
                 "--retry-delay",
                 "0",
@@ -456,7 +456,7 @@ class TestLemming(unittest.TestCase):
         )
         self.assertIn("failed after 2 attempts", result.output)
 
-        # Bug verification: attempts should be exactly max_attempts (2), not 3.
+        # Bug verification: attempts should be exactly retries (2), not 3.
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].attempts, 2)
 
@@ -984,7 +984,7 @@ class TestLemmingRun(unittest.TestCase):
         mock_popen.return_value = mock_process
 
         result = self.cli_runner.invoke(
-            main.cli, ["--verbose"] + self.base_args + ["run", "--max-attempts", "1"]
+            main.cli, ["--verbose"] + self.base_args + ["run", "--retries", "1"]
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("All tasks completed!", result.output)
@@ -1005,7 +1005,7 @@ class TestLemmingRun(unittest.TestCase):
 
         result = self.cli_runner.invoke(
             main.cli,
-            self.base_args + ["run", "--max-attempts", "2", "--retry-delay", "0"],
+            self.base_args + ["run", "--retries", "2", "--retry-delay", "0"],
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn(
@@ -1025,7 +1025,7 @@ class TestLemmingRun(unittest.TestCase):
 
         # It should retry if status is still pending
         result = self.cli_runner.invoke(
-            main.cli, self.base_args + ["run", "--max-attempts", "1"]
+            main.cli, self.base_args + ["run", "--retries", "1"]
         )
         self.assertIn("execution failed with exit code 1", result.output)
         self.assertIn(
@@ -1039,7 +1039,7 @@ class TestLemmingRun(unittest.TestCase):
         )
 
         result = self.cli_runner.invoke(
-            main.cli, self.base_args + ["run", "--max-attempts", "1"]
+            main.cli, self.base_args + ["run", "--retries", "1"]
         )
         self.assertIn("An error occurred while executing gemini", result.output)
 
@@ -1073,7 +1073,7 @@ class TestLemmingRun(unittest.TestCase):
 
         # 3. Run lemming
         result = self.cli_runner.invoke(
-            main.cli, ["--verbose"] + self.base_args + ["run", "--max-attempts", "1"]
+            main.cli, ["--verbose"] + self.base_args + ["run", "--retries", "1"]
         )
 
         self.assertEqual(result.exit_code, 0)
@@ -1108,7 +1108,7 @@ class TestLemmingLogging(unittest.TestCase):
             self.base_args
             + [
                 "run",
-                "--max-attempts",
+                "--retries",
                 "1",
                 "--runner",
                 "echo",
@@ -1131,7 +1131,7 @@ class TestLemmingLogging(unittest.TestCase):
             self.base_args
             + [
                 "run",
-                "--max-attempts",
+                "--retries",
                 "1",
                 "--runner",
                 "echo",
@@ -1158,7 +1158,7 @@ class TestLemmingLogging(unittest.TestCase):
             self.base_args
             + [
                 "run",
-                "--max-attempts",
+                "--retries",
                 "1",
                 "--runner",
                 "echo",

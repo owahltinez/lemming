@@ -55,7 +55,7 @@ async def share_token_middleware(request: fastapi.Request, call_next):
 class RunRequest(pydantic.BaseModel):
     runner: str | None = "gemini"
     env: dict[str, str] | None = None
-    max_attempts: int | None = None
+    retries: int | None = None
     review: bool = False
 
 
@@ -190,14 +190,14 @@ def run_loop(request: RunRequest):
         ]
     )
 
-    if request.max_attempts is not None:
-        cmd.extend(["--max-attempts", str(request.max_attempts)])
+    if request.retries is not None:
+        cmd.extend(["--retries", str(request.retries)])
 
     if request.runner:
         cmd.extend(["--runner", request.runner])
 
     if request.review:
-        cmd.append("--review")
+        cmd.append("--auto-review")
 
     env = os.environ.copy()
     if request.env:

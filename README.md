@@ -82,8 +82,8 @@ Lemming maintains a human-readable `tasks.yml` file containing your project cont
 1.  **Build a scoped prompt**: Lemming assembles a prompt containing only the project context, a summary of completed tasks and their outcomes, and the current task description.
 2.  **Invoke the agent**: It launches your chosen agent CLI with that prompt, monitors it with heartbeats, and streams output to a log file.
 3.  **Collect results**: The agent reports back via the Lemming CLI — recording findings with `lemming outcome`, then marking the task with `lemming complete` or `lemming fail`. Agents can also schedule new tasks with `lemming add`, breaking down complex work into smaller steps that Lemming will pick up automatically.
-4.  **Retry or advance**: On failure, Lemming retries the task (up to `--max-attempts`) with accumulated outcomes as context, so the agent learns from previous attempts. On success, it moves to the next task.
-5.  **Review (optional)**: When `--review` is enabled, a review agent runs after each task to evaluate the roadmap and adapt it if needed (see below).
+4.  **Retry or advance**: On failure, Lemming retries the task (up to `--retries`) with accumulated outcomes as context, so the agent learns from previous attempts. On success, it moves to the next task.
+5.  **Review (optional)**: When `--auto-review` is enabled, a review agent runs after each task to evaluate the roadmap and adapt it if needed (see below).
 
 ---
 
@@ -93,12 +93,12 @@ For longer, multi-stage projects, the initial task list often can't anticipate e
 
 ```bash
 # Enable the review step
-lemming run --review
+lemming run --auto-review
 
 # Use a different runner for reviews
-lemming run --review --review-runner claude
+lemming run --auto-review --review-runner claude
 
-# Or toggle the "Review" checkbox in the Web UI
+# Or toggle the "Auto Review" checkbox in the Web UI
 ```
 
 The reviewer is **conservative by default** — if the roadmap is progressing normally, it does nothing. It only intervenes when it detects one of these situations:
@@ -130,9 +130,9 @@ The reviewer uses the same underlying runner as the task executor (unless `--rev
 
 ### Execution
 *   **`run`**: Start the orchestrator loop.
-    *   `--max-attempts`: Retries per task (default 3).
+    *   `--retries`: Retries per task (default 3).
     *   `--runner`: The CLI tool to invoke.
-    *   `--review`: Enable the review step (see below).
+    *   `--auto-review`: Enable the review step (see below).
     *   `--env`: Set environment variables for the runner (e.g., `--env OPENAI_API_KEY=sk-...`). Can be used multiple times.
     *   `--`: Use `--` to pass any flag directly to the underlying runner.
 *   **`serve`**: Launch the interactive Web UI.

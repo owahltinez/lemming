@@ -487,12 +487,12 @@ def test_api_delete_log_cleanup(test_tasks):
 
 def test_run_loop(test_tasks):
     with patch("subprocess.Popen") as mock_popen:
-        response = client.post("/api/run", json={"runner": "claude", "max_attempts": 5})
+        response = client.post("/api/run", json={"runner": "claude", "retries": 5})
         assert response.status_code == 200
         assert response.json() == {"status": "started"}
 
         args = mock_popen.call_args[0][0]
         assert "--runner" in args
         assert "claude" in args
-        assert "--max-attempts" in args
+        assert "--retries" in args
         assert "5" in args

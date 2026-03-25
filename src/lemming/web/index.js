@@ -28,10 +28,10 @@
       $.loading = true;
       $.runners = [];
       $.selectedRunner = Storage.get("lemming_selected_runner", "gemini");
-      $.maxAttempts = Storage.get("lemming_max_attempts", 3);
+      $.retries = Storage.get("lemming_retries", 3);
       $.envOverrides = []; // Will hydrate below
       $.hideCompleted = Storage.get("lemming_hide_completed", false);
-      $.reviewEnabled = Storage.get("lemming_review_enabled", false);
+      $.reviewEnabled = Storage.get("lemming_review_enabled", true);
       $.toasts = [];
       $.expanded = {};
       $.loopRunning = false;
@@ -168,8 +168,8 @@
       $.saveRunnerPreference = function () {
         Storage.set("lemming_selected_runner", this.selectedRunner);
       };
-      $.saveMaxAttemptsPreference = function () {
-        Storage.set("lemming_max_attempts", this.maxAttempts);
+      $.saveRetriesPreference = function () {
+        Storage.set("lemming_retries", this.retries);
       };
       $.saveHideCompletedPreference = function () {
         Storage.set("lemming_hide_completed", this.hideCompleted);
@@ -334,10 +334,10 @@
           review: this.reviewEnabled,
         };
 
-        if (this.maxAttempts) {
-          const parsed = Number.parseInt(this.maxAttempts, 10);
+        if (this.retries) {
+          const parsed = Number.parseInt(this.retries, 10);
           if (!Number.isNaN(parsed) && parsed > 0) {
-            payload.max_attempts = parsed;
+            payload.retries = parsed;
           }
         }
 
