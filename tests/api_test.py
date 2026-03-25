@@ -378,10 +378,41 @@ def test_list_subdir(git_repo):
     assert "file2.txt" in names
 
 
+def test_root_index_mime_type():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+def test_static_assets_mime_types():
+    response = client.get("/static/mancha.js")
+    assert response.status_code == 200
+    assert "javascript" in response.headers["content-type"]
+
+
 def test_serve_file(git_repo):
     response = client.get("/files/file1.txt")
     assert response.status_code == 200
     assert response.text == "content1"
+    assert "text/plain" in response.headers["content-type"]
+
+
+def test_serve_html_as_text(git_repo):
+    html_file = git_repo / "test.html"
+    html_file.write_text("<html><body>hello</body></html>")
+    response = client.get("/files/test.html")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert response.text == "<html><body>hello</body></html>"
+
+
+def test_serve_js_as_text(git_repo):
+    js_file = git_repo / "test.js"
+    js_file.write_text("console.log('hello');")
+    response = client.get("/files/test.js")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert response.text == "console.log('hello');"
 
 
 def test_serve_ignored_file(git_repo):

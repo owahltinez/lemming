@@ -6,6 +6,7 @@
     <title>Lemming - Task Log</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
     <script src="/static/mancha.js" css="utils"></script>
+    <script src="/static/favicon.js"></script>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans h-screen overflow-hidden">
     <div class="w-full p-4 h-full flex flex-col">
@@ -74,6 +75,12 @@
                         const response = await fetch(logApiUrl(`/api/tasks/${taskId}`));
                         if (response.ok) {
                             $.task = await response.json();
+                            
+                            // Update favicon status
+                            if (window.updateFavicon) {
+                                const state = $.task.status === 'in_progress' ? 'running' : ($.task.status === 'completed' ? 'success' : ($.task.attempts > 0 ? 'error' : 'idle'));
+                                window.updateFavicon(state);
+                            }
                         } else {
                             console.error('Failed to fetch task details');
                         }

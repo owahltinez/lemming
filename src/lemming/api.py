@@ -1,5 +1,6 @@
 import importlib.resources
 import logging
+import mimetypes
 import os
 import pathlib
 import subprocess
@@ -298,7 +299,34 @@ def serve_files(path: str):
     if target_path.is_dir():
         return fastapi.responses.FileResponse(web_dir / "files.html")
     if target_path.is_file():
-        return fastapi.responses.FileResponse(target_path)
+        # Guess the MIME type to identify binary formats.
+        guess, _ = mimetypes.guess_type(target_path)
+
+        # Consider images, video, audio, PDFs, and common archives as "binary" to be served as-is.
+        # This allows images to render and archives/PDFs to be downloaded or shown correctly.
+        is_binary = guess and (
+            guess.startswith(("image/", "video/", "audio/"))
+            or guess
+            in (
+                "application/pdf",
+                "application/wasm",
+                "application/zip",
+                "application/x-zip-compressed",
+            )
+        )
+
+        # Special case: .ts files are frequently misidentified as video/mp2t.
+        # In a development project context, these are almost always TypeScript source files.
+        if is_binary and target_path.suffix.lower() == ".ts":
+            is_binary = False
+
+        if is_binary:
+            return fastapi.responses.FileResponse(target_path)
+
+        # For everything else (including HTML, JS, CSS, and unknown formats),
+        # force text/plain to ensure browser views source code instead of rendering/executing.
+        return fastapi.responses.FileResponse(target_path, media_type="text/plain")
+
     raise fastapi.HTTPException(404, "Not found")
 
 

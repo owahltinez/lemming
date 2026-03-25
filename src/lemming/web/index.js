@@ -53,6 +53,10 @@
       $.editingTask = null;
       $.editFormData = { description: "", runner: "", parent: "" };
 
+      // --- Favicon Status ---
+      $.faviconState = "idle";
+      $.lastSeenState = null;
+
       // --- Folder Picker State ---
       $.folderPickerPath = "";
       $.folderPickerDirs = [];
@@ -168,6 +172,40 @@
         }
 
         this.tasks = newTasks;
+
+        // Update favicon status
+        if (window.updateFavicon) {
+          const hasError = newTasks.some(
+            (t) => t.status === "pending" && t.attempts > 0,
+          );
+          const allCompleted =
+            newTasks.length > 0 &&
+            newTasks.every((t) => t.status === "completed");
+          const state = this.loopRunning
+            ? "running"
+            : hasError
+              ? "error"
+              : allCompleted
+                ? "success"
+                : "idle";
+
+          this.faviconState = state;
+
+          // If a run starts, reset the last seen state
+          if (state === "running") {
+            this.lastSeenState = null;
+          }
+
+          // If the current terminal state has already been seen by the user, show 'idle' favicon instead.
+          const effectiveState =
+            (state === "success" || state === "error") &&
+            state === this.lastSeenState
+              ? "idle"
+              : state;
+
+          window.updateFavicon(effectiveState);
+        }
+
         const contextElem = document.querySelector("textarea");
         if (
           this.loading ||
@@ -452,6 +490,16 @@
       await Promise.all([$.fetchData(), $.fetchRunners()]);
 
       // --- Auto-refresh via polling ---
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          const state = $.faviconState;
+          if (state === "success" || state === "error") {
+            $.lastSeenState = state;
+            if (window.updateFavicon) window.updateFavicon("idle");
+          }
+        }
+      });
+
       setInterval(() => $.fetchData(), 2000);
     },
   });
