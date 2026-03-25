@@ -82,8 +82,8 @@
         s && s.length > l ? `${s.substring(0, l - 3)}...` : s;
       $.formatDate = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : "");
       $.formatDuration = (seconds) => {
-        if (!seconds) return "0.0s";
-        if (seconds < 60) return `${seconds.toFixed(1)}s`;
+        if (!seconds) return "0s";
+        if (seconds < 60) return `${Math.floor(seconds)}s`;
         const minutes = Math.floor(seconds / 60);
         const remainingSeconds = Math.floor(seconds % 60);
         return `${minutes}m ${remainingSeconds}s`;
@@ -172,6 +172,23 @@
         }
 
         this.tasks = newTasks;
+
+        // --- Update HTML Title ---
+        const project = this.$$project;
+        let folderName = "";
+        if (project) {
+          // Get the top-most folder from the project path (e.g. "a/b/c" -> "a")
+          folderName = project.split("/").filter(Boolean)[0];
+        } else if (this.cwd) {
+          // If no project is selected, use the name of the server root folder.
+          folderName = this.cwd.split("/").filter(Boolean).pop();
+        }
+
+        if (folderName) {
+          document.title = `Lemming - ${folderName}`;
+        } else {
+          document.title = "Lemming";
+        }
 
         // Update favicon status
         if (window.updateFavicon) {
@@ -500,7 +517,7 @@
         }
       });
 
-      setInterval(() => $.fetchData(), 2000);
+      setInterval(() => $.fetchData(), 1000);
     },
   });
 })();

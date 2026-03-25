@@ -45,7 +45,7 @@
                                 </a>
                             </td>
                         </tr>
-                        <tr :for="item in contents" class="border-b border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        <tr :for="item in contents" :key="item.path" class="border-b border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                             <td class="px-4 py-2">
                                 <a :attr:href="'/files/' + item.path" :attr:class="'flex items-center gap-2 ' + (item.is_dir ? 'text-indigo-600 font-medium' : 'text-gray-700 dark:text-gray-300')" :attr:target="item.is_dir ? '' : '_blank'">
                                     <svg :if="item.is_dir" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -110,6 +110,15 @@ window.ManchaApp = Mancha.initMancha({
                             const data = await response.json();
                             $.path = data.path;
                             $.contents = data.contents;
+
+                            // Update title: Use the top-most folder from the current path or project.
+                            const currentPath = $.path || $.$$project || '';
+                            const folderName = currentPath.split('/').filter(Boolean)[0];
+                            if (folderName) {
+                                document.title = `Lemming - ${folderName}`;
+                            } else {
+                                document.title = 'Lemming';
+                            }
                         } else {
                             console.error('Failed to fetch files');
                         }

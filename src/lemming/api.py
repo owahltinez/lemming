@@ -29,6 +29,7 @@ class QuietPollFilter(logging.Filter):
 app = fastapi.FastAPI()
 app.state.tasks_file = paths.get_default_tasks_file()
 app.state.root = pathlib.Path.cwd().resolve()
+app.state.disable_auto_start = False
 
 
 def resolve_tasks_file(project: str | None = None) -> pathlib.Path:
@@ -114,17 +115,51 @@ class AddTaskRequest(pydantic.BaseModel):
     runner: str | None = None
     index: int = -1
     parent: str | None = None
+    parent_tasks_file: str | None = None
+
+
+def _start_loop_if_needed(tasks_file: pathlib.Path):
+    """Automatically start the orchestrator loop if it is not already running."""
+    if getattr(app.state, "disable_auto_start", False):
+        return
+
+    if tasks.is_loop_running(tasks_file):
+        return
+
+    # Use sys.executable -m lemming.main to ensure we use the same environment
+    # and pass the explicit tasks file.
+    cmd = [
+        sys.executable,
+        "-m",
+        "lemming.main",
+    ]
+    if getattr(app.state, "verbose", False):
+        cmd.append("--verbose")
+    cmd.extend(
+        [
+            "--tasks-file",
+            str(tasks_file),
+            "run",
+        ]
+    )
+
+    # Start the loop in a new session so it outlives the request.
+    subprocess.Popen(cmd, start_new_session=True, env=os.environ.copy())
 
 
 @app.post("/api/tasks")
 def add_task(task: AddTaskRequest, project: str | None = None):
-    return tasks.add_task(
-        resolve_tasks_file(project),
+    tasks_file = resolve_tasks_file(project)
+    new_task = tasks.add_task(
+        tasks_file,
         task.description,
         task.runner,
         index=task.index,
         parent=task.parent,
+        parent_tasks_file=task.parent_tasks_file,
     )
+    _start_loop_if_needed(tasks_file)
+    return new_task
 
 
 @app.get("/api/tasks/{task_id}", response_model=tasks.Task)
@@ -151,7 +186,7 @@ def update_task(task_id: str, update: dict, project: str | None = None):
             require_outcomes = True
 
     try:
-        return tasks.update_task(
+        updated_task = tasks.update_task(
             tasks_file,
             task_id,
             description=update.get("description"),
@@ -161,6 +196,9 @@ def update_task(task_id: str, update: dict, project: str | None = None):
             require_outcomes=require_outcomes,
             parent=update.get("parent"),
         )
+        if status == "pending":
+            _start_loop_if_needed(tasks_file)
+        return updated_task
     except ValueError as e:
         if "not found" in str(e):
             raise fastapi.HTTPException(404, str(e))
@@ -189,7 +227,9 @@ def cancel_task_endpoint(task_id: str, project: str | None = None):
 @app.post("/api/tasks/{task_id}/clear")
 def clear_task_endpoint(task_id: str, project: str | None = None):
     try:
-        tasks.reset_task(resolve_tasks_file(project), task_id)
+        tasks_file = resolve_tasks_file(project)
+        tasks.reset_task(tasks_file, task_id)
+        _start_loop_if_needed(tasks_file)
         return {"status": "ok"}
     except ValueError as e:
         raise fastapi.HTTPException(404, str(e))

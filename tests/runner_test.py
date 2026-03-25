@@ -97,6 +97,36 @@ def test_prepare_prompt(tmp_path):
     assert "O1" in prompt
 
 
+def test_prepare_prompt_with_parent_context(tmp_path):
+
+    root_tasks_file = tmp_path / "root_tasks.yml"
+    sub_tasks_file = tmp_path / "sub_tasks.yml"
+
+    # Setup parent task
+    parent_task = tasks.Task(
+        id="parent123",
+        description="Parent Task Description",
+        outcomes=["Parent Outcome 1"],
+    )
+    root_data = tasks.Roadmap(tasks=[parent_task])
+    tasks.save_tasks(root_tasks_file, root_data)
+
+    # Setup child task referencing parent
+    child_task = tasks.Task(
+        id="child456",
+        description="Child Task",
+        parent="parent123",
+        parent_tasks_file=str(root_tasks_file),
+    )
+    sub_data = tasks.Roadmap(tasks=[child_task])
+
+    prompt = runner.prepare_prompt(sub_data, child_task, sub_tasks_file)
+
+    assert "Parent Task Context" in prompt
+    assert "Parent Task Description" in prompt
+    assert "Parent Outcome 1" in prompt
+
+
 def test_pretty_quote():
     # Test fallback to shlex
     assert runner._pretty_quote("simple") == "simple"

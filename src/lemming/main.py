@@ -52,6 +52,10 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     "--parent",
     help="ID of the parent task.",
 )
+@click.option(
+    "--parent-tasks-file",
+    help="Path to the parent tasks file (optional).",
+)
 @click.pass_context
 def add(
     ctx: click.Context,
@@ -59,6 +63,7 @@ def add(
     index: int,
     runner_name: str | None,
     parent: str | None,
+    parent_tasks_file: str | None,
 ):
     """Adds a new task to the roadmap queue.
 
@@ -67,11 +72,19 @@ def add(
         index: The position in the roadmap to insert the task.
         runner_name: An optional custom runner to use for this specific task.
         parent: Optional parent task ID.
+        parent_tasks_file: Optional parent tasks file path.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
-    new_task = tasks.add_task(tasks_file, description, runner_name, index, parent)
+    new_task = tasks.add_task(
+        tasks_file,
+        description,
+        runner_name,
+        index=index,
+        parent=parent,
+        parent_tasks_file=parent_tasks_file,
+    )
     task_id = new_task.id
 
     if verbose:
@@ -89,6 +102,10 @@ def add(
     "--parent",
     help="New parent task ID (use empty string to remove).",
 )
+@click.option(
+    "--parent-tasks-file",
+    help="New parent tasks file path (use empty string to remove).",
+)
 @click.pass_context
 def edit(
     ctx: click.Context,
@@ -97,6 +114,7 @@ def edit(
     runner_name: str | None,
     index: int | None,
     parent: str | None,
+    parent_tasks_file: str | None,
 ):
     """Edits an existing task's description, preferred runner, position, or parent.
 
@@ -106,10 +124,17 @@ def edit(
         runner_name: The new preferred runner (optional).
         index: The new position in the roadmap (optional).
         parent: The new parent task ID (optional).
+        parent_tasks_file: The new parent tasks file path (optional).
     """
-    if description is None and runner_name is None and index is None and parent is None:
+    if (
+        description is None
+        and runner_name is None
+        and index is None
+        and parent is None
+        and parent_tasks_file is None
+    ):
         click.echo(
-            "Error: At least one of --description, --runner, --index, or --parent must be provided."
+            "Error: At least one of --description, --runner, --index, --parent, or --parent-tasks-file must be provided."
         )
         ctx.exit(1)
 
@@ -123,6 +148,7 @@ def edit(
             runner=runner_name,
             index=index,
             parent=parent,
+            parent_tasks_file=parent_tasks_file,
         )
         click.echo(f"Task {target_task.id} updated.")
     except ValueError as e:

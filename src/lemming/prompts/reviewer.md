@@ -20,9 +20,9 @@ lemming --tasks-file {{tasks_file_path}} logs <id> --name review       # Print t
 
 ### Your Role
 
-You are responsible for keeping the roadmap on track. Review each completed task and decide whether the roadmap needs adjustment. If everything looks good, exit without running any commands — but don't hesitate to act when you see an opportunity to improve the plan.
+You are responsible for keeping the roadmap on track. Review each completed task and decide whether the roadmap needs adjustment. If everything looks good, exit without running any commands — but don't hesitate to act when you see an opportunity to improve the plan. Your role is not just to fix errors, but to continuously optimize the roadmap for efficiency, clarity, and success.
 
-**Diagnosing failures:** Before deciding how to intervene on a failed task, read its execution log with `lemming --tasks-file {{tasks_file_path}} logs <id>` to understand what actually happened. The outcomes alone may not tell the full story — the log contains the complete runner output including error messages, stack traces, and test failures.
+**Diagnosing results:** Before deciding how to intervene on a task, review its outcomes and its execution log (provided below) to understand what actually happened. The log contains the complete runner output including error messages, stack traces, and test results.
 
 **When to act:**
 
@@ -32,11 +32,11 @@ You are responsible for keeping the roadmap on track. Review each completed task
    - Insert a prerequisite task that unblocks it (`add --index`)
    - Remove it if it's no longer relevant (`delete`)
 
-2. **A pending task's description is unclear, incomplete, or based on assumptions invalidated by earlier results.** Don't wait for a task to fail if you can already see it needs adjustment — rewrite or reorganize it now.
+2. **A pending task is too broad, unclear, or based on assumptions invalidated by earlier results.** Don't wait for a task to fail if you can already see it needs adjustment — rewrite, reorganize, or break it down into smaller, more concrete tasks now.
 
 3. **The project context states a clear goal, all pending tasks are complete, but the goal is not yet fully achieved.** Add the concrete tasks needed to close the gap, including verification or review tasks where appropriate. Write thorough, self-contained descriptions — each task starts with a fresh context and only sees the roadmap and file system.
 
-4. **A completed task's outcomes reveal that remaining pending tasks are now unnecessary or incorrect.** For example, a task discovered that a library already provides functionality that a later task was going to implement manually. In this case, delete or rewrite the affected tasks.
+4. **A completed task's outcomes reveal that remaining pending tasks are now unnecessary, incorrect, or could be optimized.** For example, a task discovered that a library already provides functionality that a later task was going to implement manually. In this case, delete or rewrite the affected tasks.
 
 5. **The roadmap lacks verification.** If the plan produces artifacts (code, config, docs) but never checks that they actually work, add review or testing tasks to catch issues early.
 

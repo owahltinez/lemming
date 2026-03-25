@@ -24,8 +24,8 @@ const createInitialState = (overrides = {}) => {
       s && s.length > l ? `${s.substring(0, l - 3)}...` : s,
     formatDate: (ts) => (ts ? new Date(ts * 1000).toLocaleString() : ""),
     formatDuration: (seconds) => {
-      if (!seconds) return "0.0s";
-      if (seconds < 60) return `${seconds.toFixed(1)}s`;
+      if (!seconds) return "0s";
+      if (seconds < 60) return `${Math.floor(seconds)}s`;
       const minutes = Math.floor(seconds / 60);
       const remainingSeconds = Math.floor(seconds % 60);
       return `${minutes}m ${remainingSeconds}s`;

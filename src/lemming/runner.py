@@ -174,6 +174,7 @@ def run_with_heartbeat(
     # Start the process in a new session so we can kill its entire process tree if needed.
     env = os.environ.copy()
     env["LEMMING_PARENT_TASK_ID"] = task_id
+    env["LEMMING_PARENT_TASKS_FILE"] = str(tasks_file.resolve())
 
     process = subprocess.Popen(
         cmd,
@@ -191,12 +192,14 @@ def run_with_heartbeat(
     # Store the subprocess PID in the task so cancel_task can kill it.
     # The orchestrator initially stores its own PID, but the subprocess runs
     # in a new session (start_new_session=True) so it must be killed separately.
-    tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
+    # For reviews, we don't update the heartbeat since the task is already finished.
+    if log_name == "runner":
+        tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
 
     def heartbeat_loop():
         """Updates the task heartbeat while the process is running."""
         while process.poll() is None:
-            if not tasks.update_heartbeat(tasks_file, task_id):
+            if log_name == "runner" and not tasks.update_heartbeat(tasks_file, task_id):
                 # Task was cancelled — kill the runner subprocess tree
                 try:
                     os.killpg(os.getpgid(process.pid), __import__("signal").SIGTERM)
@@ -271,6 +274,21 @@ def prepare_review_prompt(
         for o in finished_task.outcomes:
             finished_str += f"- {o}\n"
 
+    # Include the last 100 lines of the runner log for the finished task
+    log_file = paths.get_log_file(tasks_file, finished_task.id, "runner")
+    if log_file.exists():
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                log_content = f.read()
+                lines = log_content.splitlines()
+                last_lines = lines[-100:]
+                finished_str += "\nExecution log of THIS task (last 100 lines):\n"
+                finished_str += "```\n"
+                finished_str += "\n".join(last_lines)
+                finished_str += "\n```\n"
+        except Exception as e:
+            finished_str += f"\n(Could not read log file: {e})\n"
+
     tasks_file_str = shlex.quote(str(tasks_file))
     prompt_template = load_prompt("reviewer")
     return (
@@ -298,6 +316,25 @@ def prepare_prompt(
     future_tasks = [t for t in data.tasks if t.status == "pending" and t.id != task.id]
 
     roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
+
+    # Add parent task context if it's from another project
+    if task.parent and task.parent_tasks_file:
+        try:
+            parent_tasks_path = pathlib.Path(task.parent_tasks_file)
+            if parent_tasks_path.exists():
+                parent_roadmap = tasks.load_tasks(parent_tasks_path)
+                parent_task = next(
+                    (t for t in parent_roadmap.tasks if t.id == task.parent), None
+                )
+                if parent_task:
+                    roadmap_str += "## Parent Task Context (From root project)\n"
+                    roadmap_str += f"- [ ] {parent_task.description}\n"
+                    if parent_task.outcomes:
+                        for outcome_item in parent_task.outcomes:
+                            roadmap_str += f"  - {outcome_item}\n"
+                    roadmap_str += "\n"
+        except Exception:
+            pass
 
     if completed_tasks:
         roadmap_str += "## Completed Tasks (Historical context)\n"

@@ -31,6 +31,7 @@ class Task(pydantic.BaseModel):
     has_runner_log: bool = False
     has_review_log: bool = False
     parent: str | None = None
+    parent_tasks_file: str | None = None
     index: int | None = pydantic.Field(default=-1, exclude=True)
 
 
@@ -114,14 +115,19 @@ def release_loop_lock(tasks_file: pathlib.Path) -> None:
 
 def is_loop_running(tasks_file: pathlib.Path) -> bool:
     """Check if an orchestrator loop is actively running."""
+    pid = get_loop_pid(tasks_file)
+    return pid is not None and is_pid_alive(pid)
+
+
+def get_loop_pid(tasks_file: pathlib.Path) -> int | None:
+    """Returns the PID of the running orchestrator loop, if any."""
     lock_path = _get_loop_lock_path(tasks_file)
     if not lock_path.exists():
-        return False
+        return None
     try:
-        pid = int(lock_path.read_text().strip())
-        return is_pid_alive(pid)
+        return int(lock_path.read_text().strip())
     except (ValueError, OSError):
-        return False
+        return None
 
 
 def update_run_time(task: Task, end_time: float | None = None) -> None:
@@ -402,7 +408,7 @@ def clear_log(tasks_file: pathlib.Path, task_id: str) -> None:
 
 
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
-    """Kill the process associated with the task and mark it as pending.
+    """Kill the process associated with the task AND the orchestrator loop, then mark it as pending.
 
     Args:
         tasks_file: Path to the tasks YAML file.
@@ -415,8 +421,11 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
 
     with lock_tasks(tasks_file):
         data = load_tasks(tasks_file)
+        loop_pid = get_loop_pid(tasks_file)
+
         for task in data.tasks:
             if task.id == task_id:
+                # First kill the task itself
                 if task.pid:
                     try:
                         # Try to kill the whole process group if possible
@@ -426,6 +435,17 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
                             os.kill(task.pid, signal.SIGTERM)
                         except OSError:
                             pass
+
+                # Then kill the loop orchestrator if it's running AND the task was active
+                if (
+                    task.status == "in_progress"
+                    and loop_pid
+                    and loop_pid != os.getpid()
+                ):
+                    try:
+                        os.kill(loop_pid, signal.SIGTERM)
+                    except OSError:
+                        pass
 
                 update_run_time(task)
                 task.status = "pending"
@@ -443,6 +463,7 @@ def add_task(
     runner: str | None = None,
     index: int = -1,
     parent: str | None = None,
+    parent_tasks_file: str | None = None,
 ) -> Task:
     """Adds a new task to the roadmap.
 
@@ -452,6 +473,7 @@ def add_task(
         runner: Optional preferred runner for this task.
         index: Position to insert the task at (default: append).
         parent: Optional parent task ID.
+        parent_tasks_file: Optional parent tasks file path.
 
     Returns:
         The newly created Task.
@@ -467,12 +489,15 @@ def add_task(
         # Detect if we are running inside an agent and set parent automatically
         if not parent:
             parent = os.environ.get("LEMMING_PARENT_TASK_ID")
+            if not parent_tasks_file:
+                parent_tasks_file = os.environ.get("LEMMING_PARENT_TASKS_FILE")
 
         new_task = Task(
             id=task_id,
             description=description,
             runner=runner,
             parent=parent,
+            parent_tasks_file=parent_tasks_file,
         )
 
         if index == -1:
@@ -534,6 +559,7 @@ def update_task(
     status: str | None = None,
     require_outcomes: bool = False,
     parent: str | None = None,
+    parent_tasks_file: str | None = None,
 ) -> Task:
     """Updates an existing task.
 
@@ -546,9 +572,16 @@ def update_task(
         status: New status.
         require_outcomes: If True, raises ValueError if the task has no outcomes.
         parent: New parent task ID.
-
-    Returns:
-        The updated Task.
+        parent_tasks_file: New parent tasks file path.
+    ...
+        if runner is not None:
+            target.runner = runner
+        if parent_tasks_file is not None:
+            if parent_tasks_file == "":
+                target.parent_tasks_file = None
+            else:
+                target.parent_tasks_file = parent_tasks_file
+        if parent is not None:
 
     Raises:
         ValueError: If the task is not found, or if validation fails.

@@ -208,7 +208,7 @@ class TestLemming(unittest.TestCase):
         result = self.cli_runner.invoke(main.cli, self.base_args + ["edit", "12345678"])
         self.assertEqual(result.exit_code, 1)
         self.assertIn(
-            "Error: At least one of --description, --runner, --index, or --parent must be provided.",
+            "Error: At least one of --description, --runner, --index, --parent, or --parent-tasks-file must be provided.",
             result.output,
         )
 

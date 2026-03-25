@@ -58,14 +58,17 @@ def test_tasks():
     # Override the TASKS_FILE and root in the api module
     original_tasks_file = api.app.state.tasks_file
     original_root = api.app.state.root
+    original_auto_start = api.app.state.disable_auto_start
     api.app.state.tasks_file = test_tasks_file
     api.app.state.root = pathlib.Path(test_dir).resolve()
+    api.app.state.disable_auto_start = True
 
     yield test_tasks_file
 
     # Restore the originals
     api.app.state.tasks_file = original_tasks_file
     api.app.state.root = original_root
+    api.app.state.disable_auto_start = original_auto_start
     shutil.rmtree(test_dir)
 
 

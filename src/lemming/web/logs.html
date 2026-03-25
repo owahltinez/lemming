@@ -76,6 +76,15 @@
                         if (response.ok) {
                             $.task = await response.json();
                             
+                            // Update title: Append the top-most folder from the project path.
+                            const project = $.$$project || '';
+                            const folderName = project.split('/').filter(Boolean)[0];
+                            if (folderName) {
+                                document.title = `Lemming - Task Log - ${folderName}`;
+                            } else {
+                                document.title = 'Lemming - Task Log';
+                            }
+
                             // Update favicon status
                             if (window.updateFavicon) {
                                 const state = $.task.status === 'in_progress' ? 'running' : ($.task.status === 'completed' ? 'success' : ($.task.attempts > 0 ? 'error' : 'idle'));
@@ -114,7 +123,7 @@
 
                         // Auto-refresh if in progress
                         if ($.task.status === 'in_progress') {
-                            setTimeout($.refresh, 2000);
+                            setTimeout($.refresh, 1000);
                         }
                     };
 

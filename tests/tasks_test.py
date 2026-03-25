@@ -1,4 +1,28 @@
+import os
+from unittest.mock import patch
+
 from lemming import tasks
+
+
+def test_add_task_captures_parent_project(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    parent_file = tmp_path / "parent_tasks.yml"
+
+    with patch.dict(
+        os.environ,
+        {
+            "LEMMING_PARENT_TASK_ID": "parent123",
+            "LEMMING_PARENT_TASKS_FILE": str(parent_file),
+        },
+    ):
+        task = tasks.add_task(tasks_file, "child task")
+        assert task.parent == "parent123"
+        assert task.parent_tasks_file == str(parent_file)
+
+    # Manual override
+    task2 = tasks.add_task(tasks_file, "another task", parent="override")
+    assert task2.parent == "override"
+    assert task2.parent_tasks_file is None
 
 
 def test_generate_task_id():
