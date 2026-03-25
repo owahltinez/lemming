@@ -56,7 +56,6 @@
       // --- Favicon Status ---
       $.faviconState = "idle";
       $.lastSeenState = Storage.get("last_seen_state", null);
-
       // --- Folder Picker State ---
       $.folderPickerPath = "";
       $.folderPickerDirs = [];
