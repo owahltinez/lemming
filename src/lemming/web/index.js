@@ -5,18 +5,32 @@
     callback: async (renderer) => {
       const { $ } = renderer;
 
-      // --- Persistence Management ---
+      // --- Project Scoping ---
+      // $$project is auto-synced with the ?project= URL query param by mancha.
+      $.$$project = $.$$project ?? "";
+      const project = $.$$project;
+
+      // Helper: build a URL with the project query param.
+      function apiUrl(path, extraParams = {}) {
+        const params = new URLSearchParams(extraParams);
+        if (project) params.set("project", project);
+        const qs = params.toString();
+        return qs ? `${path}?${qs}` : path;
+      }
+
+      // --- Persistence Management (scoped by project) ---
+      const storagePrefix = project ? `lemming[${project}]_` : "lemming_";
       const Storage = {
         get(key, fallback) {
           try {
-            const val = localStorage.getItem(key);
+            const val = localStorage.getItem(storagePrefix + key);
             return val !== null ? JSON.parse(val) : fallback;
           } catch {
             return fallback;
           }
         },
         set(key, val) {
-          localStorage.setItem(key, JSON.stringify(val));
+          localStorage.setItem(storagePrefix + key, JSON.stringify(val));
         },
       };
 
@@ -27,16 +41,21 @@
       $.newTask = "";
       $.loading = true;
       $.runners = [];
-      $.selectedRunner = Storage.get("lemming_selected_runner", "gemini");
-      $.retries = Storage.get("lemming_retries", 3);
+      $.selectedRunner = Storage.get("selected_runner", "gemini");
+      $.retries = Storage.get("retries", 3);
       $.envOverrides = []; // Will hydrate below
-      $.hideCompleted = Storage.get("lemming_hide_completed", false);
-      $.reviewEnabled = Storage.get("lemming_review_enabled", true);
+      $.hideCompleted = Storage.get("hide_completed", false);
+      $.reviewEnabled = Storage.get("review_enabled", true);
       $.toasts = [];
       $.expanded = {};
       $.loopRunning = false;
       $.editingTask = null;
       $.editFormData = { description: "", runner: "", parent: "" };
+
+      // --- Folder Picker State ---
+      $.folderPickerPath = "";
+      $.folderPickerDirs = [];
+      $.folderPickerLoading = false;
 
       // --- Computed Properties ---
       $.completedCount = $.$computed(
@@ -101,7 +120,7 @@
 
       // --- Data Actions ---
       $.fetchData = async function () {
-        const response = await fetch("/api/data");
+        const response = await fetch(apiUrl("/api/data"));
         if (!response.ok) return;
         const data = await response.json();
 
@@ -159,23 +178,23 @@
       };
 
       $.fetchRunners = async function () {
-        const response = await fetch("/api/runners");
+        const response = await fetch(apiUrl("/api/runners"));
         if (response.ok) {
           this.runners = await response.json();
         }
       };
 
       $.saveRunnerPreference = function () {
-        Storage.set("lemming_selected_runner", this.selectedRunner);
+        Storage.set("selected_runner", this.selectedRunner);
       };
       $.saveRetriesPreference = function () {
-        Storage.set("lemming_retries", this.retries);
+        Storage.set("retries", this.retries);
       };
       $.saveHideCompletedPreference = function () {
-        Storage.set("lemming_hide_completed", this.hideCompleted);
+        Storage.set("hide_completed", this.hideCompleted);
       };
       $.saveReviewPreference = function () {
-        Storage.set("lemming_review_enabled", this.reviewEnabled);
+        Storage.set("review_enabled", this.reviewEnabled);
       };
 
       let envSaveTimeout;
@@ -186,7 +205,7 @@
             key,
             value,
           }));
-          Storage.set("lemming_env_overrides", toSave);
+          Storage.set("env_overrides", toSave);
         }, 300);
       };
 
@@ -207,7 +226,7 @@
 
       $.addTask = async function () {
         if (!this.newTask.trim()) return;
-        const res = await fetch("/api/tasks", {
+        const res = await fetch(apiUrl("/api/tasks"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ description: this.newTask }),
@@ -220,14 +239,18 @@
 
       $.deleteTask = async function (id) {
         if (confirm("Delete this task?")) {
-          const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+          const res = await fetch(apiUrl(`/api/tasks/${id}`), {
+            method: "DELETE",
+          });
           if (res.ok) await this.fetchData();
         }
       };
 
       $.deleteCompletedTasks = async function () {
         if (confirm("Delete ALL completed tasks?")) {
-          const res = await fetch("/api/tasks/completed", { method: "DELETE" });
+          const res = await fetch(apiUrl("/api/tasks/completed"), {
+            method: "DELETE",
+          });
           if (res.ok) {
             this.addToast("Completed tasks deleted", "success");
             await this.fetchData();
@@ -237,7 +260,7 @@
 
       $.cancelTask = async function (id) {
         if (confirm("Cancel execution? Process will be killed.")) {
-          const res = await fetch(`/api/tasks/${id}/cancel`, {
+          const res = await fetch(apiUrl(`/api/tasks/${id}/cancel`), {
             method: "POST",
           });
           if (res.ok) {
@@ -274,7 +297,7 @@
           parent: $.editFormData.parent.trim() || null,
         };
 
-        const res = await fetch(`/api/tasks/${task.id}`, {
+        const res = await fetch(apiUrl(`/api/tasks/${task.id}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(update),
@@ -288,7 +311,7 @@
       };
 
       $.uncompleteTask = async function (id) {
-        const res = await fetch(`/api/tasks/${id}`, {
+        const res = await fetch(apiUrl(`/api/tasks/${id}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "pending" }),
@@ -301,7 +324,9 @@
 
       $.clearTask = async function (id) {
         if (confirm("Clear task attempts and outcomes?")) {
-          const res = await fetch(`/api/tasks/${id}/clear`, { method: "POST" });
+          const res = await fetch(apiUrl(`/api/tasks/${id}/clear`), {
+            method: "POST",
+          });
           if (res.ok) {
             this.addToast("Task cleared", "success");
             await this.fetchData();
@@ -313,7 +338,7 @@
       $.updateContext = function () {
         clearTimeout(this.ctxSaveTimeout);
         this.ctxSaveTimeout = setTimeout(async () => {
-          const res = await fetch("/api/context", {
+          const res = await fetch(apiUrl("/api/context"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ context: this.context }),
@@ -341,7 +366,7 @@
           }
         }
 
-        const res = await fetch("/api/run", {
+        const res = await fetch(apiUrl("/api/run"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -352,8 +377,63 @@
         }
       };
 
+      // --- Folder Picker ---
+      $.openFolderPicker = async function () {
+        this.folderPickerPath = "";
+        await this.fetchFolderPickerDirs("");
+        const modal = document.getElementById("folder-picker-modal");
+        if (modal) modal.showModal();
+      };
+
+      $.closeFolderPicker = function () {
+        const modal = document.getElementById("folder-picker-modal");
+        if (modal) modal.close();
+      };
+
+      $.fetchFolderPickerDirs = async function (path) {
+        this.folderPickerLoading = true;
+        const params = path ? { path } : {};
+        const res = await fetch(apiUrl("/api/directories", params));
+        if (res.ok) {
+          const data = await res.json();
+          this.folderPickerPath = data.path;
+          this.folderPickerDirs = data.directories;
+        }
+        this.folderPickerLoading = false;
+      };
+
+      $.folderPickerNavigate = async function (path) {
+        await this.fetchFolderPickerDirs(path);
+      };
+
+      $.folderPickerUp = async function () {
+        const parts = this.folderPickerPath.split("/").filter(Boolean);
+        parts.pop();
+        await this.fetchFolderPickerDirs(parts.join("/"));
+      };
+
+      $.folderPickerSelect = function (path) {
+        // Navigate to the same page with the new project param.
+        const url = new URL(window.location.href);
+        if (path) {
+          url.searchParams.set("project", path);
+        } else {
+          url.searchParams.delete("project");
+        }
+        window.location.href = url.toString();
+      };
+
+      $.folderPickerBreadcrumbs = $.$computed(($) => {
+        const parts = $.folderPickerPath.split("/").filter(Boolean);
+        const crumbs = [{ name: "root", path: "" }];
+        for (let i = 0; i < parts.length; i++) {
+          crumbs.push({ name: parts[i], path: parts.slice(0, i + 1).join("/") });
+        }
+        return crumbs;
+      });
+
       // --- Final Hydration from Storage ---
-      const loadedOverrides = Storage.get("lemming_env_overrides", []);
+      const loadedOverrides = Storage.get("env_overrides", []);
       if (loadedOverrides.length > 0) {
         $.envOverrides = loadedOverrides.map((o, i) => ({
           ...o,

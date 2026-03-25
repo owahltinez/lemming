@@ -838,6 +838,7 @@ def serve(
 
     api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
     api.app.state.verbose = ctx.obj["VERBOSE"]
+    api.app.state.root = pathlib.Path.cwd().resolve()
 
     tunnel_proc = None
     if tunnel:

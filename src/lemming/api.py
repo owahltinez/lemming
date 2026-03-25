@@ -27,6 +27,27 @@ class QuietPollFilter(logging.Filter):
 
 app = fastapi.FastAPI()
 app.state.tasks_file = paths.get_default_tasks_file()
+app.state.root = pathlib.Path.cwd().resolve()
+
+
+def resolve_tasks_file(project: str | None = None) -> pathlib.Path:
+    """Resolve a project query parameter to a tasks file path.
+
+    When *project* is ``None`` or empty the server-wide default is returned.
+    Otherwise the value is treated as a relative directory under the server
+    root and the tasks file path is derived deterministically.
+    """
+    if not project:
+        return app.state.tasks_file
+
+    root = app.state.root
+    target = (root / project).resolve()
+    if not target.is_relative_to(root):
+        raise fastapi.HTTPException(403, "Path is outside the server root")
+    if not target.is_dir():
+        raise fastapi.HTTPException(400, "Not a directory")
+
+    return paths.get_tasks_file_for_dir(target)
 
 
 @app.middleware("http")
@@ -59,9 +80,27 @@ class RunRequest(pydantic.BaseModel):
     review: bool = False
 
 
+@app.get("/api/directories")
+def list_directories(path: str = ""):
+    """List subdirectories under the server root for the project picker."""
+    root = app.state.root
+    target = (root / path).resolve() if path else root
+    if not target.is_relative_to(root):
+        raise fastapi.HTTPException(403, "Path is outside the server root")
+    if not target.is_dir():
+        raise fastapi.HTTPException(400, "Not a directory")
+
+    dirs = []
+    for item in sorted(target.iterdir()):
+        if item.is_dir() and not item.name.startswith("."):
+            rel = item.relative_to(root)
+            dirs.append({"name": item.name, "path": str(rel)})
+    return {"path": path, "directories": dirs}
+
+
 @app.get("/api/data", response_model=tasks.ProjectData)
-def get_data():
-    return tasks.get_project_data(app.state.tasks_file)
+def get_data(project: str | None = None):
+    return tasks.get_project_data(resolve_tasks_file(project))
 
 
 @app.get("/api/runners")
@@ -77,9 +116,9 @@ class AddTaskRequest(pydantic.BaseModel):
 
 
 @app.post("/api/tasks")
-def add_task(task: AddTaskRequest):
+def add_task(task: AddTaskRequest, project: str | None = None):
     return tasks.add_task(
-        app.state.tasks_file,
+        resolve_tasks_file(project),
         task.description,
         task.runner,
         index=task.index,
@@ -88,9 +127,8 @@ def add_task(task: AddTaskRequest):
 
 
 @app.get("/api/tasks/{task_id}", response_model=tasks.Task)
-def get_task(task_id: str):
-
-    data = tasks.load_tasks(app.state.tasks_file)
+def get_task(task_id: str, project: str | None = None):
+    data = tasks.load_tasks(resolve_tasks_file(project))
     target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
     if not target:
         raise fastapi.HTTPException(404, "Task not found")
@@ -98,21 +136,22 @@ def get_task(task_id: str):
 
 
 @app.patch("/api/tasks/{task_id}")
-def update_task(task_id: str, update: dict):
+def update_task(task_id: str, update: dict, project: str | None = None):
+    tasks_file = resolve_tasks_file(project)
     status = update.get("status")
 
     # Validation: require outcomes if completing or failing from the UI,
     # but not if we are just marking a completed task as pending (uncomplete).
     require_outcomes = False
     if status in ("completed", "pending"):
-        data = tasks.load_tasks(app.state.tasks_file)
+        data = tasks.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
         if target and target.status != "completed":
             require_outcomes = True
 
     try:
         return tasks.update_task(
-            app.state.tasks_file,
+            tasks_file,
             task_id,
             description=update.get("description"),
             runner=update.get("runner"),
@@ -128,51 +167,52 @@ def update_task(task_id: str, update: dict):
 
 
 @app.delete("/api/tasks/completed")
-def delete_completed_tasks():
-    tasks.delete_tasks(app.state.tasks_file, completed_only=True)
+def delete_completed_tasks(project: str | None = None):
+    tasks.delete_tasks(resolve_tasks_file(project), completed_only=True)
     return {"status": "ok"}
 
 
 @app.delete("/api/tasks/{task_id}")
-def delete_task(task_id: str):
-    tasks.delete_tasks(app.state.tasks_file, task_id=task_id)
+def delete_task(task_id: str, project: str | None = None):
+    tasks.delete_tasks(resolve_tasks_file(project), task_id=task_id)
     return {"status": "ok"}
 
 
 @app.post("/api/tasks/{task_id}/cancel")
-def cancel_task_endpoint(task_id: str):
-    if tasks.cancel_task(app.state.tasks_file, task_id):
+def cancel_task_endpoint(task_id: str, project: str | None = None):
+    if tasks.cancel_task(resolve_tasks_file(project), task_id):
         return {"status": "ok"}
     raise fastapi.HTTPException(404, "Task not found")
 
 
 @app.post("/api/tasks/{task_id}/clear")
-def clear_task_endpoint(task_id: str):
+def clear_task_endpoint(task_id: str, project: str | None = None):
     try:
-        tasks.reset_task(app.state.tasks_file, task_id)
+        tasks.reset_task(resolve_tasks_file(project), task_id)
         return {"status": "ok"}
     except ValueError as e:
         raise fastapi.HTTPException(404, str(e))
 
 
 @app.get("/api/tasks/{task_id}/log")
-def get_task_log(task_id: str, name: str = "runner"):
+def get_task_log(task_id: str, name: str = "runner", project: str | None = None):
     if name not in ("runner", "review"):
         raise fastapi.HTTPException(400, "Invalid log name")
-    log_file = paths.get_log_file(app.state.tasks_file, task_id, name)
+    log_file = paths.get_log_file(resolve_tasks_file(project), task_id, name)
     if not log_file.exists():
         return {"log": ""}
     return {"log": log_file.read_text(encoding="utf-8")}
 
 
 @app.post("/api/context")
-def update_context(update: dict):
-    tasks.update_context(app.state.tasks_file, update.get("context", ""))
+def update_context(update: dict, project: str | None = None):
+    tasks.update_context(resolve_tasks_file(project), update.get("context", ""))
     return {"status": "ok"}
 
 
 @app.post("/api/run")
-def run_loop(request: RunRequest):
+def run_loop(request: RunRequest, project: str | None = None):
+    tasks_file = resolve_tasks_file(project)
     # Use sys.executable -m lemming.main to ensure we use the same environment
     # and pass the explicit tasks file.
     cmd = [
@@ -185,7 +225,7 @@ def run_loop(request: RunRequest):
     cmd.extend(
         [
             "--tasks-file",
-            str(app.state.tasks_file),
+            str(tasks_file),
             "run",
         ]
     )
@@ -209,10 +249,10 @@ def run_loop(request: RunRequest):
 
 @app.get("/api/files/{path:path}")
 def get_files_api(path: str):
-    base_path = pathlib.Path.cwd().resolve()
+    base_path = app.state.root
     target_path = (base_path / path).resolve()
 
-    if not str(target_path).startswith(str(base_path)) or paths.is_ignored(target_path):
+    if not target_path.is_relative_to(base_path) or paths.is_ignored(target_path):
         raise fastapi.HTTPException(403, "Forbidden")
 
     if not target_path.is_dir():
@@ -249,10 +289,10 @@ def serve_task_log(task_id: str):
 
 @app.get("/files/{path:path}")
 def serve_files(path: str):
-    base_path = pathlib.Path.cwd().resolve()
+    base_path = app.state.root
     target_path = (base_path / path).resolve()
 
-    if not str(target_path).startswith(str(base_path)) or paths.is_ignored(target_path):
+    if not target_path.is_relative_to(base_path) or paths.is_ignored(target_path):
         raise fastapi.HTTPException(403, "Forbidden")
 
     if target_path.is_dir():

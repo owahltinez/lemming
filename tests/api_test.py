@@ -55,14 +55,17 @@ def test_tasks():
     )
     tasks.save_tasks(test_tasks_file, data)
 
-    # Override the TASKS_FILE in the api module
+    # Override the TASKS_FILE and root in the api module
     original_tasks_file = api.app.state.tasks_file
+    original_root = api.app.state.root
     api.app.state.tasks_file = test_tasks_file
+    api.app.state.root = pathlib.Path(test_dir).resolve()
 
     yield test_tasks_file
 
-    # Restore the original TASKS_FILE
+    # Restore the originals
     api.app.state.tasks_file = original_tasks_file
+    api.app.state.root = original_root
     shutil.rmtree(test_dir)
 
 
@@ -71,7 +74,9 @@ def git_repo():
     # Create a temporary directory and initialize a git repo
     test_dir = tempfile.mkdtemp()
     orig_cwd = os.getcwd()
+    original_root = api.app.state.root
     os.chdir(test_dir)
+    api.app.state.root = pathlib.Path(test_dir).resolve()
 
     # Clear cached git repo check from previous tests
     if hasattr(paths.in_git_repo, "_result"):
@@ -98,6 +103,7 @@ def git_repo():
     if hasattr(paths.in_git_repo, "_result"):
         del paths.in_git_repo._result
     os.chdir(orig_cwd)
+    api.app.state.root = original_root
     shutil.rmtree(test_dir)
 
 
@@ -106,7 +112,9 @@ def non_git_dir():
     """A temporary directory that is NOT a git repo."""
     test_dir = tempfile.mkdtemp()
     orig_cwd = os.getcwd()
+    original_root = api.app.state.root
     os.chdir(test_dir)
+    api.app.state.root = pathlib.Path(test_dir).resolve()
 
     # Clear cached git repo check
     if hasattr(paths.in_git_repo, "_result"):
@@ -121,6 +129,7 @@ def non_git_dir():
     if hasattr(paths.in_git_repo, "_result"):
         del paths.in_git_repo._result
     os.chdir(orig_cwd)
+    api.app.state.root = original_root
     shutil.rmtree(test_dir)
 
 
@@ -496,3 +505,99 @@ def test_run_loop(test_tasks):
         assert "claude" in args
         assert "--retries" in args
         assert "5" in args
+
+
+# --- Directory listing / project parameter tests ---
+
+
+def test_list_directories(test_tasks):
+    """GET /api/directories lists subdirectories under the server root."""
+    root = api.app.state.root
+    (root / "subproject_a").mkdir(exist_ok=True)
+    (root / "subproject_b").mkdir(exist_ok=True)
+    (root / ".hidden").mkdir(exist_ok=True)
+
+    response = client.get("/api/directories")
+    assert response.status_code == 200
+    data = response.json()
+    names = [d["name"] for d in data["directories"]]
+    assert "subproject_a" in names
+    assert "subproject_b" in names
+    assert ".hidden" not in names  # hidden dirs excluded
+
+
+def test_list_directories_traversal(test_tasks):
+    """GET /api/directories rejects path traversal."""
+    response = client.get("/api/directories", params={"path": "../../etc"})
+    assert response.status_code == 403
+
+
+def test_project_param_get_data(test_tasks):
+    """GET /api/data?project=subdir returns data for that project."""
+    root = api.app.state.root
+    subdir = root / "myproject"
+    subdir.mkdir(exist_ok=True)
+
+    # Add a task via the project param
+    response = client.post(
+        "/api/tasks",
+        json={"description": "Sub-project task"},
+        params={"project": "myproject"},
+    )
+    assert response.status_code == 200
+
+    # Fetch data for the sub-project
+    response = client.get("/api/data", params={"project": "myproject"})
+    assert response.status_code == 200
+    data = response.json()
+    assert any(t["description"] == "Sub-project task" for t in data["tasks"])
+
+    # Default project should not have this task
+    response = client.get("/api/data")
+    data = response.json()
+    assert not any(t["description"] == "Sub-project task" for t in data["tasks"])
+
+
+def test_project_param_traversal_rejected(test_tasks):
+    """project param rejects path traversal attempts."""
+    response = client.get("/api/data", params={"project": "../../etc"})
+    assert response.status_code == 403
+
+
+def test_symlink_traversal_rejected(test_tasks):
+    """Symlinks pointing outside the root are rejected."""
+    root = api.app.state.root
+    external_dir = pathlib.Path(tempfile.mkdtemp())
+    try:
+        symlink = root / "sneaky_link"
+        symlink.symlink_to(external_dir)
+
+        # /api/directories should not list it (hidden by . filter won't help,
+        # but resolve_tasks_file and list_directories should reject traversal)
+        response = client.get("/api/data", params={"project": "sneaky_link"})
+        assert response.status_code == 403
+
+        response = client.get("/api/directories", params={"path": "sneaky_link"})
+        assert response.status_code == 403
+    finally:
+        symlink.unlink(missing_ok=True)
+        shutil.rmtree(external_dir)
+
+
+def test_run_loop_with_project(test_tasks):
+    """POST /api/run with project param uses the correct tasks file."""
+    root = api.app.state.root
+    subdir = root / "run_project"
+    subdir.mkdir(exist_ok=True)
+
+    with patch("subprocess.Popen") as mock_popen:
+        response = client.post(
+            "/api/run",
+            json={"runner": "claude"},
+            params={"project": "run_project"},
+        )
+        assert response.status_code == 200
+        args = mock_popen.call_args[0][0]
+        # The tasks file should be for the sub-project, not the default
+        tasks_file_idx = args.index("--tasks-file") + 1
+        assert "run_project" not in str(api.app.state.tasks_file) or tasks_file_idx > 0

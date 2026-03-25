@@ -38,25 +38,33 @@ def get_project_dir(tasks_file: pathlib.Path) -> pathlib.Path:
     return lemming_home / path_hash
 
 
-def get_default_tasks_file() -> pathlib.Path:
-    """Returns the default tasks file location based on the current directory.
+def get_tasks_file_for_dir(directory: pathlib.Path) -> pathlib.Path:
+    """Returns the tasks file location for a given project directory.
 
     Checks for a local `tasks.yml` first, then falls back to an isolated
     project tasks file in the Lemming home directory.
 
+    Args:
+        directory: The resolved absolute path to the project directory.
+
     Returns:
-        A pathlib.Path to the default tasks file.
+        A pathlib.Path to the tasks file for that directory.
     """
-    local_tasks = pathlib.Path("tasks.yml")
+    local_tasks = directory / "tasks.yml"
     if local_tasks.exists():
         return local_tasks
 
-    # If no local tasks.yml, create an isolated entry in ~/.local/lemming/
-    # using a hash of the current working directory path.
-    cwd_path = str(pathlib.Path.cwd().resolve())
-    path_hash = hashlib.sha256(cwd_path.encode()).hexdigest()[:12]
-
+    path_hash = hashlib.sha256(str(directory).encode()).hexdigest()[:12]
     return get_lemming_home() / path_hash / "tasks.yml"
+
+
+def get_default_tasks_file() -> pathlib.Path:
+    """Returns the default tasks file location based on the current directory.
+
+    Returns:
+        A pathlib.Path to the default tasks file.
+    """
+    return get_tasks_file_for_dir(pathlib.Path.cwd().resolve())
 
 
 def get_log_file(

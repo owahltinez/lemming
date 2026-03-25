@@ -33,7 +33,7 @@ def test_get_default_tasks_file_local(tmp_path):
     try:
         local_tasks = tmp_path / "tasks.yml"
         local_tasks.touch()
-        assert paths.get_default_tasks_file() == pathlib.Path("tasks.yml")
+        assert paths.get_default_tasks_file() == tmp_path / "tasks.yml"
     finally:
         os.chdir(orig_cwd)
 
