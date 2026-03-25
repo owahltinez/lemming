@@ -558,6 +558,57 @@ def test_project_param_get_data(test_tasks):
     assert not any(t["description"] == "Sub-project task" for t in data["tasks"])
 
 
+def test_project_delete_completed_isolation(test_tasks):
+    """Deleting completed tasks in root does not affect sub-projects."""
+    root = api.app.state.root
+    subdir = root / "isolated"
+    subdir.mkdir(exist_ok=True)
+
+    # Add and complete a task in the sub-project
+    res = client.post(
+        "/api/tasks",
+        json={"description": "Sub task"},
+        params={"project": "isolated"},
+    )
+    task_id = res.json()["id"]
+    # Mark it completed (requires outcomes, so use update_task directly)
+    tasks.update_task(
+        paths.get_tasks_file_for_dir(subdir),
+        task_id,
+        status="completed",
+        require_outcomes=False,
+    )
+
+    # Delete completed in ROOT
+    client.delete("/api/tasks/completed")
+
+    # Sub-project's completed task should still exist
+    res = client.get("/api/data", params={"project": "isolated"})
+    assert any(t["id"] == task_id for t in res.json()["tasks"])
+
+
+def test_project_context_isolation(test_tasks):
+    """Context is isolated per project."""
+    root = api.app.state.root
+    subdir = root / "ctx_test"
+    subdir.mkdir(exist_ok=True)
+
+    # Set context for sub-project
+    client.post(
+        "/api/context",
+        json={"context": "Sub-project context"},
+        params={"project": "ctx_test"},
+    )
+
+    # Root context should be unchanged
+    res = client.get("/api/data")
+    assert res.json()["context"] == "Initial context"
+
+    # Sub-project context should be set
+    res = client.get("/api/data", params={"project": "ctx_test"})
+    assert res.json()["context"] == "Sub-project context"
+
+
 def test_project_param_traversal_rejected(test_tasks):
     """project param rejects path traversal attempts."""
     response = client.get("/api/data", params={"project": "../../etc"})

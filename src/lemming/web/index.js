@@ -8,18 +8,17 @@
       // --- Project Scoping ---
       // $$project is auto-synced with the ?project= URL query param by mancha.
       $.$$project = $.$$project ?? "";
-      const project = $.$$project;
 
       // Helper: build a URL with the project query param.
       function apiUrl(path, extraParams = {}) {
         const params = new URLSearchParams(extraParams);
-        if (project) params.set("project", project);
+        if ($.$$project) params.set("project", $.$$project);
         const qs = params.toString();
         return qs ? `${path}?${qs}` : path;
       }
 
       // --- Persistence Management (scoped by project) ---
-      const storagePrefix = project ? `lemming[${project}]_` : "lemming_";
+      const storagePrefix = $.$$project ? `lemming[${$.$$project}]_` : "lemming_";
       const Storage = {
         get(key, fallback) {
           try {
