@@ -5,7 +5,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lemming</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐹</text></svg>">
-    <style id="mancha-cloak">body { opacity: 0 !important; }</style>
+    <style id="mancha-cloak">
+        html {
+            background-color: #f9fafb; /* Gray 50 */
+        }
+        @media (prefers-color-scheme: dark) {
+            html {
+                background-color: #1f2937; /* Gray 800 */
+            }
+        }
+        body { opacity: 0 !important; }
+    </style>
+    <style>
+        /* Loading indicator visible during cloaking */
+        html.mancha-loading::after {
+            content: 'Loading Lemming...';
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #4f46e5; /* Indigo 600 */
+            z-index: 9999;
+            animation: mancha-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            html.mancha-loading::after {
+                color: #818cf8; /* Indigo 400 */
+            }
+        }
+
+        @keyframes mancha-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
     <script src="/static/mancha.js" css="utils"></script>
     <script src="/static/favicon.js"></script>
     <script src="/static/index.js" defer></script>

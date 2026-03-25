@@ -55,7 +55,7 @@
 
       // --- Favicon Status ---
       $.faviconState = "idle";
-      $.lastSeenState = null;
+      $.lastSeenState = Storage.get("last_seen_state", null);
 
       // --- Folder Picker State ---
       $.folderPickerPath = "";
@@ -211,6 +211,7 @@
           // If a run starts, reset the last seen state
           if (state === "running") {
             this.lastSeenState = null;
+            Storage.set("last_seen_state", null);
           }
 
           // If the current terminal state has already been seen by the user, show 'idle' favicon instead.
@@ -512,6 +513,7 @@
           const state = $.faviconState;
           if (state === "success" || state === "error") {
             $.lastSeenState = state;
+            Storage.set("last_seen_state", state);
             if (window.updateFavicon) window.updateFavicon("idle");
           }
         }

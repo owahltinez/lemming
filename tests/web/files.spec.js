@@ -50,6 +50,16 @@ test.describe("Files Browser UI", () => {
       });
     });
 
+    await page.route("**/api/data**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: {
+          loop_running: false,
+          tasks: [],
+        },
+      });
+    });
+
     await page.goto("http://localhost:8000/");
     // Wait for ManchaApp to be ready
     await page.evaluate(async () => {
