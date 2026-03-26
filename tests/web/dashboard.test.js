@@ -762,6 +762,95 @@ describe("Lemming Web Dashboard", () => {
     assert.ok(runTimeValue.textContent.includes("1m 10s"));
   });
 
+  test("displays started at for in-progress tasks and completed at for completed tasks", async () => {
+    const now = Date.now() / 1000;
+    const tasks = [
+      {
+        id: "r1",
+        description: "Running Task",
+        status: "in_progress",
+        attempts: 1,
+        started_at: now - 3600, // Started 1 hour ago
+        outcomes: [],
+      },
+      {
+        id: "c1",
+        description: "Completed Task",
+        status: "completed",
+        completed_at: now - 1800, // Completed 30 mins ago
+        outcomes: [],
+      },
+    ];
+
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+        expanded: { r1: true, c1: true },
+        filteredTasks: tasks,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    const root =
+      fragment.querySelector("body") || fragment.firstElementChild || fragment;
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
+
+    await renderer.mount(fragment);
+
+    const taskItems = fragment.querySelectorAll('[role="listitem"]');
+    assert.strictEqual(taskItems.length, 2);
+
+    // 1. Running Task
+    const runningDetails = taskItems[0].querySelector(".px-12.pb-3");
+    const startedAtLabel = Array.from(
+      runningDetails.querySelectorAll("span"),
+    ).find((s) => s.textContent.trim() === "Started At:");
+    assert.ok(
+      startedAtLabel,
+      "Started At label should be present for in-progress task",
+    );
+    const startedAtValue = startedAtLabel.nextElementSibling;
+    assert.ok(
+      startedAtValue.textContent.trim().length > 0,
+      "Started At value should not be empty",
+    );
+
+    const completedAtLabelR = Array.from(
+      runningDetails.querySelectorAll("span"),
+    ).find((s) => s.textContent.trim() === "Completed At:");
+    assert.ok(
+      !completedAtLabelR ||
+        completedAtLabelR.parentElement.style.display === "none",
+      "Completed At label should NOT be present for in-progress task",
+    );
+
+    // 2. Completed Task
+    const completedDetails = taskItems[1].querySelector(".px-12.pb-3");
+    const completedAtLabel = Array.from(
+      completedDetails.querySelectorAll("span"),
+    ).find((s) => s.textContent.trim() === "Completed At:");
+    assert.ok(
+      completedAtLabel,
+      "Completed At label should be present for completed task",
+    );
+    const completedAtValue = completedAtLabel.nextElementSibling;
+    assert.ok(
+      completedAtValue.textContent.trim().length > 0,
+      "Completed At value should not be empty",
+    );
+
+    const startedAtLabelC = Array.from(
+      completedDetails.querySelectorAll("span"),
+    ).find((s) => s.textContent.trim() === "Started At:");
+    assert.ok(
+      !startedAtLabelC ||
+        startedAtLabelC.parentElement.style.display === "none",
+      "Started At label should NOT be present for completed task",
+    );
+  });
+
   test("renders copy task id button", async () => {
     const tasks = [
       { id: "123", description: "Test", status: "pending", outcomes: [] },

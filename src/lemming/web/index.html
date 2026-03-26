@@ -384,7 +384,11 @@
                                 <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Process PID:</span>
                                 <span class="font-mono">{{ task.pid }}</span>
                             </div>
-                            <div :if="task.completed_at">
+                            <div :if="task.status === 'in_progress' && task.started_at">
+                                <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Started At:</span>
+                                <span class="text-gray-700 dark:text-gray-300">{{ formatDate(task.started_at) }}</span>
+                            </div>
+                            <div :if="task.status === 'completed' && task.completed_at">
                                 <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Completed At:</span>
                                 <span class="text-gray-700 dark:text-gray-300">{{ formatDate(task.completed_at) }}</span>
                             </div>
