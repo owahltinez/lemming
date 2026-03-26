@@ -184,7 +184,7 @@
         }
 
         if (folderName) {
-          document.title = `Lemming - ${folderName}`;
+          document.title = `Lemming · ${folderName}`;
         } else {
           document.title = "Lemming";
         }
