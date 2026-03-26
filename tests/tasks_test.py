@@ -112,7 +112,7 @@ def test_reset_task(tmp_path):
 def test_update_run_time():
     import time
 
-    task = tasks.Task(id="1", description="test", started_at=time.time() - 5)
+    task = tasks.Task(id="1", description="test", last_started_at=time.time() - 5)
     tasks.update_run_time(task)
     assert task.run_time >= 5.0
 

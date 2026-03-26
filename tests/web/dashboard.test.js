@@ -35,8 +35,8 @@ const createInitialState = (overrides = {}) => {
     },
     formatTaskRunTime: function (task) {
       let total = task.run_time || 0;
-      if (task.status === "in_progress" && task.started_at) {
-        total += Date.now() / 1000 - task.started_at;
+      if (task.status === "in_progress" && task.last_started_at) {
+        total += Date.now() / 1000 - task.last_started_at;
       }
       return this.formatDuration(total);
     },
@@ -734,7 +734,7 @@ describe("Lemming Web Dashboard", () => {
         status: "in_progress",
         attempts: 1,
         run_time: 50.0,
-        started_at: now - 20, // Started 20 seconds ago
+        last_started_at: now - 20, // Started 20 seconds ago
         outcomes: [],
       },
     ];

@@ -281,8 +281,8 @@ def status(ctx: click.Context, task_id: str | None):
         )
         click.echo(f"Completed At: {comp_time}")
     run_time = target.run_time
-    if target.status == "in_progress" and target.started_at:
-        run_time += time.time() - target.started_at
+    if target.status == "in_progress" and target.last_started_at:
+        run_time += time.time() - target.last_started_at
 
     if run_time > 0:
         if run_time < 60:

@@ -20,8 +20,8 @@ const createInitialState = (overrides = {}) => {
     },
     formatTaskRunTime: function (task) {
       let total = task.run_time || 0;
-      if (task.status === "in_progress" && task.started_at) {
-        total += Date.now() / 1000 - task.started_at;
+      if (task.status === "in_progress" && task.last_started_at) {
+        total += Date.now() / 1000 - task.last_started_at;
       }
       return this.formatDuration(total);
     },
@@ -106,7 +106,8 @@ describe("Lemming Task Log Viewer", () => {
       id: "t-progress",
       status: "in_progress",
       description: "Running task",
-      started_at: now - 600, // 10 mins ago
+      started_at: now - 3600, // 1 hour ago
+      last_started_at: now - 600, // 10 mins ago (current attempt)
       run_time: 300,
     };
 

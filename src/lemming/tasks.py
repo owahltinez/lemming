@@ -25,6 +25,7 @@ class Task(pydantic.BaseModel):
     runner: str | None = None
     completed_at: float | None = None
     started_at: float | None = None
+    last_started_at: float | None = None
     run_time: float = 0.0
     pid: int | None = None
     last_heartbeat: float | None = None
@@ -137,11 +138,11 @@ def update_run_time(task: Task, end_time: float | None = None) -> None:
         task: The Task to update.
         end_time: Optional end timestamp (defaults to current time).
     """
-    if task.started_at is not None:
+    if task.last_started_at is not None:
         end = end_time or time.time()
-        duration = end - task.started_at
+        duration = end - task.last_started_at
         task.run_time += duration
-        task.started_at = None
+        task.last_started_at = None
 
 
 def load_tasks(tasks_file: pathlib.Path) -> Roadmap:
@@ -288,7 +289,9 @@ def _mark_task_in_progress(data: Roadmap, task_id: str, pid: int | None = None) 
             if is_pending or is_stale:
                 task.status = "in_progress"
                 task.last_heartbeat = now
-                task.started_at = now
+                if task.started_at is None:
+                    task.started_at = now
+                task.last_started_at = now
                 if pid:
                     task.pid = pid
                 return True
@@ -687,6 +690,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> Task:
         target.run_time = 0.0
         target.completed_at = None
         target.started_at = None
+        target.last_started_at = None
         target.pid = None
         target.last_heartbeat = None
 

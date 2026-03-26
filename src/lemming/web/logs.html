@@ -158,8 +158,8 @@
                     };
                     $.formatTaskRunTime = (task) => {
                         let total = task.run_time || 0;
-                        if (task.status === "in_progress" && task.started_at) {
-                            total += Date.now() / 1000 - task.started_at;
+                        if (task.status === "in_progress" && task.last_started_at) {
+                            total += Date.now() / 1000 - task.last_started_at;
                         }
                         return $.formatDuration(total);
                     };
