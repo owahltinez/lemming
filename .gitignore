@@ -9,3 +9,4 @@ tasks.yml
 node_modules/
 .biome/
 .lemming_loop.lock
+test-results/
