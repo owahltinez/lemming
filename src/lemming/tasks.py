@@ -225,7 +225,7 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     return ProjectData(
         context=data.context,
         tasks=sorted_tasks,
-        cwd=os.getcwd(),
+        cwd=str(paths.get_working_dir(tasks_file)),
         loop_running=loop_running,
     )
 

@@ -67,6 +67,28 @@ def get_default_tasks_file() -> pathlib.Path:
     return get_tasks_file_for_dir(pathlib.Path.cwd().resolve())
 
 
+def get_working_dir(tasks_file: pathlib.Path) -> pathlib.Path:
+    """Returns the intended working directory for a tasks file.
+
+    If the tasks file is NOT in the lemming home directory, its parent
+    is assumed to be the working directory.
+
+    If it IS in the lemming home directory, we return the current
+    working directory as a fallback.
+    """
+    tasks_file_abs = tasks_file.resolve()
+    lemming_home = get_lemming_home()
+
+    if lemming_home in tasks_file_abs.parents:
+        # It's an isolated tasks file. We don't know the original source dir
+        # unless it was passed to us or stored in the file.
+        # For now, return CWD.
+        return pathlib.Path.cwd().resolve()
+
+    # It's a local tasks.yml file. Its parent is the project root.
+    return tasks_file_abs.parent
+
+
 def get_log_file(
     tasks_file: pathlib.Path, task_id: str, name: str = "runner"
 ) -> pathlib.Path:

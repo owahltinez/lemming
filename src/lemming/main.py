@@ -474,33 +474,21 @@ def reset(ctx: click.Context, task_id: str):
 
 def _run_reviewer(
     tasks_file: pathlib.Path,
-    finished_task_id: str,
+    task_id: str,
     runner_name: str,
     yolo: bool,
     runner_args: tuple,
     no_defaults: bool,
     verbose: bool,
+    working_dir: pathlib.Path | None = None,
 ) -> None:
-    """Runs the reviewer to evaluate and adapt the roadmap.
-
-    Args:
-        tasks_file: Path to the tasks YAML file.
-        finished_task_id: ID of the task that just finished.
-        runner_name: The CLI runner to invoke.
-        yolo: If True, skip runner confirmations.
-        runner_args: Raw arguments passed directly to the runner.
-        no_defaults: Skip default flag injection.
-        verbose: If True, echo reviewer output.
-    """
+    """Invokes the reviewer agent to analyze the task outcome and update the roadmap."""
     data = tasks.load_tasks(tasks_file)
-    finished_task = next((t for t in data.tasks if t.id == finished_task_id), None)
-    if not finished_task:
+    task = next((t for t in data.tasks if t.id == task_id), None)
+    if not task:
         return
 
-    if verbose:
-        click.echo("\n--- Running roadmap review ---")
-
-    prompt = runner.prepare_review_prompt(data, finished_task, tasks_file)
+    prompt = runner.prepare_review_prompt(data, task, tasks_file)
 
     if verbose:
         click.secho("\n=== Reviewer Prompt ===", fg="magenta", bold=True)
@@ -520,15 +508,14 @@ def _run_reviewer(
         returncode, stdout, stderr = runner.run_with_heartbeat(
             cmd,
             tasks_file,
-            finished_task_id,
+            task_id,
             verbose,
             echo_fn=lambda line: click.echo(line, nl=False),
             log_name="review",
+            cwd=working_dir,
         )
         if verbose:
-            if returncode == 0:
-                click.echo("Reviewer finished.")
-            else:
+            if returncode != 0:
                 click.echo(f"Reviewer exited with code {returncode}.")
     except Exception as e:
         click.echo(f"Reviewer error: {e}")
@@ -605,6 +592,9 @@ def run(
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
+    # Determine the project's working directory
+    working_dir = paths.get_working_dir(tasks_file)
+
     # Parse environment overrides
     env_overrides = {}
     for e in env:
@@ -630,6 +620,7 @@ def run(
             review,
             review_runner,
             runner_args,
+            working_dir=working_dir,
         )
     finally:
         tasks.release_loop_lock(tasks_file)
@@ -646,6 +637,7 @@ def _run_loop(
     review: bool,
     review_runner: str | None,
     runner_args: tuple,
+    working_dir: pathlib.Path | None = None,
 ) -> None:
     while True:
         data = tasks.load_tasks(tasks_file)
@@ -671,6 +663,7 @@ def _run_loop(
                     runner_args,
                     no_defaults,
                     verbose,
+                    working_dir=working_dir,
                 )
                 # Re-check: if the reviewer reset/edited/replaced the task, continue
                 data = tasks.load_tasks(tasks_file)
@@ -736,6 +729,7 @@ def _run_loop(
                 task_id,
                 verbose,
                 echo_fn=lambda line: click.echo(line, nl=False),
+                cwd=working_dir,
             )
             if returncode != 0:
                 if not verbose:
@@ -796,6 +790,7 @@ def _run_loop(
                 runner_args,
                 no_defaults,
                 verbose,
+                working_dir=working_dir,
             )
 
 

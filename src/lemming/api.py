@@ -32,6 +32,21 @@ app.state.root = pathlib.Path.cwd().resolve()
 app.state.disable_auto_start = False
 
 
+def resolve_project_dir(project: str | None = None) -> pathlib.Path:
+    """Resolve a project query parameter to its absolute directory path."""
+    if not project:
+        return app.state.root
+
+    root = app.state.root
+    target = (root / project).resolve()
+    if not target.is_relative_to(root):
+        raise fastapi.HTTPException(403, "Path is outside the server root")
+    if not target.is_dir():
+        raise fastapi.HTTPException(400, "Not a directory")
+
+    return target
+
+
 def resolve_tasks_file(project: str | None = None) -> pathlib.Path:
     """Resolve a project query parameter to a tasks file path.
 
@@ -42,14 +57,7 @@ def resolve_tasks_file(project: str | None = None) -> pathlib.Path:
     if not project:
         return app.state.tasks_file
 
-    root = app.state.root
-    target = (root / project).resolve()
-    if not target.is_relative_to(root):
-        raise fastapi.HTTPException(403, "Path is outside the server root")
-    if not target.is_dir():
-        raise fastapi.HTTPException(400, "Not a directory")
-
-    return paths.get_tasks_file_for_dir(target)
+    return paths.get_tasks_file_for_dir(resolve_project_dir(project))
 
 
 @app.middleware("http")
@@ -118,7 +126,7 @@ class AddTaskRequest(pydantic.BaseModel):
     parent_tasks_file: str | None = None
 
 
-def _start_loop_if_needed(tasks_file: pathlib.Path):
+def _start_loop_if_needed(tasks_file: pathlib.Path, cwd: pathlib.Path | None = None):
     """Automatically start the orchestrator loop if it is not already running."""
     if getattr(app.state, "disable_auto_start", False):
         return
@@ -144,7 +152,7 @@ def _start_loop_if_needed(tasks_file: pathlib.Path):
     )
 
     # Start the loop in a new session so it outlives the request.
-    subprocess.Popen(cmd, start_new_session=True, env=os.environ.copy())
+    subprocess.Popen(cmd, start_new_session=True, env=os.environ.copy(), cwd=cwd)
 
 
 @app.post("/api/tasks")
@@ -158,7 +166,7 @@ def add_task(task: AddTaskRequest, project: str | None = None):
         parent=task.parent,
         parent_tasks_file=task.parent_tasks_file,
     )
-    _start_loop_if_needed(tasks_file)
+    _start_loop_if_needed(tasks_file, cwd=resolve_project_dir(project))
     return new_task
 
 
@@ -197,7 +205,7 @@ def update_task(task_id: str, update: dict, project: str | None = None):
             parent=update.get("parent"),
         )
         if status == "pending":
-            _start_loop_if_needed(tasks_file)
+            _start_loop_if_needed(tasks_file, cwd=resolve_project_dir(project))
         return updated_task
     except ValueError as e:
         if "not found" in str(e):
@@ -229,7 +237,7 @@ def clear_task_endpoint(task_id: str, project: str | None = None):
     try:
         tasks_file = resolve_tasks_file(project)
         tasks.reset_task(tasks_file, task_id)
-        _start_loop_if_needed(tasks_file)
+        _start_loop_if_needed(tasks_file, cwd=resolve_project_dir(project))
         return {"status": "ok"}
     except ValueError as e:
         raise fastapi.HTTPException(404, str(e))
@@ -254,6 +262,8 @@ def update_context(update: dict, project: str | None = None):
 @app.post("/api/run")
 def run_loop(request: RunRequest, project: str | None = None):
     tasks_file = resolve_tasks_file(project)
+    project_dir = resolve_project_dir(project)
+
     # Use sys.executable -m lemming.main to ensure we use the same environment
     # and pass the explicit tasks file.
     cmd = [
@@ -284,7 +294,7 @@ def run_loop(request: RunRequest, project: str | None = None):
     if request.env:
         env.update(request.env)
 
-    subprocess.Popen(cmd, start_new_session=True, env=env)
+    subprocess.Popen(cmd, start_new_session=True, env=env, cwd=project_dir)
     return {"status": "started"}
 
 

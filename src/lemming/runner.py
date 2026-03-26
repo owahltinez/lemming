@@ -144,6 +144,7 @@ def run_with_heartbeat(
     verbose: bool,
     echo_fn: Callable[[str], None] = print,
     log_name: str = "runner",
+    cwd: pathlib.Path | None = None,
 ) -> tuple[int, str, str]:
     """Runs the runner process and updates the task heartbeat periodically.
 
@@ -154,6 +155,7 @@ def run_with_heartbeat(
         verbose: If True, echo runner output to the console.
         echo_fn: Function to use for echoing output (defaults to print).
         log_name: The log name (e.g. "runner", "review").
+        cwd: Optional working directory for the subprocess.
 
     Returns:
         A tuple of (returncode, stdout_log, stderr_log). Note: stderr is currently
@@ -185,6 +187,7 @@ def run_with_heartbeat(
         bufsize=1,
         errors="replace",
         start_new_session=True,
+        cwd=cwd,
     )
 
     full_log: list[str] = []
