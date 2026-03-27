@@ -36,11 +36,20 @@ class Task(pydantic.BaseModel):
     index: int | None = pydantic.Field(default=-1, exclude=True)
 
 
+class RoadmapConfig(pydantic.BaseModel):
+    """Configuration for the roadmap execution loop."""
+
+    auto_review: bool = False
+    retries: int = 3
+    runner: str = "gemini"
+
+
 class Roadmap(pydantic.BaseModel):
     """Represents the entire roadmap state."""
 
     context: str = ""
     tasks: list[Task] = pydantic.Field(default_factory=list)
+    config: RoadmapConfig = pydantic.Field(default_factory=RoadmapConfig)
 
 
 class ProjectData(pydantic.BaseModel):
@@ -48,6 +57,7 @@ class ProjectData(pydantic.BaseModel):
 
     context: str
     tasks: list[Task]
+    config: RoadmapConfig
     cwd: str
     loop_running: bool
 
@@ -225,6 +235,7 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     return ProjectData(
         context=data.context,
         tasks=sorted_tasks,
+        config=data.config,
         cwd=str(paths.get_working_dir(tasks_file)),
         loop_running=loop_running,
     )

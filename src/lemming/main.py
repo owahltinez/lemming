@@ -525,7 +525,10 @@ def _run_reviewer(
     short_help="Run the autonomous task execution loop",
 )
 @click.option(
-    "--retries", default=3, help="Maximum number of retries for a single task."
+    "--retries",
+    default=None,
+    type=int,
+    help="Maximum number of retries for a single task.",
 )
 @click.option(
     "--retry-delay",
@@ -538,7 +541,7 @@ def _run_reviewer(
 @click.option(
     "--runner",
     "runner_name",
-    default="gemini",
+    default=None,
     help="The underlying CLI runner to use (gemini, aider, claude, codex).",
 )
 @click.option(
@@ -554,7 +557,7 @@ def _run_reviewer(
 @click.option(
     "--auto-review/--no-auto-review",
     "review",
-    default=False,
+    default=None,
     help="Run a reviewer after each task to adapt the roadmap.",
 )
 @click.option(
@@ -567,13 +570,13 @@ def _run_reviewer(
 @click.pass_context
 def run(
     ctx: click.Context,
-    retries: int,
+    retries: int | None,
     retry_delay: int,
     yolo: bool,
-    runner_name: str,
+    runner_name: str | None,
     env: tuple,
     no_defaults: bool,
-    review: bool,
+    review: bool | None,
     review_runner: str | None,
     runner_args: tuple,
 ) -> None:
@@ -591,6 +594,14 @@ def run(
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
+
+    data = tasks.load_tasks(tasks_file)
+    if retries is None:
+        retries = data.config.retries
+    if runner_name is None:
+        runner_name = data.config.runner
+    if review is None:
+        review = data.config.auto_review
 
     # Determine the project's working directory
     working_dir = paths.get_working_dir(tasks_file)

@@ -38,15 +38,20 @@
       // --- Initial State ---
       $.tasks = [];
       $.context = "";
+      $.config = {
+        auto_review: false,
+        retries: 3,
+        runner: "gemini",
+      };
       $.cwd = "";
       $.newTask = "";
       $.loading = true;
       $.runners = [];
-      $.selectedRunner = Storage.get("selected_runner", "gemini");
-      $.retries = Storage.get("retries", 3);
+      $.selectedRunner = "gemini";
+      $.retries = 3;
+      $.reviewEnabled = false;
       $.envOverrides = []; // Will hydrate below
       $.hideCompleted = Storage.get("hide_completed", false);
-      $.reviewEnabled = Storage.get("review_enabled", true);
       $.toasts = [];
       $.expanded = {};
       $.loopRunning = false;
@@ -173,6 +178,14 @@
         $.loopRunning = data.loop_running || false;
         $.tasks = newTasks;
 
+        // Sync config from server
+        if (data.config) {
+          $.config = data.config;
+          $.selectedRunner = data.config.runner;
+          $.retries = data.config.retries;
+          $.reviewEnabled = data.config.auto_review;
+        }
+
         // --- Update HTML Title ---
         const project = $.$$project;
         let folderName = "";
@@ -241,17 +254,30 @@
         }
       };
 
+      $.saveConfigToServer = async () => {
+        const config = {
+          auto_review: $.reviewEnabled,
+          retries: Number.parseInt($.retries, 10) || 3,
+          runner: $.selectedRunner,
+        };
+        await fetch(apiUrl("/api/config"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
+        });
+      };
+
       $.saveRunnerPreference = () => {
-        Storage.set("selected_runner", $.selectedRunner);
+        $.saveConfigToServer();
       };
       $.saveRetriesPreference = () => {
-        Storage.set("retries", $.retries);
+        $.saveConfigToServer();
       };
       $.saveHideCompletedPreference = () => {
         Storage.set("hide_completed", $.hideCompleted);
       };
       $.saveReviewPreference = () => {
-        Storage.set("review_enabled", $.reviewEnabled);
+        $.saveConfigToServer();
       };
 
       let envSaveTimeout;
@@ -477,7 +503,8 @@
         } else {
           url.searchParams.delete("project");
         }
-        window.location.href = url.toString();
+        window.open(url.toString(), "_blank");
+        $.closeFolderPicker();
       };
 
       $.folderPickerBreadcrumbs = $.$computed(($) => {

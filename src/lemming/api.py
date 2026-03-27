@@ -134,6 +134,8 @@ def _start_loop_if_needed(tasks_file: pathlib.Path, cwd: pathlib.Path | None = N
     if tasks.is_loop_running(tasks_file):
         return
 
+    data = tasks.load_tasks(tasks_file)
+
     # Use sys.executable -m lemming.main to ensure we use the same environment
     # and pass the explicit tasks file.
     cmd = [
@@ -150,6 +152,15 @@ def _start_loop_if_needed(tasks_file: pathlib.Path, cwd: pathlib.Path | None = N
             "run",
         ]
     )
+
+    if data.config.auto_review:
+        cmd.append("--auto-review")
+
+    if data.config.retries is not None:
+        cmd.extend(["--retries", str(data.config.retries)])
+
+    if data.config.runner:
+        cmd.extend(["--runner", data.config.runner])
 
     # Start the loop in a new session so it outlives the request.
     subprocess.Popen(cmd, start_new_session=True, env=os.environ.copy(), cwd=cwd)
@@ -257,6 +268,16 @@ def get_task_log(task_id: str, name: str = "runner", project: str | None = None)
 def update_context(update: dict, project: str | None = None):
     tasks.update_context(resolve_tasks_file(project), update.get("context", ""))
     return {"status": "ok"}
+
+
+@app.post("/api/config")
+def update_config(config: tasks.RoadmapConfig, project: str | None = None):
+    tasks_file = resolve_tasks_file(project)
+    with tasks.lock_tasks(tasks_file):
+        data = tasks.load_tasks(tasks_file)
+        data.config = config
+        tasks.save_tasks(tasks_file, data)
+    return data.config
 
 
 @app.post("/api/run")
