@@ -230,6 +230,9 @@
 
                     document.addEventListener("visibilitychange", () => {
                         if (document.visibilityState === "visible") {
+                            // Force an immediate refresh when returning to the tab.
+                            $.refresh();
+
                             const state = $.faviconState;
                             if (state === "success" || state === "error") {
                                 $.lastSeenState = state;

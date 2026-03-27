@@ -123,18 +123,16 @@
       };
 
       // --- Data Actions ---
-      $.fetchData = async function () {
+      $.fetchData = async () => {
         const response = await fetch(apiUrl("/api/data"));
         if (!response.ok) return;
         const data = await response.json();
 
-        this.cwd = data.cwd || "";
-        this.loopRunning = data.loop_running || false;
         const newTasks = data.tasks || [];
 
         // Show toast notifications for task state changes.
-        if (!this.loading && this.tasks.length > 0) {
-          const oldTaskMap = new Map(this.tasks.map((t) => [t.id, t]));
+        if (!$.loading && $.tasks.length > 0) {
+          const oldTaskMap = new Map($.tasks.map((t) => [t.id, t]));
           for (const newTask of newTasks) {
             const oldTask = oldTaskMap.get(newTask.id);
             if (!oldTask) continue;
@@ -142,45 +140,48 @@
               oldTask.status !== "completed" &&
               newTask.status === "completed"
             ) {
-              this.addToast(
-                `Task completed: ${this.trim(newTask.description, 60)}`,
+              $.addToast(
+                `Task completed: ${$.trim(newTask.description, 60)}`,
                 "success",
               );
             } else if (
               oldTask.status === "in_progress" &&
               newTask.status === "pending"
             ) {
-              this.addToast(
-                `Task failed: ${this.trim(newTask.description, 60)}`,
+              $.addToast(
+                `Task failed: ${$.trim(newTask.description, 60)}`,
                 "error",
               );
             } else if (
               (newTask.outcomes?.length || 0) > (oldTask.outcomes?.length || 0)
             ) {
-              this.addToast(
-                `Outcome recorded: ${this.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
+              $.addToast(
+                `Outcome recorded: ${$.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
                 "info",
               );
             } else if (newTask.attempts > oldTask.attempts) {
-              this.addToast(
-                `Task attempt ${newTask.attempts}: ${this.trim(newTask.description, 60)}`,
+              $.addToast(
+                `Task attempt ${newTask.attempts}: ${$.trim(newTask.description, 60)}`,
                 "info",
               );
             }
           }
         }
 
-        this.tasks = newTasks;
+        // Update core state
+        $.cwd = data.cwd || "";
+        $.loopRunning = data.loop_running || false;
+        $.tasks = newTasks;
 
         // --- Update HTML Title ---
-        const project = this.$$project;
+        const project = $.$$project;
         let folderName = "";
         if (project) {
           // Get the top-most folder from the project path (e.g. "a/b/c" -> "a")
           folderName = project.split("/").filter(Boolean)[0];
-        } else if (this.cwd) {
+        } else if ($.cwd) {
           // If no project is selected, use the name of the server root folder.
-          folderName = this.cwd.split("/").filter(Boolean).pop();
+          folderName = $.cwd.split("/").filter(Boolean).pop();
         }
 
         if (folderName) {
@@ -191,13 +192,13 @@
 
         // Update favicon status
         if (window.updateFavicon) {
-          const hasError = newTasks.some(
+          const hasError = $.tasks.some(
             (t) => t.status === "pending" && t.attempts > 0,
           );
           const allCompleted =
-            newTasks.length > 0 &&
-            newTasks.every((t) => t.status === "completed");
-          const state = this.loopRunning
+            $.tasks.length > 0 &&
+            $.tasks.every((t) => t.status === "completed");
+          const state = $.loopRunning
             ? "running"
             : hasError
               ? "error"
@@ -205,18 +206,18 @@
                 ? "success"
                 : "idle";
 
-          this.faviconState = state;
+          $.faviconState = state;
 
           // If a run starts, reset the last seen state
           if (state === "running") {
-            this.lastSeenState = null;
+            $.lastSeenState = null;
             Storage.set("last_seen_state", null);
           }
 
           // If the current terminal state has already been seen by the user, show 'idle' favicon instead.
           const effectiveState =
             (state === "success" || state === "error") &&
-            state === this.lastSeenState
+            state === $.lastSeenState
               ? "idle"
               : state;
 
@@ -225,39 +226,39 @@
 
         const contextElem = document.querySelector("textarea");
         if (
-          this.loading ||
+          $.loading ||
           (contextElem && document.activeElement !== contextElem)
         ) {
-          this.context = data.context || "";
+          $.context = data.context || "";
         }
-        this.loading = false;
+        $.loading = false;
       };
 
-      $.fetchRunners = async function () {
+      $.fetchRunners = async () => {
         const response = await fetch(apiUrl("/api/runners"));
         if (response.ok) {
-          this.runners = await response.json();
+          $.runners = await response.json();
         }
       };
 
-      $.saveRunnerPreference = function () {
-        Storage.set("selected_runner", this.selectedRunner);
+      $.saveRunnerPreference = () => {
+        Storage.set("selected_runner", $.selectedRunner);
       };
-      $.saveRetriesPreference = function () {
-        Storage.set("retries", this.retries);
+      $.saveRetriesPreference = () => {
+        Storage.set("retries", $.retries);
       };
-      $.saveHideCompletedPreference = function () {
-        Storage.set("hide_completed", this.hideCompleted);
+      $.saveHideCompletedPreference = () => {
+        Storage.set("hide_completed", $.hideCompleted);
       };
-      $.saveReviewPreference = function () {
-        Storage.set("review_enabled", this.reviewEnabled);
+      $.saveReviewPreference = () => {
+        Storage.set("review_enabled", $.reviewEnabled);
       };
 
       let envSaveTimeout;
-      $.saveEnvOverrides = function () {
+      $.saveEnvOverrides = () => {
         clearTimeout(envSaveTimeout);
         envSaveTimeout = setTimeout(() => {
-          const toSave = this.envOverrides.map(({ key, value }) => ({
+          const toSave = $.envOverrides.map(({ key, value }) => ({
             key,
             value,
           }));
@@ -266,62 +267,62 @@
       };
 
       // --- Operations ---
-      $.addEnvOverride = function () {
+      $.addEnvOverride = () => {
         const id =
           typeof crypto !== "undefined" && crypto.randomUUID
             ? crypto.randomUUID()
             : `env-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-        this.envOverrides.push({ id, key: "", value: "" });
-        this.saveEnvOverrides();
+        $.envOverrides.push({ id, key: "", value: "" });
+        $.saveEnvOverrides();
       };
 
-      $.removeEnvOverride = function (index) {
-        this.envOverrides.splice(index, 1);
-        this.saveEnvOverrides();
+      $.removeEnvOverride = (index) => {
+        $.envOverrides.splice(index, 1);
+        $.saveEnvOverrides();
       };
 
-      $.addTask = async function () {
-        if (!this.newTask.trim()) return;
+      $.addTask = async () => {
+        if (!$.newTask.trim()) return;
         const res = await fetch(apiUrl("/api/tasks"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: this.newTask }),
+          body: JSON.stringify({ description: $.newTask }),
         });
         if (res.ok) {
-          this.newTask = "";
-          await this.fetchData();
+          $.newTask = "";
+          await $.fetchData();
         }
       };
 
-      $.deleteTask = async function (id) {
+      $.deleteTask = async (id) => {
         if (confirm("Delete this task?")) {
           const res = await fetch(apiUrl(`/api/tasks/${id}`), {
             method: "DELETE",
           });
-          if (res.ok) await this.fetchData();
+          if (res.ok) await $.fetchData();
         }
       };
 
-      $.deleteCompletedTasks = async function () {
+      $.deleteCompletedTasks = async () => {
         if (confirm("Delete ALL completed tasks?")) {
           const res = await fetch(apiUrl("/api/tasks/completed"), {
             method: "DELETE",
           });
           if (res.ok) {
-            this.addToast("Completed tasks deleted", "success");
-            await this.fetchData();
+            $.addToast("Completed tasks deleted", "success");
+            await $.fetchData();
           }
         }
       };
 
-      $.cancelTask = async function (id) {
+      $.cancelTask = async (id) => {
         if (confirm("Cancel execution? Process will be killed.")) {
           const res = await fetch(apiUrl(`/api/tasks/${id}/cancel`), {
             method: "POST",
           });
           if (res.ok) {
-            this.addToast("Execution cancelled", "info");
-            await this.fetchData();
+            $.addToast("Execution cancelled", "info");
+            await $.fetchData();
           }
         }
       };
@@ -343,7 +344,7 @@
         $.editingTask = null;
       };
 
-      $.submitEditTask = async function () {
+      $.submitEditTask = async () => {
         if (!$.editingTask) return;
 
         const task = $.editingTask;
@@ -359,64 +360,64 @@
           body: JSON.stringify(update),
         });
         if (res.ok) {
-          this.addToast("Task updated", "success");
-          await this.fetchData();
+          $.addToast("Task updated", "success");
+          await $.fetchData();
         }
 
         $.closeEditModal();
       };
 
-      $.uncompleteTask = async function (id) {
+      $.uncompleteTask = async (id) => {
         const res = await fetch(apiUrl(`/api/tasks/${id}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "pending" }),
         });
         if (res.ok) {
-          this.addToast("Task reset to pending", "info");
-          await this.fetchData();
+          $.addToast("Task reset to pending", "info");
+          await $.fetchData();
         }
       };
 
-      $.clearTask = async function (id) {
+      $.clearTask = async (id) => {
         if (confirm("Clear task attempts and outcomes?")) {
           const res = await fetch(apiUrl(`/api/tasks/${id}/clear`), {
             method: "POST",
           });
           if (res.ok) {
-            this.addToast("Task cleared", "success");
-            await this.fetchData();
+            $.addToast("Task cleared", "success");
+            await $.fetchData();
           }
         }
       };
 
       $.ctxSaveTimeout = null;
-      $.updateContext = function () {
-        clearTimeout(this.ctxSaveTimeout);
-        this.ctxSaveTimeout = setTimeout(async () => {
+      $.updateContext = () => {
+        clearTimeout($.ctxSaveTimeout);
+        $.ctxSaveTimeout = setTimeout(async () => {
           const res = await fetch(apiUrl("/api/context"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ context: this.context }),
+            body: JSON.stringify({ context: $.context }),
           });
-          if (res.ok) this.addToast("Context saved", "info");
+          if (res.ok) $.addToast("Context saved", "info");
         }, 1000);
       };
 
-      $.runLemming = async function () {
+      $.runLemming = async () => {
         const env = {};
-        for (const o of this.envOverrides) {
+        for (const o of $.envOverrides) {
           if (o.key?.trim()) env[o.key.trim()] = o.value || "";
         }
 
         const payload = {
-          runner: this.selectedRunner,
+          runner: $.selectedRunner,
           env: Object.keys(env).length > 0 ? env : undefined,
-          review: this.reviewEnabled,
+          review: $.reviewEnabled,
         };
 
-        if (this.retries) {
-          const parsed = Number.parseInt(this.retries, 10);
+        if ($.retries) {
+          const parsed = Number.parseInt($.retries, 10);
           if (!Number.isNaN(parsed) && parsed > 0) {
             payload.retries = parsed;
           }
@@ -428,15 +429,15 @@
           body: JSON.stringify(payload),
         });
         if (res.ok) {
-          this.addToast("Run started!", "success");
-          await this.fetchData();
+          $.addToast("Run started!", "success");
+          await $.fetchData();
         }
       };
 
       // --- Folder Picker ---
-      $.openFolderPicker = async function () {
-        this.folderPickerPath = "";
-        await this.fetchFolderPickerDirs("");
+      $.openFolderPicker = async () => {
+        $.folderPickerPath = "";
+        await $.fetchFolderPickerDirs("");
         const modal = document.getElementById("folder-picker-modal");
         if (modal) modal.showModal();
       };
@@ -446,26 +447,26 @@
         if (modal) modal.close();
       };
 
-      $.fetchFolderPickerDirs = async function (path) {
-        this.folderPickerLoading = true;
+      $.fetchFolderPickerDirs = async (path) => {
+        $.folderPickerLoading = true;
         const params = path ? { path } : {};
         const res = await fetch(apiUrl("/api/directories", params));
         if (res.ok) {
           const data = await res.json();
-          this.folderPickerPath = data.path;
-          this.folderPickerDirs = data.directories;
+          $.folderPickerPath = data.path;
+          $.folderPickerDirs = data.directories;
         }
-        this.folderPickerLoading = false;
+        $.folderPickerLoading = false;
       };
 
-      $.folderPickerNavigate = async function (path) {
-        await this.fetchFolderPickerDirs(path);
+      $.folderPickerNavigate = async (path) => {
+        await $.fetchFolderPickerDirs(path);
       };
 
-      $.folderPickerUp = async function () {
-        const parts = this.folderPickerPath.split("/").filter(Boolean);
+      $.folderPickerUp = async () => {
+        const parts = $.folderPickerPath.split("/").filter(Boolean);
         parts.pop();
-        await this.fetchFolderPickerDirs(parts.join("/"));
+        await $.fetchFolderPickerDirs(parts.join("/"));
       };
 
       $.folderPickerSelect = (path) => {
@@ -509,6 +510,9 @@
       // --- Auto-refresh via polling ---
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
+          // Force an immediate fetch when returning to the tab.
+          $.fetchData();
+
           const state = $.faviconState;
           if (state === "success" || state === "error") {
             $.lastSeenState = state;

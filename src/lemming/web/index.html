@@ -248,7 +248,7 @@
             </div>
             
             <div class="grow overflow-auto" role="list">
-                <div :for="task in filteredTasks" :key="task.id" class="flex flex-col border-b border-gray-200 dark:border-gray-600" role="listitem">
+                <div :for="task in filteredTasks" :key="task.id + '-' + task.status" class="flex flex-col border-b border-gray-200 dark:border-gray-600" role="listitem">
                     <div class="pt-1 pb-2 px-4 flex items-center justify-between" :attr:aria-label="'Task: ' + task.description" :attr:title="'Task: ' + task.description">
                         <div class="flex items-center gap-2 overflow-hidden flex-grow min-w-0">
                             <button 

@@ -214,6 +214,9 @@ window.ManchaApp = Mancha.initMancha({
 
                     document.addEventListener("visibilitychange", () => {
                         if (document.visibilityState === "visible") {
+                            // Force an immediate fetch when returning to the tab.
+                            $.fetchFiles();
+
                             const state = $.faviconState;
                             if (state === "success" || state === "error") {
                                 $.lastSeenState = state;
