@@ -38,16 +38,20 @@ subprocess.run([sys.executable, "-m", "lemming.main", "--tasks-file", "{str(task
     )
 
     # Run lemming run with --env
-    # We use --retries 1 to avoid infinite loop if it fails
-    # We use --agent and then the agent_args will be the script path
+    runner.invoke(
+        main.cli,
+        ["--tasks-file", str(tasks_file), "config", "set", "runner", sys.executable],
+    )
+    runner.invoke(
+        main.cli, ["--tasks-file", str(tasks_file), "config", "set", "retries", "1"]
+    )
+
     runner.invoke(
         main.cli,
         [
             "--tasks-file",
             str(tasks_file),
             "run",
-            "--runner",
-            sys.executable,
             "--env",
             "MOCK_KEY=MOCK_VALUE",
             "--",

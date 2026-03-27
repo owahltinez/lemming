@@ -44,10 +44,6 @@ def test_get_log_file(tmp_path):
     assert log_file.name == "task123-runner.log"
     assert log_file.parent.exists()
 
-    review_log = paths.get_log_file(tasks_file, "task123", "review")
-    assert review_log.name == "task123-review.log"
-    assert review_log.parent == log_file.parent
-
 
 def test_in_git_repo_and_is_ignored(tmp_path):
     import subprocess

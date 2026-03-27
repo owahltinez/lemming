@@ -55,6 +55,19 @@ test.describe("Folder Picker UI", () => {
           contentType: "application/json",
           json: ["gemini"],
         });
+      } else if (url.includes("/api/hooks")) {
+        await route.fulfill({
+          contentType: "application/json",
+          json: ["roadmap"],
+        });
+      } else if (
+        url.includes("/api/directories") &&
+        route.request().method() === "POST"
+      ) {
+        await route.fulfill({
+          contentType: "application/json",
+          json: { name: "new-folder", path: "/mock/cwd/new-folder" },
+        });
       } else if (url.includes("/api/directories")) {
         await route.fulfill({
           contentType: "application/json",
@@ -102,5 +115,37 @@ test.describe("Folder Picker UI", () => {
     await expect(page.locator("#folder-picker-modal")).not.toHaveAttribute(
       "open",
     );
+  });
+
+  test("creating a new folder", async ({ page }) => {
+    await gotoAndAwaitMancha(page);
+    await page.waitForLoadState("networkidle");
+
+    // Open folder picker
+    await page.click('button[title="Switch project"]');
+    await page.waitForSelector("#folder-picker-modal[open]");
+
+    // Wait for the button and ensure it's visible
+    const newFolderBtn = page.locator('button[title="Create new folder"]');
+    await expect(newFolderBtn).toBeVisible();
+
+    // Click "New Folder" button
+    await newFolderBtn.click();
+
+    // Fill the folder name
+    await page.fill('input[placeholder="Folder name"]', "new-folder");
+
+    // Click "Create" button
+    await page.click('button:has-text("Create")');
+
+    // Verify toast notification (mocked behavior)
+    await expect(page.locator('div[role="alert"]')).toContainText(
+      "Folder created!",
+    );
+
+    // The form should be hidden again
+    await expect(
+      page.locator('input[placeholder="Folder name"]'),
+    ).not.toBeVisible();
   });
 });

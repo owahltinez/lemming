@@ -269,10 +269,8 @@ def status(ctx: click.Context, task_id: str | None):
     click.echo(f"Attempts:    {target.attempts}")
 
     log_parts = []
-    if paths.get_log_file(tasks_file, target.id, "runner").exists():
-        log_parts.append("runner")
-    if paths.get_log_file(tasks_file, target.id, "review").exists():
-        log_parts.append("review")
+    if paths.get_log_file(tasks_file, target.id).exists():
+        log_parts.append("runner (includes hooks)")
     click.echo(f"Logs:        {', '.join(log_parts) if log_parts else 'None'}")
 
     if target.completed_at:
@@ -297,36 +295,52 @@ def status(ctx: click.Context, task_id: str | None):
             click.echo(f"- {outcome}")
 
 
-@cli.command(short_help="<taskid> Print a task's log to stdout")
-@click.argument("task_id")
-@click.option(
-    "--name",
-    default="runner",
-    type=click.Choice(["runner", "review"]),
-    help="Which log to display (default: runner).",
-)
+@cli.command(short_help="[<taskid>] Print a task's log to stdout")
+@click.argument("task_id", required=False)
 @click.pass_context
-def logs(ctx: click.Context, task_id: str, name: str):
-    """Prints the log for a task to stdout.
+def logs(ctx: click.Context, task_id: str | None):
+    """Prints the execution log for a task to stdout.
 
-    Args:
-        task_id: The ID (or prefix) of the task.
-        name: Which log to display ("runner" or "review").
+    If no task_id is provided, it defaults to the currently running task or
+    the most recently completed one.
+
+    Note: Orchestrator hooks are appended to the main 'runner' log.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
 
     data = tasks.load_tasks(tasks_file)
-    target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
+
+    target = None
+    if task_id:
+        target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
+        if not target:
+            click.echo(f"Error: Task {task_id} not found.")
+            ctx.exit(1)
+    else:
+        # Try to find an active task
+        target = next((t for t in data.tasks if t.status == "in_progress"), None)
+        if not target:
+            # Fall back to the most recently completed task
+            completed = [t for t in data.tasks if t.status == "completed"]
+            if completed:
+                target = sorted(completed, key=lambda x: x.completed_at or 0)[-1]
+
     if not target:
-        click.echo(f"Error: Task {task_id} not found.")
+        click.echo("Error: No active or recently completed task found.")
         ctx.exit(1)
 
-    log_file = paths.get_log_file(tasks_file, target.id, name)
+    log_file = paths.get_log_file(tasks_file, target.id)
     if not log_file.exists():
-        click.echo(f"No {name} log for task {target.id}.")
+        click.echo(f"No log for task {target.id}.")
         ctx.exit(1)
 
-    click.echo(log_file.read_text(encoding="utf-8"), nl=False)
+    # Highlight separators for better readability in the terminal
+    content = log_file.read_text(encoding="utf-8")
+    for line in content.splitlines():
+        if line.startswith("--- ") and line.endswith(" ---"):
+            click.secho(line, fg="cyan", bold=True)
+        else:
+            click.echo(line)
 
 
 @cli.command(short_help="[<text>] View or set the project context")
@@ -417,6 +431,145 @@ def outcome(ctx: click.Context, task_id: str, text: str):
         ctx.exit(1)
 
 
+@cli.group(name="config", short_help="Manage project configuration")
+def config_group():
+    """Manages the configuration for the roadmap execution loop."""
+    pass
+
+
+@config_group.command(name="list")
+@click.pass_context
+def config_list(ctx: click.Context):
+    """Shows the current project configuration."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    data = tasks.load_tasks(tasks_file)
+    c = data.config
+
+    click.secho(f"Configuration for {tasks_file}:", bold=True)
+    click.echo(f"  Runner:        {c.runner}")
+    click.echo(f"  Retries:       {c.retries}")
+    click.echo(
+        f"  Hooks:         {', '.join(c.hooks) if c.hooks is not None else '(all)'}"
+    )
+
+
+@config_group.command(name="set")
+@click.argument(
+    "key",
+    type=click.Choice(["runner", "retries", "hooks"]),
+)
+@click.argument("value")
+@click.pass_context
+def config_set(ctx: click.Context, key: str, value: str):
+    """Sets a configuration value.
+
+    Examples:
+      lemming config set runner aider
+      lemming config set retries 5
+      lemming config set hooks roadmap,lint
+      lemming config set hooks default  # Reset to all available hooks
+    """
+    tasks_file = ctx.obj["TASKS_FILE"]
+    data = tasks.load_tasks(tasks_file)
+
+    if key == "runner":
+        data.config.runner = value
+    elif key == "retries":
+        try:
+            data.config.retries = int(value)
+        except ValueError:
+            raise click.UsageError(f"Value for {key} must be an integer.")
+    elif key == "hooks":
+        if value.lower() in ("default", "all", "none", ""):
+            data.config.hooks = None
+            value = "(all available)"
+        else:
+            data.config.hooks = [h.strip() for h in value.split(",") if h.strip()]
+
+    tasks.save_tasks(tasks_file, data)
+    click.echo(f"Updated {key} to {value}")
+
+
+@cli.group(name="hooks", short_help="Manage orchestrator hooks")
+def hooks_group():
+    """Manages orchestrator hooks."""
+    pass
+
+
+@hooks_group.command(name="list")
+@click.pass_context
+def hooks_list(ctx: click.Context):
+    """Lists available orchestrator hooks."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    available = runner.list_hooks(tasks_file)
+
+    data = tasks.load_tasks(tasks_file)
+    active = set(data.config.hooks) if data.config.hooks is not None else set(available)
+
+    click.secho("Available orchestrator hooks:", bold=True)
+    for h in available:
+        status = "[active]" if h in active else ""
+        click.echo(f"  - {h:20} {status}")
+
+
+@hooks_group.command(name="enable")
+@click.argument("name")
+@click.pass_context
+def hooks_enable(ctx: click.Context, name: str):
+    """Enables a specific orchestrator hook."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    available = runner.list_hooks(tasks_file)
+    if name not in available:
+        click.echo(f"Error: Hook '{name}' not found.")
+        ctx.exit(1)
+
+    data = tasks.load_tasks(tasks_file)
+    if data.config.hooks is None:
+        # If currently "all", it's already enabled.
+        # We don't transition to an explicit list here to keep the default behavior.
+        click.echo(
+            f"Hook '{name}' is already active (all available hooks are enabled)."
+        )
+        return
+
+    if name not in data.config.hooks:
+        data.config.hooks.append(name)
+        tasks.save_tasks(tasks_file, data)
+        click.echo(f"Enabled hook: {name}")
+    else:
+        click.echo(f"Hook '{name}' is already enabled.")
+
+
+@hooks_group.command(name="disable")
+@click.argument("name")
+@click.pass_context
+def hooks_disable(ctx: click.Context, name: str):
+    """Disables a specific orchestrator hook."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    available = runner.list_hooks(tasks_file)
+
+    data = tasks.load_tasks(tasks_file)
+    if data.config.hooks is None:
+        # If currently "all", we transition to an explicit list minus the disabled one
+        data.config.hooks = [h for h in available if h != name]
+    else:
+        data.config.hooks = [h for h in data.config.hooks if h != name]
+
+    tasks.save_tasks(tasks_file, data)
+    click.echo(f"Disabled hook: {name}")
+
+
+@hooks_group.command(name="reset")
+@click.pass_context
+def hooks_reset(ctx: click.Context):
+    """Resets hooks to run all available hooks by default."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    data = tasks.load_tasks(tasks_file)
+    data.config.hooks = None
+    tasks.save_tasks(tasks_file, data)
+    click.echo("Hooks reset to default (all available).")
+
+
 @cli.command(short_help="<taskid> Record a task failure")
 @click.argument("task_id")
 @click.pass_context
@@ -472,7 +625,7 @@ def reset(ctx: click.Context, task_id: str):
         ctx.exit(1)
 
 
-def _run_reviewer(
+def _run_hooks(
     tasks_file: pathlib.Path,
     task_id: str,
     runner_name: str,
@@ -480,55 +633,66 @@ def _run_reviewer(
     runner_args: tuple,
     no_defaults: bool,
     verbose: bool,
+    hooks: list[str] | None = None,
     working_dir: pathlib.Path | None = None,
 ) -> None:
-    """Invokes the reviewer agent to analyze the task outcome and update the roadmap."""
+    """Discovers and executes orchestrator hooks for a finished task.
+
+    Args:
+        hooks: Explicit list of hooks to run. If None, uses config.hooks.
+    """
     data = tasks.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
     if not task:
         return
 
-    prompt = runner.prepare_review_prompt(data, task, tasks_file)
+    # Use provided hooks or fall back to configuration
+    active_hooks = hooks if hooks is not None else data.config.hooks
+    if active_hooks is None:
+        active_hooks = runner.list_hooks(tasks_file)
 
-    if verbose:
-        click.secho("\n=== Reviewer Prompt ===", fg="magenta", bold=True)
-        click.echo(prompt)
-        click.secho("========================\n", fg="magenta", bold=True)
+    for hook_name in active_hooks:
+        try:
+            prompt = runner.prepare_hook_prompt(hook_name, data, task, tasks_file)
+        except FileNotFoundError:
+            if verbose:
+                click.echo(f"Hook '{hook_name}' prompt not found, skipping.")
+            continue
 
-    cmd = runner.build_runner_command(
-        runner_name,
-        prompt,
-        yolo,
-        runner_args,
-        no_defaults,
-        verbose=verbose,
-    )
-
-    try:
-        returncode, stdout, stderr = runner.run_with_heartbeat(
-            cmd,
-            tasks_file,
-            task_id,
-            verbose,
-            echo_fn=lambda line: click.echo(line, nl=False),
-            log_name="review",
-            cwd=working_dir,
-        )
         if verbose:
-            if returncode != 0:
-                click.echo(f"Reviewer exited with code {returncode}.")
-    except Exception as e:
-        click.echo(f"Reviewer error: {e}")
+            click.secho(f"\n=== Hook: {hook_name} Prompt ===", fg="magenta", bold=True)
+            click.echo(prompt)
+            click.secho("========================\n", fg="magenta", bold=True)
+
+        cmd = runner.build_runner_command(
+            runner_name,
+            prompt,
+            yolo,
+            runner_args,
+            no_defaults,
+            verbose=verbose,
+        )
+
+        try:
+            # Append hooks to the main runner log for a unified execution trace.
+            returncode, stdout, stderr = runner.run_with_heartbeat(
+                cmd,
+                tasks_file,
+                task_id,
+                verbose,
+                echo_fn=lambda line: click.echo(line, nl=False),
+                header=f"Hook: {hook_name}",
+                cwd=working_dir,
+            )
+            if verbose:
+                if returncode != 0:
+                    click.echo(f"Hook '{hook_name}' exited with code {returncode}.")
+        except Exception as e:
+            click.echo(f"Hook '{hook_name}' error: {e}")
 
 
 @cli.command(
     short_help="Run the autonomous task execution loop",
-)
-@click.option(
-    "--retries",
-    default=None,
-    type=int,
-    help="Maximum number of retries for a single task.",
 )
 @click.option(
     "--retry-delay",
@@ -537,12 +701,6 @@ def _run_reviewer(
 )
 @click.option(
     "--yolo/--no-yolo", default=True, help="Run the runner in YOLO/auto-approve mode."
-)
-@click.option(
-    "--runner",
-    "runner_name",
-    default=None,
-    help="The underlying CLI runner to use (gemini, aider, claude, codex).",
 )
 @click.option(
     "--env",
@@ -554,54 +712,27 @@ def _run_reviewer(
     is_flag=True,
     help="Do not auto-inject default flags (like --yolo) based on runner name.",
 )
-@click.option(
-    "--auto-review/--no-auto-review",
-    "review",
-    default=None,
-    help="Run a reviewer after each task to adapt the roadmap.",
-)
-@click.option(
-    "--review-runner",
-    "review_runner",
-    default=None,
-    help="Runner to use for reviews (defaults to --runner).",
-)
 @click.argument("runner_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run(
     ctx: click.Context,
-    retries: int | None,
     retry_delay: int,
     yolo: bool,
-    runner_name: str | None,
     env: tuple,
     no_defaults: bool,
-    review: bool | None,
-    review_runner: str | None,
     runner_args: tuple,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks.
 
     Args:
-        retries: Maximum retries per task.
         retry_delay: Delay between retries.
         yolo: If True, skip runner confirmations.
-        runner_name: The CLI runner to invoke.
         env: Environment variables to inject.
         no_defaults: Skip default flag injection.
-        review_runner: Runner to use for reviews (falls back to runner_name).
         runner_args: Raw arguments passed directly to the runner.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
-
-    data = tasks.load_tasks(tasks_file)
-    if retries is None:
-        retries = data.config.retries
-    if runner_name is None:
-        runner_name = data.config.runner
-    if review is None:
-        review = data.config.auto_review
 
     # Determine the project's working directory
     working_dir = paths.get_working_dir(tasks_file)
@@ -623,13 +754,9 @@ def run(
         _run_loop(
             tasks_file,
             verbose,
-            retries,
             retry_delay,
             yolo,
-            runner_name,
             no_defaults,
-            review,
-            review_runner,
             runner_args,
             working_dir=working_dir,
         )
@@ -640,18 +767,21 @@ def run(
 def _run_loop(
     tasks_file: pathlib.Path,
     verbose: bool,
-    retries: int,
     retry_delay: int,
     yolo: bool,
-    runner_name: str,
     no_defaults: bool,
-    review: bool,
-    review_runner: str | None,
     runner_args: tuple,
     working_dir: pathlib.Path | None = None,
 ) -> None:
     while True:
+        # Reload configuration on each iteration to respond to changes (e.g., from Web UI)
         data = tasks.load_tasks(tasks_file)
+        retries = data.config.retries
+        runner_name = data.config.runner
+        active_hooks = data.config.hooks
+        if active_hooks is None:
+            active_hooks = runner.list_hooks(tasks_file)
+
         current_task = tasks.get_pending_task(data)
 
         if not current_task:
@@ -661,37 +791,32 @@ def _run_loop(
         task_id = current_task.id
 
         if current_task.attempts >= retries:
-            if review:
-                # Give the reviewer a chance to heal the task before aborting
-                click.echo(
-                    f"\nTask {task_id} reached {retries} attempts. Running reviewer..."
-                )
-                _run_reviewer(
-                    tasks_file,
-                    task_id,
-                    review_runner or runner_name,
-                    yolo,
-                    runner_args,
-                    no_defaults,
-                    verbose,
-                    working_dir=working_dir,
-                )
-                # Re-check: if the reviewer reset/edited/replaced the task, continue
-                data = tasks.load_tasks(tasks_file)
-                healed_task = next((t for t in data.tasks if t.id == task_id), None)
-                if healed_task and healed_task.attempts >= retries:
-                    click.echo(
-                        f"Task {task_id} still at max attempts after review. Aborting run."
-                    )
-                    break
-                # Reviewer healed it (reset attempts, deleted it, etc.) — continue the loop
-                click.echo(f"Reviewer intervened on task {task_id}. Continuing...")
-                continue
-            else:
+            # Run hooks (like roadmap revision) even on final failure to give them
+            # a chance to heal the task before we abort.
+            _run_hooks(
+                tasks_file,
+                task_id,
+                runner_name,
+                yolo,
+                runner_args,
+                no_defaults,
+                verbose,
+                hooks=active_hooks,
+                working_dir=working_dir,
+            )
+
+            # Re-check: if a hook reset/edited/replaced the task, continue the loop
+            data = tasks.load_tasks(tasks_file)
+            healed_task = next((t for t in data.tasks if t.id == task_id), None)
+            if healed_task and healed_task.attempts >= retries:
                 click.echo(
                     f"\nTask {task_id} failed after {retries} attempts. Aborting run."
                 )
                 break
+
+            # Orchestrator healed it (reset attempts, deleted it, etc.) — continue the loop
+            click.echo(f"Orchestrator intervened on task {task_id}. Continuing...")
+            continue
 
         # Add a small random jitter to avoid race conditions between multiple instances
         time.sleep(random.uniform(0.1, 0.5))
@@ -756,13 +881,28 @@ def _run_loop(
                         f"\nNOTE: Command '{runner_name}' not found.\n"
                         "If you are using a shell alias, Python subprocesses cannot see it.\n"
                         "Fixes:\n"
-                        f"1. Use the absolute path: `lemming run --runner /path/to/{runner_name}`\n"
+                        f"1. Use the absolute path: `lemming config set runner /path/to/{runner_name}`\n"
                         f"2. Create an executable wrapper script for '{runner_name}' in your PATH."
                     )
         except Exception as e:
             click.echo(f"\nAn error occurred while executing {runner_name}: {e}")
 
-        # Post-execution validation
+        # Run orchestrator hooks while the task is still claimed and "in_progress".
+        # This keeps the execution sequence unified in the logs and ensures
+        # that another loop doesn't pick up the next task prematurely.
+        _run_hooks(
+            tasks_file,
+            task_id,
+            runner_name,
+            yolo,
+            runner_args,
+            no_defaults,
+            verbose,
+            hooks=active_hooks,
+            working_dir=working_dir,
+        )
+
+        # Post-execution validation and heartbeat cleanup
         post_task = tasks.finish_task_attempt(tasks_file, task_id)
 
         if not post_task:
@@ -790,19 +930,6 @@ def _run_loop(
                         f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
                     )
                 time.sleep(retry_delay)
-
-        # Run the reviewer after each task execution
-        if review:
-            _run_reviewer(
-                tasks_file,
-                task_id,
-                review_runner or runner_name,
-                yolo,
-                runner_args,
-                no_defaults,
-                verbose,
-                working_dir=working_dir,
-            )
 
 
 def parse_timeout(t_str: str) -> float:

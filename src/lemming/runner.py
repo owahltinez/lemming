@@ -10,11 +10,12 @@ from . import paths
 from . import tasks
 
 
-def load_prompt(name: str) -> str:
-    """Loads a prompt template from the prompts directory.
+def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
+    """Loads a prompt template from the prompts directory or local hooks.
 
     Args:
         name: Name of the prompt template (without .md extension).
+        tasks_file: Optional path to the tasks file to look for local hooks.
 
     Returns:
         The content of the prompt template.
@@ -22,11 +23,55 @@ def load_prompt(name: str) -> str:
     Raises:
         FileNotFoundError: If the prompt template does not exist.
     """
+    # 1. Look for local hooks in the project directory
+    if tasks_file:
+        working_dir = paths.get_working_dir(tasks_file)
+        local_hook_path = working_dir / ".lemming" / "hooks" / f"{name}.md"
+        if local_hook_path.exists():
+            return local_hook_path.read_text(encoding="utf-8")
+
+    # 2. Look in built-in prompts directory
     base_path = pathlib.Path(__file__).parent / "prompts"
-    prompt_path = base_path / f"{name}.md"
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt template {name} not found at {prompt_path}")
-    return prompt_path.read_text(encoding="utf-8")
+
+    # Try exact name first (e.g. taskrunner)
+    path = base_path / f"{name}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+
+    # Try hooks subdirectory
+    path = base_path / "hooks" / f"{name}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+
+    raise FileNotFoundError(f"Prompt template {name} not found")
+
+
+def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
+    """Lists available orchestrator hooks.
+
+    Args:
+        tasks_file: Optional path to the tasks file to look for local hooks.
+
+    Returns:
+        A list of hook names.
+    """
+    hooks = set()
+
+    # 1. Look for local hooks in the project directory
+    if tasks_file:
+        working_dir = paths.get_working_dir(tasks_file)
+        local_hooks_dir = working_dir / ".lemming" / "hooks"
+        if local_hooks_dir.exists():
+            for f in local_hooks_dir.glob("*.md"):
+                hooks.add(f.stem)
+
+    # 2. Look in built-in prompts directory
+    base_path = pathlib.Path(__file__).parent / "prompts" / "hooks"
+    if base_path.exists():
+        for f in base_path.glob("*.md"):
+            hooks.add(f.stem)
+
+    return sorted(list(hooks))
 
 
 def _pretty_quote(s: str) -> str:
@@ -143,8 +188,8 @@ def run_with_heartbeat(
     task_id: str,
     verbose: bool,
     echo_fn: Callable[[str], None] = print,
-    log_name: str = "runner",
     cwd: pathlib.Path | None = None,
+    header: str | None = None,
 ) -> tuple[int, str, str]:
     """Runs the runner process and updates the task heartbeat periodically.
 
@@ -154,19 +199,23 @@ def run_with_heartbeat(
         task_id: ID of the task being executed (used for heartbeat and parent env var).
         verbose: If True, echo runner output to the console.
         echo_fn: Function to use for echoing output (defaults to print).
-        log_name: The log name (e.g. "runner", "review").
         cwd: Optional working directory for the subprocess.
+        header: Optional header to write to the log (e.g. "Orchestrator Hook: roadmap").
 
     Returns:
         A tuple of (returncode, stdout_log, stderr_log). Note: stderr is currently
         merged into stdout_log.
     """
-    log_file = paths.get_log_file(tasks_file, task_id, log_name)
+    log_file = paths.get_log_file(tasks_file, task_id)
 
-    # Use a separator for new attempts
+    # Use a separator for new attempts or hooks
     command_str = _shlex_join_pretty(cmd)
     with open(log_file, "a", encoding="utf-8") as f:
-        f.write(f"\n--- Attempt started at {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        if header:
+            f.write(f"\n--- {header} started at {timestamp} ---\n")
+        else:
+            f.write(f"\n--- Attempt started at {timestamp} ---\n")
         f.write(f"Command: {command_str}\n")
         f.flush()
 
@@ -192,17 +241,15 @@ def run_with_heartbeat(
 
     full_log: list[str] = []
 
-    # Store the subprocess PID in the task so cancel_task can kill it.
-    # The orchestrator initially stores its own PID, but the subprocess runs
-    # in a new session (start_new_session=True) so it must be killed separately.
-    # For reviews, we don't update the heartbeat since the task is already finished.
-    if log_name == "runner":
+    # For orchestration (where header is provided), we don't update the heartbeat
+    # since the task is already finished.
+    if header is None:
         tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
 
     def heartbeat_loop():
         """Updates the task heartbeat while the process is running."""
         while process.poll() is None:
-            if log_name == "runner" and not tasks.update_heartbeat(tasks_file, task_id):
+            if header is None and not tasks.update_heartbeat(tasks_file, task_id):
                 # Task was cancelled — kill the runner subprocess tree
                 try:
                     os.killpg(os.getpgid(process.pid), __import__("signal").SIGTERM)
@@ -237,18 +284,22 @@ def run_with_heartbeat(
     return process.returncode, "".join(full_log), ""
 
 
-def prepare_review_prompt(
-    data: tasks.Roadmap, finished_task: tasks.Task, tasks_file: pathlib.Path
+def prepare_hook_prompt(
+    hook_name: str,
+    data: tasks.Roadmap,
+    finished_task: tasks.Task,
+    tasks_file: pathlib.Path,
 ) -> str:
-    """Prepares the reviewer prompt after a task finishes.
+    """Prepares the prompt for a specific orchestrator hook.
 
     Args:
+        hook_name: Name of the orchestrator hook (e.g. "roadmap").
         data: The current Roadmap.
         finished_task: The Task that just finished executing.
         tasks_file: Path to the tasks YAML file.
 
     Returns:
-        The fully rendered reviewer prompt string.
+        The fully rendered hook prompt string.
     """
     roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
 
@@ -278,7 +329,7 @@ def prepare_review_prompt(
             finished_str += f"- {o}\n"
 
     # Include the last 100 lines of the runner log for the finished task
-    log_file = paths.get_log_file(tasks_file, finished_task.id, "runner")
+    log_file = paths.get_log_file(tasks_file, finished_task.id)
     if log_file.exists():
         try:
             with open(log_file, "r", encoding="utf-8") as f:
@@ -293,7 +344,8 @@ def prepare_review_prompt(
             finished_str += f"\n(Could not read log file: {e})\n"
 
     tasks_file_str = shlex.quote(str(tasks_file))
-    prompt_template = load_prompt("reviewer")
+    prompt_template = load_prompt(hook_name, tasks_file)
+
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)
         .replace("{{finished_task}}", finished_str)

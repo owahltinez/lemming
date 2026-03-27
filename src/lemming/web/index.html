@@ -62,10 +62,24 @@
             <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
                 <h2 id="metadata-heading" class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Runner Metadata</h2>
                 <div class="flex items-center gap-3">
-                    <label class="flex items-center gap-1 cursor-pointer shrink-0" title="Run a reviewer after each task to adapt the roadmap">
-                        <input type="checkbox" :bind="reviewEnabled" :on:change="saveReviewPreference()" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-3 w-3" aria-label="Enable review mode">
-                        <span class="font-medium text-gray-500 uppercase tracking-wider text-10px">Auto Review</span>
-                    </label>
+                    <div class="flex items-center gap-3 overflow-x-auto no-scrollbar">
+                        <span class="font-medium text-gray-500 uppercase tracking-wider text-10px shrink-0">Hooks:</span>
+                        <label :for="hook in availableHooks" :key="hook" class="flex items-center gap-1 cursor-pointer shrink-0" :attr:title="'Run the ' + hook + ' orchestrator hook after each task'">
+                            <input type="checkbox" :prop:checked="config.hooks === null ? true : config.hooks.includes(hook)" :on:change="toggleHook(hook)" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-3 w-3" :attr:aria-label="'Enable ' + hook + ' hook'">
+                            <span class="font-medium text-gray-500 uppercase tracking-wider text-10px">{{ hook }}</span>
+                        </label>
+                        <button 
+                            :show="config.hooks !== null"
+                            type="button" 
+                            role="button" 
+                            :on:click="resetHooks()"
+                            class="text-10px font-semibold text-gray-400 hover:text-indigo-600 uppercase tracking-wider bg-transparent border-none cursor-pointer p-0 ml-1 transition duration-200"
+                            title="Reset hooks to default (all available)"
+                            aria-label="Reset hooks"
+                        >
+                            Reset
+                        </button>
+                    </div>
                     <button
                         type="submit"
                         form="run-form"
@@ -396,21 +410,15 @@
                                 <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Run Time:</span>
                                 <span class="text-gray-700 dark:text-gray-300">{{ formatTaskRunTime(task) }}</span>
                             </div>
-                            <div :if="task.has_runner_log || task.has_review_log || task.status === 'in_progress'">
+                            <div :if="task.has_runner_log || task.status === 'in_progress'">
                                 <span class="font-semibold uppercase text-gray-400 block mb-1 text-9px">Logs:</span>
                                 <div class="flex items-center gap-3">
                                     <a :if="task.has_runner_log || task.status === 'in_progress'"
                                         :attr:href="'/tasks/' + task.id + '/log?name=runner' + ($$project ? '&project=' + encodeURIComponent($$project) : '')"
                                         target="_blank"
                                         class="text-indigo-600 hover:text-indigo-800 font-medium transition duration-200"
-                                        title="View runner log"
+                                        title="View runner log (includes orchestrator hooks)"
                                     >Runner</a>
-                                    <a :if="task.has_review_log"
-                                        :attr:href="'/tasks/' + task.id + '/log?name=review' + ($$project ? '&project=' + encodeURIComponent($$project) : '')"
-                                        target="_blank"
-                                        class="text-indigo-600 hover:text-indigo-800 font-medium transition duration-200"
-                                        title="View review log"
-                                    >Review</a>
                                 </div>
                             </div>
                         </div>
@@ -499,6 +507,30 @@
             <div :show="!folderPickerLoading && folderPickerDirs.length === 0" class="px-3 py-4 text-center text-gray-400 text-sm">
                 No subdirectories.
             </div>
+        </div>
+        <div class="mt-4">
+            <button
+                :if="!showNewFolderInput"
+                type="button"
+                :on:click="startNewFolder()"
+                title="Create new folder"
+                class="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                New Folder
+            </button>
+            <form :if="showNewFolderInput" class="flex items-center gap-2" :on:submit.prevent="createFolder()">
+                <input
+                    type="text"
+                    :bind="newFolderName"
+                    placeholder="Folder name"
+                    class="flex-grow px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    required
+                    :attr:autofocus="showNewFolderInput"
+                >
+                <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700">Create</button>
+                <button type="button" :on:click="showNewFolderInput = false" class="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700 border-none">Cancel</button>
+            </form>
         </div>
         <div class="mt-4 flex justify-end gap-3">
             <button type="button" :on:click="closeFolderPicker()" class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 transition duration-200 cursor-pointer">Cancel</button>

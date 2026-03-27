@@ -49,11 +49,11 @@ lemming status
 Start the autonomous loop.
 
 ```bash
-# Run using the default agent (gemini)
+# Run using the project's configured agent (default: gemini)
 lemming run
 
-# Or use a different agent (flags after -- are passed to the agent)
-lemming run --runner aider -- --model claude-3-5-sonnet
+# Flags passed after -- are sent directly to the underlying runner
+lemming run -- --model claude-3-5-sonnet
 ```
 
 ---
@@ -83,31 +83,53 @@ Lemming maintains a human-readable `tasks.yml` file containing your project cont
 2.  **Invoke the agent**: It launches your chosen agent CLI with that prompt, monitors it with heartbeats, and streams output to a log file.
 3.  **Collect results**: The agent reports back via the Lemming CLI — recording findings with `lemming outcome`, then marking the task with `lemming complete` or `lemming fail`. Agents can also schedule new tasks with `lemming add`, breaking down complex work into smaller steps that Lemming will pick up automatically.
 4.  **Retry or advance**: On failure, Lemming retries the task (up to `--retries`) with accumulated outcomes as context, so the agent learns from previous attempts. On success, it moves to the next task.
-5.  **Review (optional)**: When `--auto-review` is enabled, a review agent runs after each task to evaluate the roadmap and adapt it if needed (see below).
+5.  **Orchestration**: After each task, Lemming can run one or more **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the results and adapt the roadmap if needed. Hooks are enabled by default but can be disabled via configuration.
 
 ---
 
-## The Review Step
+## Orchestrator Hooks ⚓️
 
-For longer, multi-stage projects, the initial task list often can't anticipate everything. Tasks may fail in ways that retrying won't fix, or completing all tasks may not fully achieve the stated goal. The **review step** addresses this by running after each task execution and adapting the roadmap when needed.
+For longer, multi-stage projects, the initial task list often can't anticipate everything. Tasks may fail in ways that retrying won't fix, or completing all tasks may not fully achieve the stated goal. **Orchestrator Hooks** address this by running custom agents or scripts after each task execution to evaluate results and adapt the roadmap.
+
+By default, Lemming runs all available hooks (including the built-in `roadmap` hook). You can customize this behavior via the `hooks` subcommand:
 
 ```bash
-# Enable the review step
-lemming run --auto-review
+# Enable or disable hooks for the project
+lemming hooks enable lint
+lemming hooks disable roadmap
 
-# Use a different runner for reviews
-lemming run --auto-review --review-runner claude
+# Reset to default (run all available hooks)
+lemming hooks reset
 
-# Or toggle the "Auto Review" checkbox in the Web UI
+# Or use the config command for bulk updates
+lemming config set hooks roadmap,lint
+lemming config set hooks default
 ```
 
-The reviewer is **conservative by default** — if the roadmap is progressing normally, it does nothing. It only intervenes when it detects one of these situations:
+### Built-in Hook: `roadmap`
+The default `roadmap` hook is **conservative by default** — if the project is progressing normally, it does nothing. It only intervenes when it detects one of these situations:
 
-*   **A task is stuck**: It has exhausted its retries and keeps failing for the same reason. The reviewer may rewrite the task description with a different approach, insert a prerequisite task, or remove it entirely.
-*   **The goal isn't met**: The project context states a clear goal, all tasks are complete, but the goal hasn't been fully achieved. The reviewer adds the minimum set of tasks needed to close the gap.
-*   **Tasks are obsolete**: A completed task's outcomes reveal that remaining pending tasks are unnecessary or incorrect. The reviewer cleans up the roadmap.
+*   **A task is stuck**: It has exhausted its retries. The orchestrator may rewrite the task, insert a prerequisite, or remove it.
+*   **The goal isn't met**: All tasks are complete, but the project goal hasn't been achieved. The orchestrator adds new tasks.
+*   **Tasks are obsolete**: Results reveal that remaining pending tasks are unnecessary. The orchestrator cleans them up.
 
-The reviewer uses the same underlying runner as the task executor (unless `--review-runner` is specified) and communicates through the same `lemming` CLI commands (`add`, `edit`, `delete`, `reset`). When a task hits its max retry limit, the reviewer gets one chance to heal it before the loop aborts.
+### Custom Hooks
+You can create your own hooks by adding Markdown files to `.lemming/hooks/*.md`. These hooks receive the current roadmap and the finished task's results (including logs) as context. See [DOCS/HOOKS.md](docs/HOOKS.md) for details.
+
+### Managing Hooks and Configuration
+Use the `config` and `hooks` commands to manage your project's execution loop:
+
+```bash
+# List all available hooks (built-in and local)
+lemming hooks list
+
+# View current project configuration
+lemming config list
+
+# Persist configuration to tasks.yml
+lemming config set runner aider
+lemming config set hooks roadmap,lint
+```
 
 ---
 
@@ -120,20 +142,25 @@ The reviewer uses the same underlying runner as the task executor (unless `--rev
 *   **`edit <id>`**: Modify a task's description, runner, or position.
 *   **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk operations.
 *   **`outcome <id> <finding>`**: Record a technical detail (e.g., "Database schema is in /migrations").
+*   **`config`**: Manage project configuration (runner, retries, hooks).
+    *   `list`: View current configuration.
+    *   `set <key> <value>`: Update a setting.
+*   **`hooks`**: Manage orchestrator hooks.
+    *   `list`: View available and active hooks.
 
 ### Task Status
 *   **`complete <id>`**: Mark a task as successful.
 *   **`fail <id>`**: Report a blocker or failure for retry.
 *   **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 *   **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
-*   **`logs <id>`**: Print a task's execution log to stdout. Supports `--name runner|review` (default: `runner`).
+*   **`logs [<id>]`**: Print a task's execution log to stdout. If no ID is provided, it defaults to the active or most recent task. Supports `--name runner|orchestrator` (default: `runner`).
 
 ### Execution
-*   **`run`**: Start the orchestrator loop.
-    *   `--retries`: Retries per task (default 3).
-    *   `--runner`: The CLI tool to invoke.
-    *   `--auto-review`: Enable the review step (see below).
-    *   `--env`: Set environment variables for the runner (e.g., `--env OPENAI_API_KEY=sk-...`). Can be used multiple times.
+*   **`run`**: Start the autonomous orchestrator loop.
+    *   `--retry-delay`: Seconds to wait before retries (default 10).
+    *   `--yolo`: Run the runner in auto-approve mode (default: True).
+    *   `--env`: Set environment variables for the runner (e.g., `--env KEY=VALUE`).
+    *   `--no-defaults`: Skip default flag injection for known runners.
     *   `--`: Use `--` to pass any flag directly to the underlying runner.
 *   **`serve`**: Launch the interactive Web UI.
     *   `--tunnel cloudflare|tailscale`: Expose the UI to the public internet via a secure tunnel.

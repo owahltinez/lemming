@@ -47,9 +47,17 @@ test.describe("Favicon Status Synchronization", () => {
     await page.route("**/api/runners", async (route) => {
       await route.fulfill({
         contentType: "application/json",
-        json: ["gemini"],
+        json: ["gemini", "aider"],
       });
     });
+
+    await page.route("**/api/hooks", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        json: ["roadmap"],
+      });
+    });
+
     await page.route("http://localhost:8000/", async (route) => {
       await route.fulfill({
         contentType: "text/html",

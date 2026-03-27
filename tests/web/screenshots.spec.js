@@ -17,7 +17,6 @@ const mockTasks = [
     status: "completed",
     attempts: 1,
     has_runner_log: true,
-    has_review_log: false,
     pid: null,
     agent: null,
     parent: null,
@@ -36,7 +35,6 @@ const mockTasks = [
     status: "completed",
     attempts: 2,
     has_runner_log: true,
-    has_review_log: false,
     pid: null,
     agent: null,
     parent: null,
@@ -54,7 +52,6 @@ const mockTasks = [
     status: "in_progress",
     attempts: 0,
     has_runner_log: true,
-    has_review_log: false,
     pid: 48291,
     agent: null,
     parent: null,
@@ -70,7 +67,6 @@ const mockTasks = [
     status: "pending",
     attempts: 0,
     has_runner_log: false,
-    has_review_log: false,
     pid: null,
     agent: null,
     parent: null,
@@ -85,7 +81,6 @@ const mockTasks = [
     status: "pending",
     attempts: 2,
     has_runner_log: true,
-    has_review_log: false,
     pid: null,
     agent: null,
     parent: null,
@@ -103,7 +98,6 @@ const mockTasks = [
     status: "pending",
     attempts: 0,
     has_runner_log: false,
-    has_review_log: false,
     pid: null,
     agent: "aider",
     parent: "d4e5f6",
@@ -241,6 +235,12 @@ test.describe("Screenshot Generation", () => {
           await route.fulfill({
             contentType: "application/json",
             json: ["gemini", "aider", "claude", "codex"],
+          });
+        });
+        await page.route("**/api/hooks", async (route) => {
+          await route.fulfill({
+            contentType: "application/json",
+            json: ["roadmap"],
           });
         });
 

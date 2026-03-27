@@ -244,21 +244,18 @@ def test_has_log_population(test_tasks):
     data = response.json()
     for task in data["tasks"]:
         assert task["has_runner_log"] is False
-        assert task["has_review_log"] is False
 
     # Create a runner log for task1
-    log_file = paths.get_log_file(api.app.state.tasks_file, "task1", "runner")
+    log_file = paths.get_log_file(api.app.state.tasks_file, "task1")
     log_file.write_text("Some logs")
 
     response = client.get("/api/data")
     data = response.json()
     task1 = next(t for t in data["tasks"] if t["id"] == "task1")
     assert task1["has_runner_log"] is True
-    assert task1["has_review_log"] is False
 
     task2 = next(t for t in data["tasks"] if t["id"] == "task2")
     assert task2["has_runner_log"] is False
-    assert task2["has_review_log"] is False
 
 
 def test_quiet_poll_filter():
@@ -530,15 +527,16 @@ def test_api_delete_log_cleanup(test_tasks):
 
 def test_run_loop(test_tasks):
     with patch("subprocess.Popen") as mock_popen:
-        response = client.post("/api/run", json={"runner": "claude", "retries": 5})
+        response = client.post("/api/run", json={"env": {"KEY": "VALUE"}})
         assert response.status_code == 200
         assert response.json() == {"status": "started"}
 
         args = mock_popen.call_args[0][0]
-        assert "--runner" in args
-        assert "claude" in args
-        assert "--retries" in args
-        assert "5" in args
+        assert "run" in args
+        # Check that we didn't pass redundant flags
+        assert "--runner" not in args
+        assert "--retries" not in args
+        assert "--hook" not in args
 
 
 # --- Directory listing / project parameter tests ---
@@ -558,6 +556,43 @@ def test_list_directories(test_tasks):
     assert "subproject_a" in names
     assert "subproject_b" in names
     assert ".hidden" not in names  # hidden dirs excluded
+
+
+def test_create_directory(test_tasks):
+    """POST /api/directories creates a new directory."""
+    root = api.app.state.root
+    response = client.post("/api/directories", json={"name": "new_dir"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "new_dir"
+    assert data["path"] == "new_dir"
+    assert (root / "new_dir").is_dir()
+
+    # Test creating in a subdirectory
+    (root / "parent").mkdir()
+    response = client.post("/api/directories", json={"path": "parent", "name": "child"})
+    assert response.status_code == 200
+    assert (root / "parent" / "child").is_dir()
+
+
+def test_create_directory_exists(test_tasks):
+    """POST /api/directories fails if directory already exists."""
+    root = api.app.state.root
+    (root / "existing").mkdir()
+    response = client.post("/api/directories", json={"name": "existing"})
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
+def test_create_directory_traversal(test_tasks):
+    """POST /api/directories rejects path traversal."""
+    response = client.post(
+        "/api/directories", json={"path": "../../etc", "name": "foo"}
+    )
+    assert response.status_code == 403
+
+    response = client.post("/api/directories", json={"name": "../outside"})
+    assert response.status_code == 403
 
 
 def test_list_directories_traversal(test_tasks):

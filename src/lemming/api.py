@@ -84,10 +84,16 @@ async def share_token_middleware(request: fastapi.Request, call_next):
 
 
 class RunRequest(pydantic.BaseModel):
-    runner: str | None = "gemini"
     env: dict[str, str] | None = None
-    retries: int | None = None
-    review: bool = False
+
+
+@app.get("/api/hooks")
+def list_hooks(project: str | None = None):
+    """List all available orchestrator hooks (built-in and project-specific)."""
+    from . import runner
+
+    tasks_file = resolve_tasks_file(project)
+    return runner.list_hooks(tasks_file)
 
 
 @app.get("/api/directories")
@@ -106,6 +112,33 @@ def list_directories(path: str = ""):
             rel = item.relative_to(root)
             dirs.append({"name": item.name, "path": str(rel)})
     return {"path": path, "directories": dirs}
+
+
+class CreateDirectoryRequest(pydantic.BaseModel):
+    path: str = ""
+    name: str
+
+
+@app.post("/api/directories")
+def create_directory(request: CreateDirectoryRequest):
+    """Create a new directory under the server root."""
+    root = app.state.root
+    parent = (root / request.path).resolve() if request.path else root
+    if not parent.is_relative_to(root):
+        raise fastapi.HTTPException(403, "Path is outside the server root")
+    if not parent.is_dir():
+        raise fastapi.HTTPException(400, "Parent is not a directory")
+
+    new_dir = parent / request.name
+    if not new_dir.resolve().is_relative_to(root):
+        raise fastapi.HTTPException(403, "Target path is outside the server root")
+
+    if new_dir.exists():
+        raise fastapi.HTTPException(400, "Directory already exists")
+
+    new_dir.mkdir()
+    rel = new_dir.relative_to(root)
+    return {"name": new_dir.name, "path": str(rel)}
 
 
 @app.get("/api/data", response_model=tasks.ProjectData)
@@ -134,8 +167,6 @@ def _start_loop_if_needed(tasks_file: pathlib.Path, cwd: pathlib.Path | None = N
     if tasks.is_loop_running(tasks_file):
         return
 
-    data = tasks.load_tasks(tasks_file)
-
     # Use sys.executable -m lemming.main to ensure we use the same environment
     # and pass the explicit tasks file.
     cmd = [
@@ -152,15 +183,6 @@ def _start_loop_if_needed(tasks_file: pathlib.Path, cwd: pathlib.Path | None = N
             "run",
         ]
     )
-
-    if data.config.auto_review:
-        cmd.append("--auto-review")
-
-    if data.config.retries is not None:
-        cmd.extend(["--retries", str(data.config.retries)])
-
-    if data.config.runner:
-        cmd.extend(["--runner", data.config.runner])
 
     # Start the loop in a new session so it outlives the request.
     subprocess.Popen(cmd, start_new_session=True, env=os.environ.copy(), cwd=cwd)
@@ -255,10 +277,8 @@ def clear_task_endpoint(task_id: str, project: str | None = None):
 
 
 @app.get("/api/tasks/{task_id}/log")
-def get_task_log(task_id: str, name: str = "runner", project: str | None = None):
-    if name not in ("runner", "review"):
-        raise fastapi.HTTPException(400, "Invalid log name")
-    log_file = paths.get_log_file(resolve_tasks_file(project), task_id, name)
+def get_task_log(task_id: str, project: str | None = None):
+    log_file = paths.get_log_file(resolve_tasks_file(project), task_id)
     if not log_file.exists():
         return {"log": ""}
     return {"log": log_file.read_text(encoding="utf-8")}
@@ -301,15 +321,6 @@ def run_loop(request: RunRequest, project: str | None = None):
             "run",
         ]
     )
-
-    if request.retries is not None:
-        cmd.extend(["--retries", str(request.retries)])
-
-    if request.runner:
-        cmd.extend(["--runner", request.runner])
-
-    if request.review:
-        cmd.append("--auto-review")
 
     env = os.environ.copy()
     if request.env:

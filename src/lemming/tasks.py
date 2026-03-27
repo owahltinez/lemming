@@ -30,7 +30,6 @@ class Task(pydantic.BaseModel):
     pid: int | None = None
     last_heartbeat: float | None = None
     has_runner_log: bool = False
-    has_review_log: bool = False
     parent: str | None = None
     parent_tasks_file: str | None = None
     index: int | None = pydantic.Field(default=-1, exclude=True)
@@ -39,9 +38,9 @@ class Task(pydantic.BaseModel):
 class RoadmapConfig(pydantic.BaseModel):
     """Configuration for the roadmap execution loop."""
 
-    auto_review: bool = False
     retries: int = 3
     runner: str = "gemini"
+    hooks: list[str] | None = None
 
 
 class Roadmap(pydantic.BaseModel):
@@ -210,8 +209,7 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     loop_running = is_loop_running(tasks_file)
     for t in data.tasks:
         # Check which log files exist
-        t.has_runner_log = paths.get_log_file(tasks_file, t.id, "runner").exists()
-        t.has_review_log = paths.get_log_file(tasks_file, t.id, "review").exists()
+        t.has_runner_log = paths.get_log_file(tasks_file, t.id).exists()
 
         # Also detect running tasks as a secondary signal (e.g. external callers)
         if not loop_running and t.status == "in_progress":
@@ -408,17 +406,16 @@ def update_heartbeat(
     return True
 
 
-def clear_log(tasks_file: pathlib.Path, task_id: str) -> None:
-    """Deletes all log files (runner, review) for a given task.
+def reset_task_logs(tasks_file: pathlib.Path, task_id: str) -> None:
+    """Deletes the runner log for a given task.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task whose logs should be cleared.
     """
-    for name in ("runner", "review"):
-        log_file = paths.get_log_file(tasks_file, task_id, name)
-        if log_file.exists():
-            log_file.unlink()
+    log_file = paths.get_log_file(tasks_file, task_id)
+    if log_file.exists():
+        log_file.unlink()
 
 
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
@@ -546,18 +543,18 @@ def delete_tasks(
 
         if all_tasks:
             for t in data.tasks:
-                clear_log(tasks_file, t.id)
+                reset_task_logs(tasks_file, t.id)
             data.tasks = []
             data.context = ""
         elif completed_only:
             completed_tasks = [t for t in data.tasks if t.status == "completed"]
             for t in completed_tasks:
-                clear_log(tasks_file, t.id)
+                reset_task_logs(tasks_file, t.id)
             data.tasks = [t for t in data.tasks if t.status != "completed"]
         elif task_id:
             tasks_to_delete = [t for t in data.tasks if t.id.startswith(task_id)]
             for t in tasks_to_delete:
-                clear_log(tasks_file, t.id)
+                reset_task_logs(tasks_file, t.id)
             data.tasks = [t for t in data.tasks if not t.id.startswith(task_id)]
 
         save_tasks(tasks_file, data)
@@ -706,7 +703,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> Task:
         target.last_heartbeat = None
 
         save_tasks(tasks_file, data)
-        clear_log(tasks_file, target.id)
+        reset_task_logs(tasks_file, target.id)
     return target
 
 

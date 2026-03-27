@@ -68,7 +68,7 @@
 
         <section :show="!loading" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col grow min-h-0">
             <div class="py-2 px-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-between items-center shrink-0">
-                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ $.$$name }} Log</h2>
+                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Execution Log</h2>
                 <div class="flex items-center gap-4">
                     <div :if="task.status === 'in_progress' && task.started_at" class="hidden sm:block">
                         <span class="text-10px font-semibold uppercase text-gray-400 mr-1">Started:</span>
@@ -110,7 +110,6 @@
 
                     $.task = { id: '', status: '', description: '' };
                     $.taskLog = '';
-                    $.$$name = $.$$name ?? 'runner';
                     $.loading = true;
 
                     // --- Persistence Management (scoped by project) ---
@@ -203,9 +202,7 @@
                     $.fetchLog = async () => {
                         const taskId = getTaskId();
                         const logUrl = logApiUrl(`/api/tasks/${taskId}/log`);
-                        const u = new URL(logUrl);
-                        u.searchParams.set('name', $.$$name);
-                        const response = await fetch(u.toString());
+                        const response = await fetch(logUrl);
                         if (response.ok) {
                             const data = await response.json();
                             const newLog = data.log || 'No log available yet.';

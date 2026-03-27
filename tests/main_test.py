@@ -404,16 +404,34 @@ class TestLemming(unittest.TestCase):
 
     def test_run_default_quiet(self):
         # Run is quiet by default, but should still report attempt
+        self.cli_runner.invoke(
+            main.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "config",
+                "set",
+                "runner",
+                "true",
+            ],
+        )
+        self.cli_runner.invoke(
+            main.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "config",
+                "set",
+                "retries",
+                "1",
+            ],
+        )
         result = self.cli_runner.invoke(
             main.cli,
             [
                 "--tasks-file",
                 str(self.test_tasks_file),
                 "run",
-                "--runner",
-                "true",
-                "--retries",
-                "1",
             ],
         )
         self.assertIn("[12345678] Attempt 1/1: Initial Task", result.output)
@@ -421,6 +439,28 @@ class TestLemming(unittest.TestCase):
 
     def test_run_verbose_global(self):
         # Run with global verbose shows more
+        self.cli_runner.invoke(
+            main.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "config",
+                "set",
+                "runner",
+                "true",
+            ],
+        )
+        self.cli_runner.invoke(
+            main.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "config",
+                "set",
+                "retries",
+                "1",
+            ],
+        )
         result = self.cli_runner.invoke(
             main.cli,
             [
@@ -428,10 +468,6 @@ class TestLemming(unittest.TestCase):
                 "--tasks-file",
                 str(self.test_tasks_file),
                 "run",
-                "--runner",
-                "true",
-                "--retries",
-                "1",
             ],
         )
         self.assertIn("--- Task 12345678", result.output)
@@ -440,16 +476,34 @@ class TestLemming(unittest.TestCase):
     def test_run_attempts_limit(self):
         # Run with retries=2. The runner 'true' does not use lemming CLI
         # to complete the task, so it counts as an execution without completion.
+        self.cli_runner.invoke(
+            main.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "config",
+                "set",
+                "runner",
+                "true",
+            ],
+        )
+        self.cli_runner.invoke(
+            main.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "config",
+                "set",
+                "retries",
+                "2",
+            ],
+        )
         result = self.cli_runner.invoke(
             main.cli,
             [
                 "--tasks-file",
                 str(self.test_tasks_file),
                 "run",
-                "--runner",
-                "true",
-                "--retries",
-                "2",
                 "--retry-delay",
                 "0",
             ],
@@ -983,8 +1037,11 @@ class TestLemmingRun(unittest.TestCase):
         mock_process.wait.side_effect = wait_side_effect
         mock_popen.return_value = mock_process
 
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "1"]
+        )
         result = self.cli_runner.invoke(
-            main.cli, ["--verbose"] + self.base_args + ["run", "--retries", "1"]
+            main.cli, ["--verbose"] + self.base_args + ["run"]
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("All tasks completed!", result.output)
@@ -1003,15 +1060,19 @@ class TestLemmingRun(unittest.TestCase):
         mock_process.communicate.return_value = ("stdout", "stderr")
         mock_popen.return_value = mock_process
 
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "2"]
+        )
         result = self.cli_runner.invoke(
             main.cli,
-            self.base_args + ["run", "--retries", "2", "--retry-delay", "0"],
+            self.base_args + ["run", "--retry-delay", "0"],
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn(
             "Task task1 failed after 2 attempts. Aborting run.", result.output
         )
-        self.assertEqual(mock_popen.call_count, 2)
+        # 2 attempts (Task + Hook) + 1 final failure Hook run = 5
+        self.assertEqual(mock_popen.call_count, 5)
 
     @unittest.mock.patch("subprocess.Popen")
     def test_run_subprocess_error(self, mock_popen):
@@ -1024,9 +1085,10 @@ class TestLemmingRun(unittest.TestCase):
         mock_popen.return_value = mock_process
 
         # It should retry if status is still pending
-        result = self.cli_runner.invoke(
-            main.cli, self.base_args + ["run", "--retries", "1"]
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "1"]
         )
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["run"])
         self.assertIn("execution failed with exit code 1", result.output)
         self.assertIn(
             "Task task1 failed after 1 attempts. Aborting run.", result.output
@@ -1038,9 +1100,10 @@ class TestLemmingRun(unittest.TestCase):
             2, "No such file or directory", "gemini"
         )
 
-        result = self.cli_runner.invoke(
-            main.cli, self.base_args + ["run", "--retries", "1"]
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "1"]
         )
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["run"])
         self.assertIn("An error occurred while executing gemini", result.output)
 
     @unittest.mock.patch("subprocess.Popen")
@@ -1072,8 +1135,11 @@ class TestLemmingRun(unittest.TestCase):
         mock_popen.return_value = mock_process
 
         # 3. Run lemming
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "1"]
+        )
         result = self.cli_runner.invoke(
-            main.cli, ["--verbose"] + self.base_args + ["run", "--retries", "1"]
+            main.cli, ["--verbose"] + self.base_args + ["run"]
         )
 
         self.assertEqual(result.exit_code, 0)
@@ -1103,15 +1169,17 @@ class TestLemmingLogging(unittest.TestCase):
         task_id = res.output.strip()
 
         # 2. Run the task using a simple echo runner
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "1"]
+        )
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "runner", "echo"]
+        )
         res = self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
                 "run",
-                "--retries",
-                "1",
-                "--runner",
-                "echo",
                 "Hello from log test",
             ],
         )
@@ -1127,14 +1195,16 @@ class TestLemmingLogging(unittest.TestCase):
         res = self.cli_runner.invoke(main.cli, self.base_args + ["add", "Test cleanup"])
         task_id = res.output.strip()
         self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "1"]
+        )
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "runner", "echo"]
+        )
+        self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
                 "run",
-                "--retries",
-                "1",
-                "--runner",
-                "echo",
                 "cleanup test",
             ],
         )
@@ -1154,14 +1224,16 @@ class TestLemmingLogging(unittest.TestCase):
         )
         task_id_2 = res.output.strip()
         self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "retries", "1"]
+        )
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["config", "set", "runner", "echo"]
+        )
+        self.cli_runner.invoke(
             main.cli,
             self.base_args
             + [
                 "run",
-                "--retries",
-                "1",
-                "--runner",
-                "echo",
                 "delete test",
             ],
         )

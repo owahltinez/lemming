@@ -39,17 +39,17 @@
       $.tasks = [];
       $.context = "";
       $.config = {
-        auto_review: false,
         retries: 3,
         runner: "gemini",
+        hooks: ["roadmap"],
       };
       $.cwd = "";
       $.newTask = "";
       $.loading = true;
       $.runners = [];
+      $.availableHooks = [];
       $.selectedRunner = "gemini";
       $.retries = 3;
-      $.reviewEnabled = false;
       $.envOverrides = []; // Will hydrate below
       $.hideCompleted = Storage.get("hide_completed", false);
       $.toasts = [];
@@ -65,6 +65,8 @@
       $.folderPickerPath = "";
       $.folderPickerDirs = [];
       $.folderPickerLoading = false;
+      $.showNewFolderInput = false;
+      $.newFolderName = "";
 
       // --- Computed Properties ---
       $.completedCount = $.$computed(
@@ -183,7 +185,6 @@
           $.config = data.config;
           $.selectedRunner = data.config.runner;
           $.retries = data.config.retries;
-          $.reviewEnabled = data.config.auto_review;
         }
 
         // --- Update HTML Title ---
@@ -254,11 +255,18 @@
         }
       };
 
+      $.fetchHooks = async () => {
+        const response = await fetch(apiUrl("/api/hooks"));
+        if (response.ok) {
+          $.availableHooks = await response.json();
+        }
+      };
+
       $.saveConfigToServer = async () => {
         const config = {
-          auto_review: $.reviewEnabled,
           retries: Number.parseInt($.retries, 10) || 3,
           runner: $.selectedRunner,
+          hooks: $.config.hooks,
         };
         await fetch(apiUrl("/api/config"), {
           method: "POST",
@@ -276,7 +284,20 @@
       $.saveHideCompletedPreference = () => {
         Storage.set("hide_completed", $.hideCompleted);
       };
-      $.saveReviewPreference = () => {
+      $.toggleHook = (name) => {
+        let hooks = $.config.hooks;
+        if (hooks === null || hooks === undefined) {
+          hooks = [...$.availableHooks];
+        }
+        if (hooks.includes(name)) {
+          $.config.hooks = hooks.filter((h) => h !== name);
+        } else {
+          $.config.hooks = [...hooks, name];
+        }
+        $.saveConfigToServer();
+      };
+      $.resetHooks = () => {
+        $.config.hooks = null;
         $.saveConfigToServer();
       };
 
@@ -437,17 +458,8 @@
         }
 
         const payload = {
-          runner: $.selectedRunner,
           env: Object.keys(env).length > 0 ? env : undefined,
-          review: $.reviewEnabled,
         };
-
-        if ($.retries) {
-          const parsed = Number.parseInt($.retries, 10);
-          if (!Number.isNaN(parsed) && parsed > 0) {
-            payload.retries = parsed;
-          }
-        }
 
         const res = await fetch(apiUrl("/api/run"), {
           method: "POST",
@@ -463,6 +475,8 @@
       // --- Folder Picker ---
       $.openFolderPicker = async () => {
         $.folderPickerPath = "";
+        $.showNewFolderInput = false;
+        $.newFolderName = "";
         await $.fetchFolderPickerDirs("");
         const modal = document.getElementById("folder-picker-modal");
         if (modal) modal.showModal();
@@ -471,6 +485,11 @@
       $.closeFolderPicker = () => {
         const modal = document.getElementById("folder-picker-modal");
         if (modal) modal.close();
+      };
+
+      $.startNewFolder = () => {
+        $.showNewFolderInput = true;
+        $.newFolderName = "";
       };
 
       $.fetchFolderPickerDirs = async (path) => {
@@ -485,6 +504,26 @@
         $.folderPickerLoading = false;
       };
 
+      $.createFolder = async () => {
+        if (!$.newFolderName) return;
+        const res = await fetch(apiUrl("/api/directories"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: $.folderPickerPath,
+            name: $.newFolderName,
+          }),
+        });
+        if (res.ok) {
+          $.addToast("Folder created!", "success");
+          $.showNewFolderInput = false;
+          $.newFolderName = "";
+          await $.fetchFolderPickerDirs($.folderPickerPath);
+        } else {
+          const err = await res.json();
+          $.addToast(err.detail || "Failed to create folder", "error");
+        }
+      };
       $.folderPickerNavigate = async (path) => {
         await $.fetchFolderPickerDirs(path);
       };
@@ -532,7 +571,7 @@
       await renderer.mount(document.body);
 
       // --- Initial Data Fetch (after mount so $$project is available) ---
-      await Promise.all([$.fetchData(), $.fetchRunners()]);
+      await Promise.all([$.fetchData(), $.fetchRunners(), $.fetchHooks()]);
 
       // --- Auto-refresh via polling ---
       document.addEventListener("visibilitychange", () => {

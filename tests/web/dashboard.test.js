@@ -18,6 +18,12 @@ const createInitialState = (overrides = {}) => {
     selectedAgent: "gemini",
     envOverrides: [],
     runners: [],
+    availableHooks: [],
+    config: {
+      retries: 3,
+      runner: "gemini",
+      hooks: ["roadmap"],
+    },
     folderPickerBreadcrumbs: [],
     folderPickerDirs: [],
     hideCompleted,
