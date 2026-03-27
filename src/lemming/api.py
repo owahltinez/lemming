@@ -212,7 +212,7 @@ def get_task(task_id: str, project: str | None = None):
     return target
 
 
-@app.patch("/api/tasks/{task_id}")
+@app.post("/api/tasks/{task_id}/update")
 def update_task(task_id: str, update: dict, project: str | None = None):
     tasks_file = resolve_tasks_file(project)
     status = update.get("status")
@@ -246,13 +246,13 @@ def update_task(task_id: str, update: dict, project: str | None = None):
         raise fastapi.HTTPException(400, str(e))
 
 
-@app.delete("/api/tasks/completed")
+@app.post("/api/tasks/delete-completed")
 def delete_completed_tasks(project: str | None = None):
     tasks.delete_tasks(resolve_tasks_file(project), completed_only=True)
     return {"status": "ok"}
 
 
-@app.delete("/api/tasks/{task_id}")
+@app.post("/api/tasks/{task_id}/delete")
 def delete_task(task_id: str, project: str | None = None):
     tasks.delete_tasks(resolve_tasks_file(project), task_id=task_id)
     return {"status": "ok"}

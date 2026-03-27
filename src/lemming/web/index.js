@@ -56,7 +56,7 @@
       $.expanded = {};
       $.loopRunning = false;
       $.editingTask = null;
-      $.editFormData = { description: "", runner: "", parent: "" };
+      $.editFormData = { description: "", parent: "" };
 
       // --- Favicon Status ---
       $.faviconState = "idle";
@@ -343,8 +343,8 @@
 
       $.deleteTask = async (id) => {
         if (confirm("Delete this task?")) {
-          const res = await fetch(apiUrl(`/api/tasks/${id}`), {
-            method: "DELETE",
+          const res = await fetch(apiUrl(`/api/tasks/${id}/delete`), {
+            method: "POST",
           });
           if (res.ok) await $.fetchData();
         }
@@ -352,8 +352,8 @@
 
       $.deleteCompletedTasks = async () => {
         if (confirm("Delete ALL completed tasks?")) {
-          const res = await fetch(apiUrl("/api/tasks/completed"), {
-            method: "DELETE",
+          const res = await fetch(apiUrl("/api/tasks/delete-completed"), {
+            method: "POST",
           });
           if (res.ok) {
             $.addToast("Completed tasks deleted", "success");
@@ -378,7 +378,6 @@
         $.editingTask = task;
         $.editFormData = {
           description: task.description || "",
-          runner: task.runner || "",
           parent: task.parent || "",
         };
         const modal = document.getElementById("edit-modal");
@@ -397,12 +396,11 @@
         const task = $.editingTask;
         const update = {
           description: $.editFormData.description.trim() || task.description,
-          runner: $.editFormData.runner.trim() || null,
           parent: $.editFormData.parent.trim() || null,
         };
 
-        const res = await fetch(apiUrl(`/api/tasks/${task.id}`), {
-          method: "PATCH",
+        const res = await fetch(apiUrl(`/api/tasks/${task.id}/update`), {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(update),
         });
@@ -415,8 +413,8 @@
       };
 
       $.uncompleteTask = async (id) => {
-        const res = await fetch(apiUrl(`/api/tasks/${id}`), {
-          method: "PATCH",
+        const res = await fetch(apiUrl(`/api/tasks/${id}/update`), {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "pending" }),
         });
@@ -494,8 +492,8 @@
 
       $.fetchFolderPickerDirs = async (path) => {
         $.folderPickerLoading = true;
-        const params = path ? { path } : {};
-        const res = await fetch(apiUrl("/api/directories", params));
+        const params = new URLSearchParams(path ? { path } : {});
+        const res = await fetch(`/api/directories?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
           $.folderPickerPath = data.path;
@@ -506,7 +504,7 @@
 
       $.createFolder = async () => {
         if (!$.newFolderName) return;
-        const res = await fetch(apiUrl("/api/directories"), {
+        const res = await fetch("/api/directories", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

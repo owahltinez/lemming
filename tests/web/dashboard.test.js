@@ -517,6 +517,42 @@ describe("Lemming Web Dashboard", () => {
     );
   });
 
+  test("renders outcomes with whitespace-pre-wrap class", async () => {
+    const initialState = createInitialState({
+      tasks: [
+        {
+          id: "123",
+          description: "Task with outcomes",
+          status: "completed",
+          outcomes: ["Outcome 1", "Outcome 2"],
+        },
+      ],
+    });
+
+    const renderer = new Renderer(initialState);
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+
+    const root =
+      fragment.querySelector("body") || fragment.firstElementChild || fragment;
+    if (root.hasAttribute(":data")) root.removeAttribute(":data");
+    if (root.hasAttribute(":render")) root.removeAttribute(":render");
+
+    await renderer.mount(fragment);
+
+    const taskItem = fragment.querySelector('[role="listitem"]');
+    const outcomesList = taskItem.querySelector("ul");
+    const outcomeItems = outcomesList.querySelectorAll("li");
+    assert.strictEqual(outcomeItems.length, 2);
+    assert.ok(
+      outcomeItems[0].classList.contains("whitespace-pre-wrap"),
+      "First outcome should have whitespace-pre-wrap class",
+    );
+    assert.ok(
+      outcomeItems[1].classList.contains("whitespace-pre-wrap"),
+      "Second outcome should have whitespace-pre-wrap class",
+    );
+  });
+
   test("renders outcomes but no add outcome form", async () => {
     const tasks = [
       {

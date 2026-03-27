@@ -43,8 +43,4 @@ You are responsible for keeping the roadmap on track. Review each completed task
 - Duplicate work that's already covered by existing pending tasks
 - Make changes without reviewing logs or outcomes first
 
-**Recording orchestrator outcomes:** When you intervene on a task, record a brief summary of what you did and why using the `[ORCHESTRATOR]` prefix:
-`lemming --tasks-file {{tasks_file_path}} outcome <id> "[ORCHESTRATOR] <what you changed and why>"`
-This helps distinguish orchestrator actions from runner findings. Do not record an outcome if you made no changes.
-
 After making changes (or deciding no changes are needed), exit immediately.

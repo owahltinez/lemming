@@ -78,7 +78,9 @@ def test_update_task_to_pending_auto_starts_loop(test_tasks):
         # Mock is_loop_running to return False
         with patch("lemming.tasks.is_loop_running", return_value=False):
             # Update to pending
-            response = client.patch(f"/api/tasks/{task.id}", json={"status": "pending"})
+            response = client.post(
+                f"/api/tasks/{task.id}/update", json={"status": "pending"}
+            )
             assert response.status_code == 200
 
             # Verify Popen was called

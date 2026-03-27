@@ -173,7 +173,7 @@ def test_add_task_with_runner(test_tasks):
 
 
 def test_delete_completed_tasks(test_tasks):
-    response = client.delete("/api/tasks/completed")
+    response = client.post("/api/tasks/delete-completed")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
@@ -187,7 +187,7 @@ def test_delete_completed_tasks(test_tasks):
 
 
 def test_delete_specific_task(test_tasks):
-    response = client.delete("/api/tasks/task2")
+    response = client.post("/api/tasks/task2/delete")
     assert response.status_code == 200
 
     data = tasks.load_tasks(test_tasks)
@@ -197,8 +197,8 @@ def test_delete_specific_task(test_tasks):
 
 
 def test_update_task_description(test_tasks):
-    response = client.patch(
-        "/api/tasks/task2", json={"description": "Updated Pending Task"}
+    response = client.post(
+        "/api/tasks/task2/update", json={"description": "Updated Pending Task"}
     )
     assert response.status_code == 200
     assert response.json()["description"] == "Updated Pending Task"
@@ -209,8 +209,9 @@ def test_update_task_description(test_tasks):
 
 
 def test_update_completed_task_description_fails(test_tasks):
-    response = client.patch(
-        "/api/tasks/task1", json={"description": "Attempt to update completed task"}
+    response = client.post(
+        "/api/tasks/task1/update",
+        json={"description": "Attempt to update completed task"},
     )
     assert response.status_code == 400
     assert "Cannot edit description of a completed task" in response.json()["detail"]
@@ -218,7 +219,7 @@ def test_update_completed_task_description_fails(test_tasks):
 
 def test_uncomplete_task_via_api(test_tasks):
     # Updating status of a completed task should still be allowed
-    response = client.patch("/api/tasks/task1", json={"status": "pending"})
+    response = client.post("/api/tasks/task1/update", json={"status": "pending"})
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
     assert response.json()["attempts"] == 0
@@ -241,6 +242,7 @@ def test_build_project_data(test_tasks):
 def test_has_log_population(test_tasks):
     # Initially no logs
     response = client.get("/api/data")
+    assert response.status_code == 200
     data = response.json()
     for task in data["tasks"]:
         assert task["has_runner_log"] is False
@@ -250,6 +252,7 @@ def test_has_log_population(test_tasks):
     log_file.write_text("Some logs")
 
     response = client.get("/api/data")
+    assert response.status_code == 200
     data = response.json()
     task1 = next(t for t in data["tasks"] if t["id"] == "task1")
     assert task1["has_runner_log"] is True
@@ -300,17 +303,17 @@ def test_quiet_poll_filter():
     )
     assert filt.filter(record_other) is True
 
-    # Important: PATCH /api/tasks should NOT be quieted.
-    record_patch = logging.LogRecord(
+    # Important: POST /api/tasks should NOT be quieted.
+    record_post = logging.LogRecord(
         name="uvicorn.access",
         level=logging.INFO,
         pathname="",
         lineno=0,
         msg='%s - "%s %s HTTP/%s" %d',
-        args=("127.0.0.1:55964", "PATCH", "/api/tasks/abc-123", "1.1", 200),
+        args=("127.0.0.1:55964", "POST", "/api/tasks/abc-123", "1.1", 200),
         exc_info=None,
     )
-    assert filt.filter(record_patch) is True
+    assert filt.filter(record_post) is True
 
 
 def test_get_single_task(test_tasks):
@@ -518,7 +521,7 @@ def test_api_delete_log_cleanup(test_tasks):
     assert log_file.exists()
 
     # 3. Delete via API
-    response = client.delete(f"/api/tasks/{task_id}")
+    response = client.post(f"/api/tasks/{task_id}/delete")
     assert response.status_code == 200
     assert not log_file.exists()
 
@@ -623,6 +626,7 @@ def test_project_param_get_data(test_tasks):
 
     # Default project should not have this task
     response = client.get("/api/data")
+    assert response.status_code == 200
     data = response.json()
     assert not any(t["description"] == "Sub-project task" for t in data["tasks"])
 
@@ -639,6 +643,7 @@ def test_project_delete_completed_isolation(test_tasks):
         json={"description": "Sub task"},
         params={"project": "isolated"},
     )
+    assert res.status_code == 200
     task_id = res.json()["id"]
     # Mark it completed (requires outcomes, so use update_task directly)
     tasks.update_task(
@@ -649,10 +654,12 @@ def test_project_delete_completed_isolation(test_tasks):
     )
 
     # Delete completed in ROOT
-    client.delete("/api/tasks/completed")
+    response = client.post("/api/tasks/delete-completed")
+    assert response.status_code == 200
 
     # Sub-project's completed task should still exist
     res = client.get("/api/data", params={"project": "isolated"})
+    assert res.status_code == 200
     assert any(t["id"] == task_id for t in res.json()["tasks"])
 
 
@@ -663,18 +670,21 @@ def test_project_context_isolation(test_tasks):
     subdir.mkdir(exist_ok=True)
 
     # Set context for sub-project
-    client.post(
+    response = client.post(
         "/api/context",
         json={"context": "Sub-project context"},
         params={"project": "ctx_test"},
     )
+    assert response.status_code == 200
 
     # Root context should be unchanged
     res = client.get("/api/data")
+    assert res.status_code == 200
     assert res.json()["context"] == "Initial context"
 
     # Sub-project context should be set
     res = client.get("/api/data", params={"project": "ctx_test"})
+    assert res.status_code == 200
     assert res.json()["context"] == "Sub-project context"
 
 

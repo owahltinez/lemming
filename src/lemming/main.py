@@ -291,8 +291,8 @@ def status(ctx: click.Context, task_id: str | None):
 
     if target.outcomes:
         click.secho("\n--- Outcomes ---", fg="magenta", bold=True)
-        for outcome in target.outcomes:
-            click.echo(f"- {outcome}")
+        for i, outcome in enumerate(target.outcomes):
+            click.echo(f"[{i}] {outcome}")
 
 
 @cli.command(short_help="[<taskid>] Print a task's log to stdout")
@@ -411,11 +411,31 @@ def uncomplete(ctx: click.Context, task_id: str):
         ctx.exit(1)
 
 
-@cli.command(short_help="<taskid> <text> Add an outcome to a task")
+class OutcomeGroup(click.Group):
+    """Custom group to handle legacy `lemming outcome <id> <text>` syntax."""
+
+    def parse_args(self, ctx, args):
+        # If the first argument is not a known command and not an option,
+        # we infer 'list' if one argument is provided, or 'add' if more.
+        if args and args[0] not in self.commands and not args[0].startswith("-"):
+            if len(args) == 1:
+                args.insert(0, "list")
+            else:
+                args.insert(0, "add")
+        return super().parse_args(ctx, args)
+
+
+@cli.group(cls=OutcomeGroup, short_help="Manage task outcomes")
+def outcome():
+    """Manages technical outcomes or findings for specific tasks."""
+    pass
+
+
+@outcome.command(name="add", short_help="<taskid> <text> Add an outcome")
 @click.argument("task_id")
 @click.argument("text")
 @click.pass_context
-def outcome(ctx: click.Context, task_id: str, text: str):
+def outcome_add(ctx: click.Context, task_id: str, text: str):
     """Records a technical outcome or finding for a specific task.
 
     Args:
@@ -429,6 +449,74 @@ def outcome(ctx: click.Context, task_id: str, text: str):
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
+
+
+@outcome.command(name="delete", short_help="<taskid> <index> Delete an outcome")
+@click.argument("task_id")
+@click.argument("index", type=int)
+@click.pass_context
+def outcome_delete(ctx: click.Context, task_id: str, index: int):
+    """Deletes an outcome from a task by its index (starting from 0).
+
+    Args:
+        task_id: The ID of the task.
+        index: The index of the outcome to delete.
+    """
+    tasks_file = ctx.obj["TASKS_FILE"]
+    try:
+        target_task = tasks.delete_outcome(tasks_file, task_id, index)
+        click.echo(f"Outcome {index} deleted from task {target_task.id}.")
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
+
+
+@outcome.command(name="edit", short_help="<taskid> <index> <new_text> Edit an outcome")
+@click.argument("task_id")
+@click.argument("index", type=int)
+@click.argument("text")
+@click.pass_context
+def outcome_edit(ctx: click.Context, task_id: str, index: int, text: str):
+    """Edits an existing outcome for a task by its index (starting from 0).
+
+    Args:
+        task_id: The ID of the task.
+        index: The index of the outcome to edit.
+        text: The new outcome text.
+    """
+    tasks_file = ctx.obj["TASKS_FILE"]
+    try:
+        target_task = tasks.edit_outcome(tasks_file, task_id, index, text)
+        click.echo(f"Outcome {index} updated for task {target_task.id}.")
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
+
+
+@outcome.command(name="list", short_help="<taskid> List outcomes for a task")
+@click.argument("task_id")
+@click.pass_context
+def outcome_list(ctx: click.Context, task_id: str):
+    """Lists all outcomes for a specific task with their indices.
+
+    Args:
+        task_id: The ID of the task.
+    """
+    tasks_file = ctx.obj["TASKS_FILE"]
+    data = tasks.load_tasks(tasks_file)
+    target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
+
+    if not target:
+        click.echo(f"Error: Task {task_id} not found.")
+        ctx.exit(1)
+
+    if not target.outcomes:
+        click.echo(f"No outcomes for task {target.id}.")
+        return
+
+    click.secho(f"Outcomes for task {target.id}:", bold=True)
+    for i, o in enumerate(target.outcomes):
+        click.echo(f"[{i}] {o}")
 
 
 @cli.group(name="config", short_help="Manage project configuration")

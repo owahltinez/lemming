@@ -94,6 +94,31 @@ def test_add_outcome(tmp_path):
     assert "Something happened" in data.tasks[0].outcomes
 
 
+def test_delete_outcome(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Delete outcome test")
+    task_id = task.id
+
+    tasks.add_outcome(tasks_file, task_id, "Outcome 0")
+    tasks.add_outcome(tasks_file, task_id, "Outcome 1")
+    tasks.add_outcome(tasks_file, task_id, "Outcome 2")
+
+    tasks.delete_outcome(tasks_file, task_id, 1)
+    data = tasks.load_tasks(tasks_file)
+    assert data.tasks[0].outcomes == ["Outcome 0", "Outcome 2"]
+
+
+def test_edit_outcome(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Edit outcome test")
+    task_id = task.id
+
+    tasks.add_outcome(tasks_file, task_id, "Old outcome")
+    tasks.edit_outcome(tasks_file, task_id, 0, "New outcome")
+    data = tasks.load_tasks(tasks_file)
+    assert data.tasks[0].outcomes == ["New outcome"]
+
+
 def test_reset_task(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task = tasks.add_task(tasks_file, "Reset me")

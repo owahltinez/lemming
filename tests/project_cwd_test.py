@@ -91,8 +91,8 @@ def test_update_task_starts_loop_with_cwd(test_workspace):
 
     with patch("subprocess.Popen") as mock_popen:
         # Updating a task to pending should trigger auto-start
-        response = client.patch(
-            "/api/tasks/sub1",
+        response = client.post(
+            "/api/tasks/sub1/update",
             json={"status": "pending"},
             params={"project": "my-subproject"},
         )
