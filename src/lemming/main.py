@@ -549,7 +549,7 @@ def config_list(ctx: click.Context):
 @config_group.command(name="set")
 @click.argument(
     "key",
-    type=click.Choice(["runner", "retries", "hooks"]),
+    type=click.Choice(["runner", "retries"]),
 )
 @click.argument("value")
 @click.pass_context
@@ -559,8 +559,6 @@ def config_set(ctx: click.Context, key: str, value: str):
     Examples:
       lemming config set runner aider
       lemming config set retries 5
-      lemming config set hooks roadmap,lint
-      lemming config set hooks default  # Reset to all available hooks
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     data = tasks.load_tasks(tasks_file)
@@ -572,15 +570,6 @@ def config_set(ctx: click.Context, key: str, value: str):
             data.config.retries = int(value)
         except ValueError:
             raise click.UsageError(f"Value for {key} must be an integer.")
-    elif key == "hooks":
-        if value.lower() in ("default", "all", ""):
-            data.config.hooks = None
-            value = "(all available)"
-        elif value.lower() == "none":
-            data.config.hooks = []
-            value = "(none)"
-        else:
-            data.config.hooks = [h.strip() for h in value.split(",") if h.strip()]
 
     tasks.save_tasks(tasks_file, data)
     click.echo(f"Updated {key} to {value}")
@@ -609,50 +598,93 @@ def hooks_list(ctx: click.Context):
 
 
 @hooks_group.command(name="enable")
-@click.argument("name")
+@click.argument("names", nargs=-1, required=True)
 @click.pass_context
-def hooks_enable(ctx: click.Context, name: str):
-    """Enables a specific orchestrator hook."""
+def hooks_enable(ctx: click.Context, names: tuple[str, ...]):
+    """Enables one or more orchestrator hooks."""
     tasks_file = ctx.obj["TASKS_FILE"]
     available = runner.list_hooks(tasks_file)
-    if name not in available:
-        click.echo(f"Error: Hook '{name}' not found.")
-        ctx.exit(1)
 
     data = tasks.load_tasks(tasks_file)
-    if data.config.hooks is None:
-        # If currently "all", it's already enabled.
-        # We don't transition to an explicit list here to keep the default behavior.
-        click.echo(
-            f"Hook '{name}' is already active (all available hooks are enabled)."
-        )
-        return
+    for name in names:
+        if name not in available:
+            click.echo(f"Error: Hook '{name}' not found.")
+            ctx.exit(1)
 
-    if name not in data.config.hooks:
-        data.config.hooks.append(name)
-        tasks.save_tasks(tasks_file, data)
-        click.echo(f"Enabled hook: {name}")
-    else:
-        click.echo(f"Hook '{name}' is already enabled.")
+        if data.config.hooks is None:
+            # If currently "all", it's already enabled.
+            # We don't transition to an explicit list here to keep the default behavior.
+            click.echo(
+                f"Hook '{name}' is already active (all available hooks are enabled)."
+            )
+            continue
+
+        if name not in data.config.hooks:
+            data.config.hooks.append(name)
+            click.echo(f"Enabled hook: {name}")
+        else:
+            click.echo(f"Hook '{name}' is already enabled.")
+
+    tasks.save_tasks(tasks_file, data)
 
 
 @hooks_group.command(name="disable")
-@click.argument("name")
+@click.argument("names", nargs=-1, required=True)
 @click.pass_context
-def hooks_disable(ctx: click.Context, name: str):
-    """Disables a specific orchestrator hook."""
+def hooks_disable(ctx: click.Context, names: tuple[str, ...]):
+    """Disables one or more orchestrator hooks."""
     tasks_file = ctx.obj["TASKS_FILE"]
     available = runner.list_hooks(tasks_file)
 
     data = tasks.load_tasks(tasks_file)
-    if data.config.hooks is None:
-        # If currently "all", we transition to an explicit list minus the disabled one
-        data.config.hooks = [h for h in available if h != name]
-    else:
-        data.config.hooks = [h for h in data.config.hooks if h != name]
+    for name in names:
+        if name not in available:
+            click.echo(f"Error: Hook '{name}' not found.")
+            ctx.exit(1)
+
+        if data.config.hooks is None:
+            # If currently "all", we transition to an explicit list minus the disabled one
+            data.config.hooks = [h for h in available if h != name]
+        else:
+            data.config.hooks = [h for h in data.config.hooks if h != name]
+
+        click.echo(f"Disabled hook: {name}")
 
     tasks.save_tasks(tasks_file, data)
-    click.echo(f"Disabled hook: {name}")
+
+
+@hooks_group.command(name="set")
+@click.argument("names", nargs=-1)
+@click.pass_context
+def hooks_set(ctx: click.Context, names: tuple[str, ...]):
+    """Sets the specific list of active orchestrator hooks.
+
+    Provide a space-separated list of hook names. If no names are provided,
+    all hooks will be disabled.
+
+    Examples:
+      lemming hooks set roadmap lint
+      lemming hooks set roadmap
+      lemming hooks set  # Disables all hooks
+    """
+    tasks_file = ctx.obj["TASKS_FILE"]
+    available = runner.list_hooks(tasks_file)
+
+    data = tasks.load_tasks(tasks_file)
+    new_hooks = []
+    for name in names:
+        if name not in available:
+            click.echo(f"Error: Hook '{name}' not found.")
+            ctx.exit(1)
+        new_hooks.append(name)
+
+    data.config.hooks = new_hooks
+    tasks.save_tasks(tasks_file, data)
+
+    if not new_hooks:
+        click.echo("All hooks disabled.")
+    else:
+        click.echo(f"Active hooks set to: {', '.join(new_hooks)}")
 
 
 @hooks_group.command(name="reset")

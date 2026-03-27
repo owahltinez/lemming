@@ -98,12 +98,11 @@ By default, Lemming runs all available hooks (including the built-in `roadmap` h
 lemming hooks enable lint
 lemming hooks disable roadmap
 
+# Set the exact list of active hooks
+lemming hooks set roadmap lint
+
 # Reset to default (run all available hooks)
 lemming hooks reset
-
-# Or use the config command for bulk updates
-lemming config set hooks roadmap,lint
-lemming config set hooks default
 ```
 
 ### Built-in Hook: `roadmap`
@@ -128,7 +127,7 @@ lemming config list
 
 # Persist configuration to tasks.yml
 lemming config set runner aider
-lemming config set hooks roadmap,lint
+lemming hooks set roadmap lint
 ```
 
 ---
@@ -146,13 +145,14 @@ lemming config set hooks roadmap,lint
     *   `add <id> <finding>`: Record a new technical detail.
     *   `edit <id> <index> <text>`: Modify an existing outcome.
     *   `delete <id> <index>`: Remove an outcome.
-*   **`config`**: Manage project configuration (runner, retries, hooks).
+*   **`config`**: Manage project configuration (runner, retries).
     *   `list`: View current configuration.
     *   `set <key> <value>`: Update a setting.
 *   **`hooks`**: Manage orchestrator hooks.
     *   `list`: View available and active hooks.
-    *   `enable <name>`: Activate a hook for the project.
-    *   `disable <name>`: Deactivate a hook.
+    *   `enable <name>...`: Activate one or more hooks.
+    *   `disable <name>...`: Deactivate one or more hooks.
+    *   `set <name>...`: Set the exact list of active hooks.
     *   `reset`: Restore default hooks (run all available).
 
 ### Task Status

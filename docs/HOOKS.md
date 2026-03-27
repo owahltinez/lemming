@@ -39,21 +39,18 @@ If there are issues, add a new task to fix them.
 ### Configuration
 By default, Lemming runs all hooks configured in your `tasks.yml`. If no hooks are explicitly configured, all available hooks (built-in and project-specific) are executed.
 
-Use the `hooks` and `config` commands to manage which hooks should run automatically:
+Use the `hooks` command group to manage which hooks should run automatically:
 
 ```bash
-# Enable or disable a hook
+# Enable or disable one or more hooks
 lemming hooks enable lint
-lemming hooks disable roadmap
+lemming hooks disable roadmap lint
+
+# Set the exact list of active hooks
+lemming hooks set roadmap lint
 
 # Reset to run all available hooks (default)
 lemming hooks reset
-
-# Bulk update via config
-lemming config set hooks roadmap,lint
-
-# Reset via config
-lemming config set hooks default
 ```
 
 Changes to hook configuration are picked up dynamically by the running orchestrator loop. You can toggle hooks from the CLI or the Web UI while Lemming is running, and the next task execution will respect the updated settings.
