@@ -70,7 +70,7 @@ lemming serve --tunnel cloudflare
 ```
 
 *   **Real-time Monitoring**: Watch tasks move from pending to in-progress to completed.
-*   **Project Explorer**: A built-in, `.gitignore`-aware file browser to inspect your workspace alongside the roadmap.
+*   **Project Explorer**: A built-in, `.gitignore`-aware file browser to inspect your workspace alongside the roadmap. **Includes the ability to create new folders directly from the browser.**
 *   **Interactive Controls**: Add tasks, edit context, and manage the execution loop from your browser.
 
 ---
@@ -141,19 +141,26 @@ lemming config set hooks roadmap,lint
 *   **`add <desc>`**: Append a new task. Supports `--index` and `--runner`.
 *   **`edit <id>`**: Modify a task's description, runner, or position.
 *   **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk operations.
-*   **`outcome <id> <finding>`**: Record a technical detail (e.g., "Database schema is in /migrations").
+*   **`outcome`**: Manage technical outcomes or findings for specific tasks. Supports shorthand `<id> <finding>` syntax for quick additions.
+    *   `list <id>`: List all outcomes for a task.
+    *   `add <id> <finding>`: Record a new technical detail.
+    *   `edit <id> <index> <text>`: Modify an existing outcome.
+    *   `delete <id> <index>`: Remove an outcome.
 *   **`config`**: Manage project configuration (runner, retries, hooks).
     *   `list`: View current configuration.
     *   `set <key> <value>`: Update a setting.
 *   **`hooks`**: Manage orchestrator hooks.
     *   `list`: View available and active hooks.
+    *   `enable <name>`: Activate a hook for the project.
+    *   `disable <name>`: Deactivate a hook.
+    *   `reset`: Restore default hooks (run all available).
 
 ### Task Status
 *   **`complete <id>`**: Mark a task as successful.
 *   **`fail <id>`**: Report a blocker or failure for retry.
 *   **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 *   **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
-*   **`logs [<id>]`**: Print a task's execution log to stdout. If no ID is provided, it defaults to the active or most recent task. Supports `--name runner|orchestrator` (default: `runner`).
+*   **`logs [<id>]`**: Print a task's execution log to stdout. If no ID is provided, it defaults to the active or most recent task. Orchestrator hook output is automatically appended.
 
 ### Execution
 *   **`run`**: Start the autonomous orchestrator loop.
@@ -163,6 +170,8 @@ lemming config set hooks roadmap,lint
     *   `--no-defaults`: Skip default flag injection for known runners.
     *   `--`: Use `--` to pass any flag directly to the underlying runner.
 *   **`serve`**: Launch the interactive Web UI.
+    *   `--port`: The port to bind the server to (default: 8999).
+    *   `--host`: The host address to bind the server to (default: 127.0.0.1).
     *   `--tunnel cloudflare|tailscale`: Expose the UI to the public internet via a secure tunnel.
     *   `--timeout`: Auto-shutdown after a duration (e.g., `8h`, `30m`). Defaults to `8h` with `--tunnel`, disabled otherwise.
 

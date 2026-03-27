@@ -412,12 +412,17 @@ def uncomplete(ctx: click.Context, task_id: str):
 
 
 class OutcomeGroup(click.Group):
-    """Custom group to handle legacy `lemming outcome <id> <text>` syntax."""
+    """Custom group to handle `lemming outcome <id> <text>` syntax."""
 
     def parse_args(self, ctx, args):
         # If the first argument is not a known command and not an option,
         # we infer 'list' if one argument is provided, or 'add' if more.
-        if args and args[0] not in self.commands and not args[0].startswith("-"):
+        if (
+            args
+            and args[0] not in self.commands
+            and args[0] not in ("help", "--help")
+            and not args[0].startswith("-")
+        ):
             if len(args) == 1:
                 args.insert(0, "list")
             else:
@@ -568,9 +573,12 @@ def config_set(ctx: click.Context, key: str, value: str):
         except ValueError:
             raise click.UsageError(f"Value for {key} must be an integer.")
     elif key == "hooks":
-        if value.lower() in ("default", "all", "none", ""):
+        if value.lower() in ("default", "all", ""):
             data.config.hooks = None
             value = "(all available)"
+        elif value.lower() == "none":
+            data.config.hooks = []
+            value = "(none)"
         else:
             data.config.hooks = [h.strip() for h in value.split(",") if h.strip()]
 
