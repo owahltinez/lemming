@@ -1063,9 +1063,7 @@ class TestLemmingRun(unittest.TestCase):
         self.cli_runner.invoke(
             main.cli, self.base_args + ["config", "set", "retries", "2"]
         )
-        self.cli_runner.invoke(
-            main.cli, self.base_args + ["hooks", "set", "roadmap"]
-        )
+        self.cli_runner.invoke(main.cli, self.base_args + ["hooks", "set", "roadmap"])
         result = self.cli_runner.invoke(
             main.cli,
             self.base_args + ["run", "--retry-delay", "0"],
@@ -1299,8 +1297,9 @@ class TestLemmingShare(unittest.TestCase):
         mock_cf.return_value = mock_provider
 
         # We override sleep so monitor thread exits instantly
-        with unittest.mock.patch("time.sleep", return_value=None), unittest.mock.patch(
-            "os._exit", side_effect=SystemExit
+        with (
+            unittest.mock.patch("time.sleep", return_value=None),
+            unittest.mock.patch("os._exit", side_effect=SystemExit),
         ):
             result = self.cli_runner.invoke(
                 main.cli,
@@ -1321,8 +1320,9 @@ class TestLemmingShare(unittest.TestCase):
         mock_provider.start.return_value = "https://mock.ts.net"
         mock_ts.return_value = mock_provider
 
-        with unittest.mock.patch("time.sleep", return_value=None), unittest.mock.patch(
-            "os._exit", side_effect=SystemExit
+        with (
+            unittest.mock.patch("time.sleep", return_value=None),
+            unittest.mock.patch("os._exit", side_effect=SystemExit),
         ):
             result = self.cli_runner.invoke(
                 main.cli,

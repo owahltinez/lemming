@@ -136,7 +136,7 @@ def get_loop_pid(tasks_file: pathlib.Path) -> int | None:
         return None
     try:
         return int(lock_path.read_text().strip())
-    except (ValueError, OSError):
+    except ValueError, OSError:
         return None
 
 
