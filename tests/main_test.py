@@ -896,10 +896,10 @@ class TestLemming(unittest.TestCase):
 
         # Order should be:
         # 1. In Progress 1 (i1)
-        # 2. Pending 1 (p1)
-        # 3. Pending 2 (p2)
-        # 4. Completed 1 (c1) (earlier completed_at)
-        # 5. Completed 2 (c2) (later completed_at)
+        # 2. Completed 2 (c2) (later completed_at)
+        # 3. Completed 1 (c1) (earlier completed_at)
+        # 4. Pending 1 (p1)
+        # 5. Pending 2 (p2)
 
         lines = [
             line.strip()
@@ -914,7 +914,7 @@ class TestLemming(unittest.TestCase):
                 task_ids.append(task_id)
 
         # Check expected order
-        expected_order = ["i1", "p1", "p2", "c1", "c2"]
+        expected_order = ["i1", "c2", "c1", "p1", "p2"]
         self.assertEqual(task_ids, expected_order)
 
 

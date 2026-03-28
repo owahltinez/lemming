@@ -1,7 +1,7 @@
 from lemming import tasks
 
 
-def test_completed_tasks_sorting_chronological(tmp_path):
+def test_completed_tasks_sorting_newest_first(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
 
     # Add three tasks and mark them completed at different times
@@ -12,7 +12,7 @@ def test_completed_tasks_sorting_chronological(tmp_path):
     # Manually update completion times to ensure order
     with tasks.lock_tasks(tasks_file):
         data = tasks.load_tasks(tasks_file)
-        # Oldest first
+        # Oldest
         data.tasks[0].status = "completed"
         data.tasks[0].completed_at = 100.0
         # Middle
@@ -26,7 +26,7 @@ def test_completed_tasks_sorting_chronological(tmp_path):
     project_data = tasks.get_project_data(tasks_file)
     completed_tasks = [t for t in project_data.tasks if t.status == "completed"]
 
-    # Should be oldest first (chronological)
-    assert completed_tasks[0].description == "Task 1"
+    # Should be newest first (reverse chronological)
+    assert completed_tasks[0].description == "Task 3"
     assert completed_tasks[1].description == "Task 2"
-    assert completed_tasks[2].description == "Task 3"
+    assert completed_tasks[2].description == "Task 1"

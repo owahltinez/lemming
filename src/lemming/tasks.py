@@ -224,13 +224,13 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
             if not is_stale:
                 loop_running = True
 
-    # Sort tasks: in_progress, then pending, then completed (oldest first)
+    # Sort tasks: in_progress, then completed (newest first), then pending
     in_progress = [t for t in data.tasks if t.status == "in_progress"]
     pending = [t for t in data.tasks if t.status == "pending"]
     completed = [t for t in data.tasks if t.status == "completed"]
-    completed.sort(key=lambda x: x.completed_at or 0)
+    completed.sort(key=lambda x: x.completed_at or 0, reverse=True)
 
-    sorted_tasks = in_progress + pending + completed
+    sorted_tasks = in_progress + completed + pending
 
     return ProjectData(
         context=data.context,

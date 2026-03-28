@@ -185,3 +185,102 @@ def test_readability_check_missing_tool(tmp_path):
     # If go is missing, it should NOT say "Running go fmt"
     # If go is present, it might say it.
     # The important thing is it doesn't crash.
+
+
+@patch("lemming.readability_tool.fetch_guide_content")
+@patch("lemming.readability_tool.get_guides_dir")
+def test_fetch_guide_remote(mock_guides_dir, mock_fetch_content, tmp_path):
+    mock_guides_dir.return_value = tmp_path
+    mock_fetch_content.return_value = "<html><h1>Guide</h1></html>"
+
+    from lemming.readability_tool import fetch_guide
+
+    # Use 'cpp' which uses 'cppguide.html' and triggers conversion
+    content = fetch_guide("cpp", remote=True)
+
+    assert "# Guide" in content
+    # Should be cached as .md
+    assert (tmp_path / "cppguide.md").exists()
+    assert (tmp_path / "cppguide.md").read_text(encoding="utf-8") == content
+
+
+@patch("lemming.readability_tool.get_guides_dir")
+def test_fetch_guide_local(mock_guides_dir, tmp_path):
+    mock_guides_dir.return_value = tmp_path
+    (tmp_path / "pyguide.md").write_text("# Local Content", encoding="utf-8")
+
+    from lemming.readability_tool import fetch_guide
+
+    # Should read from local without calling fetch_guide_content
+    with patch("lemming.readability_tool.fetch_guide_content") as mock_fetch:
+        content = fetch_guide("python", remote=False)
+        mock_fetch.assert_not_called()
+
+    assert content == "# Local Content"
+
+
+def test_languages_command():
+    from click.testing import CliRunner
+    from lemming.readability_tool import cli
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["languages"])
+
+    assert result.exit_code == 0
+    assert "Supported languages" in result.output
+    assert "python" in result.output
+    assert "javascript" in result.output
+
+
+@patch("lemming.readability_tool.fetch_guide_content")
+@patch("lemming.readability_tool.get_guides_dir")
+def test_sync_command(mock_guides_dir, mock_fetch_content, tmp_path):
+    mock_guides_dir.return_value = tmp_path
+    mock_fetch_content.return_value = "# Synced Content"
+
+    from click.testing import CliRunner
+    from lemming.readability_tool import cli
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync"])
+
+    assert result.exit_code == 0
+    # Should have created several files
+    assert (tmp_path / "pyguide.md").exists()
+    assert (tmp_path / "jsguide.md").exists()
+    assert (tmp_path / "cppguide.md").exists()
+
+
+def test_readability_check_extension_filtering(tmp_path):
+    # Create a python file
+    py_file = tmp_path / "test.py"
+    py_file.write_text("print('hello')\n", encoding="utf-8")
+
+    # Create BOTH pyproject.toml and biome.json
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+    (tmp_path / "biome.json").write_text("{}", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{os.getcwd()}/src:{env.get('PYTHONPATH', '')}"
+
+    # Run check with verbose to see what's being run
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "lemming.readability_tool",
+            "check",
+            "--verbose",
+            str(py_file),
+        ],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    # Ruff should run (trigger + .py)
+    assert "Running ruff" in result.stderr
+    # Biome should NOT run (trigger present but .py not in extensions)
+    assert "Running biome" not in result.stderr

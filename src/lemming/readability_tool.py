@@ -302,28 +302,40 @@ def check(paths: Sequence[str], verbose: bool) -> None:
     if verbose:
         logger.setLevel(logging.DEBUG)
 
-    for path in paths:
+    for path_str in paths:
+        path = pl.Path(path_str)
         logger.info(f"Checking path: {path}")
 
         # Tool definitions with trigger files and commands
         tools = [
             {
                 "name": "ruff",
-                "check": ["ruff", "check", path],
-                "fix": ["ruff", "check", "--fix", path],
-                "format": ["ruff", "format", path],
+                "check": ["ruff", "check", str(path)],
+                "fix": ["ruff", "check", "--fix", str(path)],
+                "format": ["ruff", "format", str(path)],
                 "trigger": ["pyproject.toml", "ruff.toml", ".ruff.toml"],
+                "extensions": [".py"],
             },
             {
                 "name": "biome",
-                "check": ["npx", "biome", "lint", path],
-                "fix": ["npx", "biome", "lint", "--apply", path],
-                "format": ["npx", "biome", "format", "--write", path],
+                "check": ["npx", "biome", "lint", str(path)],
+                "fix": ["npx", "biome", "lint", "--apply", str(path)],
+                "format": ["npx", "biome", "format", "--write", str(path)],
                 "trigger": ["biome.json", "biome.jsonc"],
+                "extensions": [
+                    ".js",
+                    ".ts",
+                    ".jsx",
+                    ".tsx",
+                    ".json",
+                    ".jsonc",
+                    ".css",
+                    ".html",
+                ],
             },
             {
                 "name": "prettier",
-                "format": ["npx", "prettier", "--write", path],
+                "format": ["npx", "prettier", "--write", str(path)],
                 "trigger": [
                     ".prettierrc",
                     ".prettierrc.json",
@@ -333,11 +345,25 @@ def check(paths: Sequence[str], verbose: bool) -> None:
                     "prettier.config.js",
                     "prettier.config.cjs",
                 ],
+                "extensions": [
+                    ".js",
+                    ".ts",
+                    ".jsx",
+                    ".tsx",
+                    ".json",
+                    ".css",
+                    ".scss",
+                    ".html",
+                    ".md",
+                    ".yml",
+                    ".yaml",
+                ],
             },
             {
                 "name": "go fmt",
-                "format": ["go", "fmt", path],
+                "format": ["go", "fmt", str(path)],
                 "trigger": ["go.mod"],
+                "extensions": [".go"],
             },
         ]
 
@@ -347,7 +373,13 @@ def check(paths: Sequence[str], verbose: bool) -> None:
             # Check if any of the trigger files exist in the project root
             has_trigger = any((project_root / t).exists() for t in tool["trigger"])
 
-            if has_trigger:
+            # Check if the path is a file and matches the tool's extensions
+            # If path is a directory, we assume it's relevant if trigger exists
+            is_relevant = True
+            if path.is_file():
+                is_relevant = path.suffix in tool["extensions"]
+
+            if has_trigger and is_relevant:
                 _run_tool(tool["name"], tool, logger)
 
 
