@@ -224,7 +224,7 @@ lemming hooks set roadmap lint
 ### Task Status
 
 - **`complete <id>`**: Mark a task as successful.
-- **`fail <id>`**: Report a blocker or failure for retry.
+- **`fail <id>`**: Mark a task as a terminal failure (will not be retried).
 - **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 - **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
 - **`logs [<id>]`**: Print a task's execution log to stdout. If no ID is

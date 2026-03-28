@@ -313,7 +313,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
             "name": "biome",
             "check": ["npx", "biome", "lint", path_str],
             "check_format": ["npx", "biome", "format", path_str],
-            "fix": ["npx", "biome", "lint", "--apply", path_str],
+            "fix": ["npx", "biome", "lint", "--write", path_str],
             "format": ["npx", "biome", "format", "--write", path_str],
             "trigger": ["biome.json", "biome.jsonc"],
             "extensions": [
