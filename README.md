@@ -116,7 +116,7 @@ You can create your own hooks by adding Markdown files to:
 1.  **Project-specific**: `.lemming/hooks/*.md`
 2.  **Global**: `~/.local/lemming/hooks/*.md`
 
-Lemming automatically symlinks its built-in hooks to the global directory on startup. This allows you to easily **override** a built-in hook by replacing its symlink with a file, or **disable** it globally by deleting the symlink.
+Lemming's built-in hooks can be symlinked to the global directory using `lemming hooks install`. This allows you to easily **override** a built-in hook by replacing its symlink with a file, or **disable** a global override by deleting the symlink.
 
 Hooks follow a specific discovery precedence: **Project > Global > Built-in**. See [DOCS/HOOKS.md](docs/HOOKS.md) for more details.
 
@@ -126,6 +126,9 @@ Use the `config` and `hooks` commands to manage your project's execution loop:
 ```bash
 # List all available hooks (built-in and local)
 lemming hooks list
+
+# Install (symlink) built-in hooks to the global directory
+lemming hooks install
 
 # View current project configuration
 lemming config list
@@ -155,6 +158,7 @@ lemming hooks set roadmap lint
     *   `set <key> <value>`: Update a setting.
 *   **`hooks`**: Manage orchestrator hooks.
     *   `list`: View available and active hooks.
+    *   `install`: Install built-in hooks to the global directory.
     *   `enable <name>...`: Activate one or more hooks.
     *   `disable <name>...`: Deactivate one or more hooks.
     *   `set <name>...`: Set the exact list of active hooks.

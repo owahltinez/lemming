@@ -55,7 +55,7 @@ const createInitialState = (overrides = {}) => {
       const pending = filtered.filter((t) => t.status === "pending");
       const completed = filtered
         .filter((t) => t.status === "completed")
-        .sort((a, b) => (b.completed_at || 0) - (a.completed_at || 0));
+        .sort((a, b) => (a.completed_at || 0) - (b.completed_at || 0));
       return [...inProgress, ...pending, ...completed];
     }),
     ...overrides,
@@ -109,8 +109,8 @@ describe("Lemming Web Dashboard", () => {
     assert.strictEqual(descriptions[0], "Running");
     assert.strictEqual(descriptions[1], "Pending 1");
     assert.strictEqual(descriptions[2], "Pending 2");
-    assert.strictEqual(descriptions[3], "Newest Completed");
-    assert.strictEqual(descriptions[4], "Oldest Completed");
+    assert.strictEqual(descriptions[3], "Oldest Completed");
+    assert.strictEqual(descriptions[4], "Newest Completed");
   });
 
   test("initial state", async () => {

@@ -260,7 +260,13 @@ def status(ctx: click.Context, task_id: str | None):
         return
 
     click.secho(f"Task ID:     {target.id}", bold=True)
-    click.echo(f"Status:      {target.status}")
+    status_str = target.status
+    if target.status == "in_progress":
+        if target.completion_requested:
+            status_str += " (completion requested, hooks running)"
+        elif target.failure_requested:
+            status_str += " (failure requested, hooks running)"
+    click.echo(f"Status:      {status_str}")
     click.echo(f"Description: {target.description}")
     if target.parent:
         click.echo(f"Parent:      {target.parent}")
@@ -698,6 +704,17 @@ def hooks_reset(ctx: click.Context):
     click.echo("Hooks reset to default (all available).")
 
 
+@hooks_group.command(name="install")
+@click.pass_context
+def hooks_install(ctx: click.Context):
+    """Installs (symlinks) built-in hooks into the global hooks directory.
+
+    This makes them easily discoverable and overridable in ~/.local/lemming/hooks/.
+    """
+    runner.ensure_hooks_symlinked()
+    click.echo("Built-in hooks installed to ~/.local/lemming/hooks/")
+
+
 @cli.command(short_help="<taskid> Record a task failure")
 @click.argument("task_id")
 @click.pass_context
@@ -876,8 +893,6 @@ def run(
 
     if env_overrides:
         os.environ.update(env_overrides)
-
-    runner.ensure_hooks_symlinked()
 
     tasks.acquire_loop_lock(tasks_file)
     try:
@@ -1124,8 +1139,6 @@ def serve(
 
     from . import api
     from . import providers
-
-    runner.ensure_hooks_symlinked()
 
     api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
     api.app.state.verbose = ctx.obj["VERBOSE"]

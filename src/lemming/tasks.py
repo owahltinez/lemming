@@ -32,6 +32,8 @@ class Task(pydantic.BaseModel):
     has_runner_log: bool = False
     parent: str | None = None
     parent_tasks_file: str | None = None
+    completion_requested: bool = False
+    failure_requested: bool = False
     index: int | None = pydantic.Field(default=-1, exclude=True)
 
 
@@ -226,7 +228,7 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     in_progress = [t for t in data.tasks if t.status == "in_progress"]
     pending = [t for t in data.tasks if t.status == "pending"]
     completed = [t for t in data.tasks if t.status == "completed"]
-    completed.sort(key=lambda x: x.completed_at or 0, reverse=True)
+    completed.sort(key=lambda x: x.completed_at or 0)
 
     sorted_tasks = in_progress + pending + completed
 
@@ -368,11 +370,21 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> Task | None:
             return None
 
         if task.status == "in_progress":
-            # Reset to pending if it's still in_progress but the process finished
+            # Finalize the task based on the runner's request.
             update_run_time(task)
-            task.status = "pending"
+
+            if task.completion_requested:
+                task.status = "completed"
+                task.completed_at = time.time()
+            else:
+                # If it failed or simply finished without requesting completion,
+                # we keep it as pending so it can be retried.
+                task.status = "pending"
+
             task.pid = None
             task.last_heartbeat = None
+            task.completion_requested = False
+            task.failure_requested = False
             save_tasks(tasks_file, data)
 
         return task
@@ -632,6 +644,23 @@ def update_task(
                 target.parent = parent
 
         if status and status != target.status:
+            # If we are running inside the task itself (via an agent), we don't
+            # immediately transition to completed/pending. Instead, we set a
+            # request flag so the orchestrator loop can run hooks while the
+            # task is still 'in_progress' and claimed.
+            parent_id = os.environ.get("LEMMING_PARENT_TASK_ID")
+            if parent_id == target.id and target.status == "in_progress":
+                if status == "completed":
+                    target.completion_requested = True
+                    target.failure_requested = False
+                    save_tasks(tasks_file, data)
+                    return target
+                if status == "pending":
+                    target.failure_requested = True
+                    target.completion_requested = False
+                    save_tasks(tasks_file, data)
+                    return target
+
             if target.status == "in_progress":
                 update_run_time(target)
             if status == "completed":
@@ -642,6 +671,8 @@ def update_task(
             elif target.completed_at is not None:
                 target.completed_at = None
             target.status = status
+            target.completion_requested = False
+            target.failure_requested = False
 
         if index is not None:
             task_to_move = data.tasks.pop(task_idx)
@@ -759,8 +790,11 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> Task:
         target.last_started_at = None
         target.pid = None
         target.last_heartbeat = None
+        target.completion_requested = False
+        target.failure_requested = False
 
         save_tasks(tasks_file, data)
+
         reset_task_logs(tasks_file, target.id)
     return target
 

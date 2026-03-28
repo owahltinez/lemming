@@ -14,8 +14,8 @@ def ensure_hooks_symlinked():
     """Ensures that all built-in hooks are symlinked in the global hooks directory.
 
     If a hook already exists (as a file or symlink), it is not overwritten.
-    This allows users to 'comment' them out (by deleting the symlink) or
-    override them (by replacing the symlink with their own file).
+    This allows users to override them by replacing the symlink with their
+    own file.
     """
     global_hooks_dir = paths.get_global_hooks_dir()
     global_hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -26,10 +26,12 @@ def ensure_hooks_symlinked():
 
     for f in base_path.glob("*.md"):
         target = global_hooks_dir / f.name
+        # We only create the symlink if NOTHING exists there yet.
+        # This respects manual deletion as a way to "disable" the global symlink,
+        # but the hook will still be available as a built-in fallback unless
+        # disabled in the project's tasks.yml.
         if not target.exists() and not target.is_symlink():
-            # Use relative symlink if possible for portability within the same drive
             try:
-                # We need absolute for symlink to work if lemming is installed in site-packages
                 target.symlink_to(f.absolute())
             except OSError:
                 pass
@@ -61,7 +63,7 @@ def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
     if global_hook_path.exists():
         return global_hook_path.read_text(encoding="utf-8")
 
-    # 3. Look in built-in prompts directory (fallback if symlink was deleted)
+    # 3. Look in built-in prompts directory (fallback)
     base_path = pathlib.Path(__file__).parent / "prompts"
 
     # Try exact name first (e.g. taskrunner)
@@ -86,7 +88,6 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
     Returns:
         A list of hook names.
     """
-    ensure_hooks_symlinked()
     hooks = set()
 
     # 1. Look for local hooks in the project directory
@@ -103,7 +104,7 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
         for f in global_hooks_dir.glob("*.md"):
             hooks.add(f.stem)
 
-    # 3. Look in built-in prompts directory (fallback)
+    # 3. Look in built-in prompts directory (always included)
     base_path = pathlib.Path(__file__).parent / "prompts" / "hooks"
     if base_path.exists():
         for f in base_path.glob("*.md"):
@@ -279,16 +280,14 @@ def run_with_heartbeat(
 
     full_log: list[str] = []
 
-    # For orchestration (where header is provided), we don't update the heartbeat
-    # since the task is already finished.
-    if header is None:
-        tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
+    # Heartbeat and cancellation management
+    is_claimed = tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
 
     def heartbeat_loop():
         """Updates the task heartbeat while the process is running."""
         while process.poll() is None:
-            if header is None and not tasks.update_heartbeat(tasks_file, task_id):
-                # Task was cancelled — kill the runner subprocess tree
+            if not tasks.update_heartbeat(tasks_file, task_id):
+                # Task was cancelled or finished — kill the runner subprocess tree
                 try:
                     os.killpg(os.getpgid(process.pid), __import__("signal").SIGTERM)
                 except OSError:
@@ -299,8 +298,9 @@ def run_with_heartbeat(
                 return
             time.sleep(tasks.STALE_THRESHOLD // 2)
 
-    heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
-    heartbeat_thread.start()
+    if is_claimed:
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
 
     # Stream output to log file and optionally to console
     try:

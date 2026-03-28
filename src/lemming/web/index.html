@@ -292,10 +292,10 @@
                                         role="status"
                                         class="px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 text-center min-w-20 inline-block"
                                         :class="task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'))"
-                                        :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending'))"
-                                        :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'in_progress' ? 'Status: Running' : (task.attempts > 0 ? 'Status: Failed' : 'Status: Pending'))"
+                                        :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? (task.completion_requested ? 'Finalizing' : 'Running') : (task.attempts > 0 ? 'Failed' : 'Pending'))"
+                                        :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'in_progress' ? (task.completion_requested ? 'Status: Finalizing (hooks running)' : 'Status: Running') : (task.attempts > 0 ? 'Status: Failed' : 'Status: Pending'))"
                                     >
-                                        {{ task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? 'Running' : (task.attempts > 0 ? 'Failed' : 'Pending')) }}
+                                        {{ task.status === 'completed' ? 'Completed' : (task.status === 'in_progress' ? (task.completion_requested ? 'Finalizing' : 'Running') : (task.attempts > 0 ? 'Failed' : 'Pending')) }}
                                     </span>
                                     <p class="text-gray-400 font-mono uppercase text-10px flex items-center flex-wrap gap-1 whitespace-nowrap" :attr:aria-label="'Task ID ' + task.id + ', ' + task.attempts + ' attempts'" title="Task ID and number of attempts">
                                         <span class="inline-flex items-center gap-1">

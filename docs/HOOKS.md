@@ -31,11 +31,19 @@ When Lemming looks for a hook template, it follows this order:
 3.  **Built-in**: Bundled with the Lemming package.
 
 ### Global Hook Management
-On startup, Lemming automatically ensures that all its built-in hooks are symlinked in the global directory (`~/.local/lemming/hooks/`). This provides several ways to manage them:
+Lemming's built-in hooks can be symlinked into the global directory (`~/.local/lemming/hooks/`) to make them easily discoverable and overridable.
+
+Use the following command to install the symlinks:
+
+```bash
+lemming hooks install
+```
+
+This provides several ways to manage them:
 
 -   **Override**: Replace the symlink with your own Markdown file of the same name.
--   **Disable Globally**: Delete the symlink from the global directory.
--   **Restore Defaults**: Delete the symlink and run `lemming run`. Lemming will recreate any missing built-in symlinks.
+-   **Disable Global Override**: Delete the symlink from the global directory. Lemming will fall back to the built-in version unless the hook is also disabled in the project configuration.
+-   **Restore Defaults**: Run `lemming hooks install`. Lemming will recreate any missing built-in symlinks.
 
 Users can also add their own global hooks to this directory, making them available to all Lemming projects on the system.
 
