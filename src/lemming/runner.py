@@ -1,3 +1,4 @@
+import logging
 import os
 import pathlib
 import shlex
@@ -8,6 +9,8 @@ from typing import Callable
 
 from . import paths
 from . import tasks
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_hooks_symlinked():
@@ -33,8 +36,8 @@ def ensure_hooks_symlinked():
         if not target.exists() and not target.is_symlink():
             try:
                 target.symlink_to(f.absolute())
-            except OSError:
-                pass
+            except OSError as e:
+                logger.warning("Failed to create symlink for hook %s: %s", target, e)
 
 
 def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
