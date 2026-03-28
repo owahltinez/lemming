@@ -45,7 +45,7 @@ class Task(pydantic.BaseModel):
     parent_tasks_file: str | None = None
     completion_requested: bool = False
     failure_requested: bool = False
-    index: int | None = pydantic.Field(default=None, exclude=True)
+    index: int | None = pydantic.Field(default=None)
 
 
 class RoadmapConfig(pydantic.BaseModel):
@@ -198,8 +198,17 @@ def save_tasks(tasks_file: pathlib.Path, data: Roadmap) -> None:
     """
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
     with open(tasks_file, "w", encoding="utf-8") as f:
+        # Exclude runtime-computed fields from the YAML file.
+        exclude = {
+            "tasks": {
+                "__all__": {
+                    "index",
+                    "has_runner_log",
+                }
+            }
+        }
         yaml.dump(
-            data.model_dump(exclude_none=True, mode="json"),
+            data.model_dump(exclude_none=True, mode="json", exclude=exclude),
             f,
             default_flow_style=False,
             sort_keys=False,
@@ -643,15 +652,9 @@ def update_task(
         require_outcomes: If True, raises ValueError if the task has no outcomes.
         parent: New parent task ID.
         parent_tasks_file: New parent tasks file path.
-    ...
-        if runner is not None:
-            target.runner = runner
-        if parent_tasks_file is not None:
-            if parent_tasks_file == "":
-                target.parent_tasks_file = None
-            else:
-                target.parent_tasks_file = parent_tasks_file
-        if parent is not None:
+
+    Returns:
+        The updated Task.
 
     Raises:
         ValueError: If the task is not found, or if validation fails.
@@ -689,6 +692,11 @@ def update_task(
                 target.parent = None
             else:
                 target.parent = parent
+        if parent_tasks_file is not None:
+            if parent_tasks_file == "":
+                target.parent_tasks_file = None
+            else:
+                target.parent_tasks_file = parent_tasks_file
 
         if status and status != target.status:
             # If we are running inside the task itself (via an agent), we don't

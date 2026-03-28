@@ -18,6 +18,7 @@ dependencies = [
     "click>=8.0.0",
     "fastapi>=0.124.4",
     "markdownify>=0.14.1",
+    "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
     "requests>=2.32.3",
     "uvicorn>=0.33.0",

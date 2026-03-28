@@ -49,15 +49,15 @@ const createInitialState = (overrides = {}) => {
     filteredTasks: $computed(() => {
       const ts = [...tasks];
       ts.sort((a, b) => {
-        const aDone =
-          a.status === "completed" || a.status === "failed" ? 1 : 0;
-        const bDone =
-          b.status === "completed" || b.status === "failed" ? 1 : 0;
+        const aDone = a.status === "completed" || a.status === "failed" ? 1 : 0;
+        const bDone = b.status === "completed" || b.status === "failed" ? 1 : 0;
         if (aDone !== bDone) return aDone - bDone;
 
         const aTime = a.completed_at || a.created_at || 0;
         const bTime = b.completed_at || b.created_at || 0;
-        return bTime - aTime;
+        if (aTime !== bTime) return bTime - aTime;
+
+        return (b.index || 0) - (a.index || 0);
       });
       return ts.filter((t) => t.status !== "completed" || !hideCompleted);
     }),
@@ -78,8 +78,20 @@ describe("Lemming Web Dashboard", () => {
         completed_at: 1000,
         outcomes: [],
       },
-      { id: "p1", description: "Pending 1", status: "pending", created_at: 500, outcomes: [] },
-      { id: "r1", description: "Running", status: "in_progress", created_at: 1500, outcomes: [] },
+      {
+        id: "p1",
+        description: "Pending 1",
+        status: "pending",
+        created_at: 500,
+        outcomes: [],
+      },
+      {
+        id: "r1",
+        description: "Running",
+        status: "in_progress",
+        created_at: 1500,
+        outcomes: [],
+      },
       {
         id: "c2",
         description: "Newest Completed",
@@ -87,7 +99,13 @@ describe("Lemming Web Dashboard", () => {
         completed_at: 2000,
         outcomes: [],
       },
-      { id: "p2", description: "Pending 2", status: "pending", created_at: 3000, outcomes: [] },
+      {
+        id: "p2",
+        description: "Pending 2",
+        status: "pending",
+        created_at: 3000,
+        outcomes: [],
+      },
     ];
 
     const renderer = new Renderer(
@@ -119,6 +137,57 @@ describe("Lemming Web Dashboard", () => {
     assert.strictEqual(descriptions[2], "Pending 1");
     assert.strictEqual(descriptions[3], "Newest Completed");
     assert.strictEqual(descriptions[4], "Oldest Completed");
+  });
+
+  test("tasks sorting tie-breaker in frontend", async () => {
+    // Tasks with same timestamps but different indices
+    const tasks = [
+      {
+        id: "a",
+        description: "Task A",
+        status: "pending",
+        created_at: 1000,
+        index: 0,
+        outcomes: [],
+      },
+      {
+        id: "b",
+        description: "Task B",
+        status: "pending",
+        created_at: 1000,
+        index: 1,
+        outcomes: [],
+      },
+      {
+        id: "c",
+        description: "Task C",
+        status: "pending",
+        created_at: 1000,
+        index: 2,
+        outcomes: [],
+      },
+    ];
+
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    await renderer.mount(fragment);
+
+    const taskItems = fragment.querySelectorAll('[role="listitem"]');
+    const descriptions = Array.from(taskItems).map((item) => {
+      const p = item.querySelector("p");
+      return p ? p.textContent.trim() : "";
+    });
+
+    // Should be C, B, A (reverse by index)
+    assert.strictEqual(descriptions[0], "Task C");
+    assert.strictEqual(descriptions[1], "Task B");
+    assert.strictEqual(descriptions[2], "Task A");
   });
 
   test("initial state", async () => {

@@ -2,7 +2,6 @@ import pathlib
 import shutil
 import tempfile
 import unittest
-import yaml
 import click.testing
 
 from lemming import main
@@ -17,13 +16,12 @@ class TestConfig(unittest.TestCase):
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
 
         # Scaffold a valid file with default config
-        data = {
-            "context": "Initial context",
-            "tasks": [],
-            "config": {"retries": 3, "runner": "gemini", "hooks": ["roadmap"]},
-        }
-        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f)
+        data = tasks.Roadmap(
+            context="Initial context",
+            tasks=[],
+            config=tasks.RoadmapConfig(retries=3, runner="gemini", hooks=["roadmap"]),
+        )
+        tasks.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)

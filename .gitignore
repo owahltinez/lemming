@@ -10,5 +10,5 @@ node_modules/
 .biome/
 .lemming_loop.lock
 test-results/
-*_tasks*.lock
+*tasks*.lock
 guides/

@@ -82,13 +82,30 @@ def test_claim_task(tmp_path):
     assert claimed.attempts == 1
 
 
-def test_update_task(tmp_path):
+def test_update_task_parent_fields(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
-    task = tasks.add_task(tasks_file, "Update me")
+    task = tasks.add_task(tasks_file, "Update parent fields")
     task_id = task.id
 
-    updated = tasks.update_task(tasks_file, task_id, description="Updated")
-    assert updated.description == "Updated"
+    # 1. Update with values
+    updated = tasks.update_task(
+        tasks_file,
+        task_id,
+        parent="parent123",
+        parent_tasks_file="parent_tasks.yml",
+    )
+    assert updated.parent == "parent123"
+    assert updated.parent_tasks_file == "parent_tasks.yml"
+
+    # 2. Clear values with empty strings
+    cleared = tasks.update_task(
+        tasks_file,
+        task_id,
+        parent="",
+        parent_tasks_file="",
+    )
+    assert cleared.parent is None
+    assert cleared.parent_tasks_file is None
 
 
 def test_add_outcome(tmp_path):
@@ -244,3 +261,56 @@ def test_get_loop_pid_corrupted_lock_file(tmp_path):
     lock_path.write_text("not-a-pid")
     assert tasks.get_loop_pid(tasks_file) is None
     assert tasks.is_loop_running(tasks_file) is False
+
+
+def test_save_tasks_excludes_computed_fields(tmp_path):
+    import yaml
+
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.Task(
+        id="123",
+        description="Test Task",
+        index=5,
+        has_runner_log=True,
+    )
+    roadmap = tasks.Roadmap(tasks=[task])
+
+    tasks.save_tasks(tasks_file, roadmap)
+
+    # Read the raw YAML to verify exclusion
+    with open(tasks_file, "r", encoding="utf-8") as f:
+        raw_data = yaml.safe_load(f)
+
+    task_data = raw_data["tasks"][0]
+    assert "id" in task_data
+    assert "description" in task_data
+    # Computed fields should be excluded
+    assert "index" not in task_data
+    assert "has_runner_log" not in task_data
+
+
+def test_get_project_data_enriches_metadata(tmp_path):
+    from lemming import paths
+
+    tasks_file = tmp_path / "tasks.yml"
+    tasks.add_task(tasks_file, "Task 1")
+    task = tasks.add_task(tasks_file, "Task 2")
+
+    # Create a dummy log file for Task 2
+    log_file = paths.get_log_file(tasks_file, task.id)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.write_text("dummy log")
+
+    project_data = tasks.get_project_data(tasks_file)
+
+    # Check index and has_runner_log
+    # Note: get_project_data sorts tasks newest first by default.
+    # Task 2 (index 1) will be first, Task 1 (index 0) second.
+    t2 = next(t for t in project_data.tasks if t.id == task.id)
+    t1 = next(t for t in project_data.tasks if t.id != task.id)
+
+    assert t1.index == 0
+    assert t1.has_runner_log is False
+
+    assert t2.index == 1
+    assert t2.has_runner_log is True

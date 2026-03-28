@@ -88,7 +88,9 @@
 
           const aTime = a.completed_at || a.created_at || 0;
           const bTime = b.completed_at || b.created_at || 0;
-          return bTime - aTime;
+          if (aTime !== bTime) return bTime - aTime;
+
+          return (b.index || 0) - (a.index || 0);
         });
         return ts.filter((t) => t.status !== "completed" || !$.hideCompleted);
       });

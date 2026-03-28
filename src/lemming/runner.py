@@ -467,7 +467,7 @@ def prepare_prompt(
         outcomes_str += "\n"
 
     tasks_file_str = shlex.quote(str(tasks_file))
-    prompt_template = load_prompt("taskrunner")
+    prompt_template = load_prompt("taskrunner", tasks_file)
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)
         .replace("{{outcomes}}", outcomes_str)

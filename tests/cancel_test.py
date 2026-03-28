@@ -1,6 +1,5 @@
 import subprocess
 import time
-import yaml
 import click.testing
 
 from lemming import main
@@ -23,15 +22,11 @@ def test_cancel_task(tmp_path):
     proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
     pid = proc.pid
 
-    with open(tasks_file, "r") as f:
-        content = yaml.safe_load(f)
-
-    content["tasks"][0]["status"] = tasks.TaskStatus.IN_PROGRESS.value
-    content["tasks"][0]["pid"] = pid
-    content["tasks"][0]["last_heartbeat"] = time.time()
-
-    with open(tasks_file, "w") as f:
-        yaml.dump(content, f)
+    data = tasks.load_tasks(tasks_file)
+    data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+    data.tasks[0].pid = pid
+    data.tasks[0].last_heartbeat = time.time()
+    tasks.save_tasks(tasks_file, data)
 
     # 3. Cancel it
     result = runner.invoke(
@@ -73,13 +68,11 @@ def test_cancel_task_stops_loop(tmp_path):
     task_proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
     task_pid = task_proc.pid
 
-    with open(tasks_file, "r") as f:
-        content = yaml.safe_load(f)
-    content["tasks"][0]["status"] = tasks.TaskStatus.IN_PROGRESS.value
-    content["tasks"][0]["pid"] = task_pid
-    content["tasks"][0]["last_heartbeat"] = time.time()
-    with open(tasks_file, "w") as f:
-        yaml.dump(content, f)
+    data = tasks.load_tasks(tasks_file)
+    data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+    data.tasks[0].pid = task_pid
+    data.tasks[0].last_heartbeat = time.time()
+    tasks.save_tasks(tasks_file, data)
 
     # 3. Cancel it
     result = runner.invoke(

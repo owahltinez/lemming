@@ -7,7 +7,6 @@ import time
 import unittest
 import unittest.mock
 
-import yaml
 import click.testing
 
 from lemming import runner
@@ -15,14 +14,6 @@ from lemming import api
 from lemming import main
 from lemming import paths
 from lemming import tasks
-
-
-def enum_representer(dumper, data):
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data.value)
-
-
-yaml.add_representer(tasks.TaskStatus, enum_representer)
-yaml.SafeDumper.add_representer(tasks.TaskStatus, enum_representer)
 
 
 class TestLemming(unittest.TestCase):
@@ -33,20 +24,19 @@ class TestLemming(unittest.TestCase):
         self.base_args = ["--verbose", "--tasks-file", str(self.test_tasks_file)]
 
         # Scaffold a valid file
-        data = {
-            "context": "Initial context",
-            "tasks": [
-                {
-                    "id": "12345678",
-                    "description": "Initial Task",
-                    "status": tasks.TaskStatus.PENDING,
-                    "attempts": 0,
-                    "outcomes": [],
-                }
+        data = tasks.Roadmap(
+            context="Initial context",
+            tasks=[
+                tasks.Task(
+                    id="12345678",
+                    description="Initial Task",
+                    status=tasks.TaskStatus.PENDING,
+                    attempts=0,
+                    outcomes=[],
+                )
             ],
-        }
-        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f)
+        )
+        tasks.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -1033,57 +1023,56 @@ class TestLemming(unittest.TestCase):
         # 4. Completed 2 (later)
         # 5. Pending 2
 
-        data = {
-            "context": "Context",
-            "tasks": [
-                {
-                    "id": "p1",
-                    "description": "Pending 1",
-                    "status": tasks.TaskStatus.PENDING,
-                    "attempts": 0,
-                    "outcomes": [],
-                },
-                {
-                    "id": "c1",
-                    "description": "Completed 1",
-                    "status": tasks.TaskStatus.COMPLETED,
-                    "completed_at": 1000,
-                    "attempts": 1,
-                    "outcomes": ["done"],
-                },
-                {
-                    "id": "i1",
-                    "description": "In Progress 1",
-                    "status": tasks.TaskStatus.IN_PROGRESS,
-                    "attempts": 1,
-                    "outcomes": [],
-                },
-                {
-                    "id": "c2",
-                    "description": "Completed 2",
-                    "status": tasks.TaskStatus.COMPLETED,
-                    "completed_at": 2000,
-                    "attempts": 1,
-                    "outcomes": ["done"],
-                },
-                {
-                    "id": "p2",
-                    "description": "Pending 2",
-                    "status": tasks.TaskStatus.PENDING,
-                    "attempts": 0,
-                    "outcomes": [],
-                },
-                {
-                    "id": "f1",
-                    "description": "Failed 1",
-                    "status": tasks.TaskStatus.FAILED,
-                    "attempts": 3,
-                    "outcomes": ["error"],
-                },
+        data = tasks.Roadmap(
+            context="Context",
+            tasks=[
+                tasks.Task(
+                    id="p1",
+                    description="Pending 1",
+                    status=tasks.TaskStatus.PENDING,
+                    attempts=0,
+                    outcomes=[],
+                ),
+                tasks.Task(
+                    id="c1",
+                    description="Completed 1",
+                    status=tasks.TaskStatus.COMPLETED,
+                    completed_at=1000,
+                    attempts=1,
+                    outcomes=["done"],
+                ),
+                tasks.Task(
+                    id="i1",
+                    description="In Progress 1",
+                    status=tasks.TaskStatus.IN_PROGRESS,
+                    attempts=1,
+                    outcomes=[],
+                ),
+                tasks.Task(
+                    id="c2",
+                    description="Completed 2",
+                    status=tasks.TaskStatus.COMPLETED,
+                    completed_at=2000,
+                    attempts=1,
+                    outcomes=["done"],
+                ),
+                tasks.Task(
+                    id="p2",
+                    description="Pending 2",
+                    status=tasks.TaskStatus.PENDING,
+                    attempts=0,
+                    outcomes=[],
+                ),
+                tasks.Task(
+                    id="f1",
+                    description="Failed 1",
+                    status=tasks.TaskStatus.FAILED,
+                    attempts=3,
+                    outcomes=["error"],
+                ),
             ],
-        }
-        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f)
+        )
+        tasks.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(main.cli, self.base_args + ["status"])
         self.assertEqual(result.exit_code, 0)
@@ -1188,20 +1177,19 @@ class TestLemmingRun(unittest.TestCase):
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
 
         # Scaffold a valid file with one task
-        self.initial_data = {
-            "context": "Initial context",
-            "tasks": [
-                {
-                    "id": "task1",
-                    "description": "Task 1",
-                    "status": tasks.TaskStatus.PENDING,
-                    "attempts": 0,
-                    "outcomes": [],
-                }
+        self.initial_data = tasks.Roadmap(
+            context="Initial context",
+            tasks=[
+                tasks.Task(
+                    id="task1",
+                    description="Task 1",
+                    status=tasks.TaskStatus.PENDING,
+                    attempts=0,
+                    outcomes=[],
+                )
             ],
-        }
-        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
-            yaml.dump(self.initial_data, f)
+        )
+        tasks.save_tasks(self.test_tasks_file, self.initial_data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)

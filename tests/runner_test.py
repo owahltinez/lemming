@@ -286,3 +286,20 @@ File Path: {{tasks_file_path}}
     assert "ID: task1" in prompt
     assert f"File Name: {tasks_file.name}" in prompt
     assert f"File Path: {shlex.quote(str(tasks_file))}" in prompt
+
+
+def test_prepare_prompt_local_override(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    project_dir = tmp_path
+    local_hooks_dir = project_dir / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    (local_hooks_dir / "taskrunner.md").write_text("LOCAL OVERRIDE {{description}}")
+
+    data = tasks.Roadmap(
+        tasks=[
+            tasks.Task(id="1", description="My Task"),
+        ],
+    )
+    task = data.tasks[0]
+    prompt = runner.prepare_prompt(data, task, tasks_file)
+    assert "LOCAL OVERRIDE My Task" in prompt

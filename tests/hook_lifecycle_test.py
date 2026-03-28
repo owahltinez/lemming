@@ -4,19 +4,10 @@ import shutil
 import tempfile
 import unittest
 import unittest.mock
-import yaml
 import click.testing
 from lemming import main
 from lemming import tasks
 from lemming import runner
-
-
-def enum_representer(dumper, data):
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data.value)
-
-
-yaml.add_representer(tasks.TaskStatus, enum_representer)
-yaml.SafeDumper.add_representer(tasks.TaskStatus, enum_representer)
 
 
 class TestHookLifecycle(unittest.TestCase):
@@ -27,21 +18,22 @@ class TestHookLifecycle(unittest.TestCase):
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
 
         # Scaffold a valid file with one task
-        self.initial_data = {
-            "context": "Initial context",
-            "tasks": [
-                {
-                    "id": "task1",
-                    "description": "Task 1",
-                    "status": tasks.TaskStatus.PENDING,
-                    "attempts": 0,
-                    "outcomes": [],
-                }
+        self.initial_data = tasks.Roadmap(
+            context="Initial context",
+            tasks=[
+                tasks.Task(
+                    id="task1",
+                    description="Task 1",
+                    status=tasks.TaskStatus.PENDING,
+                    attempts=0,
+                    outcomes=[],
+                )
             ],
-            "config": {"hooks": ["roadmap"], "retries": 1, "runner": "mock-runner"},
-        }
-        with open(self.test_tasks_file, "w", encoding="utf-8") as f:
-            yaml.dump(self.initial_data, f)
+            config=tasks.RoadmapConfig(
+                hooks=["roadmap"], retries=1, runner="mock-runner"
+            ),
+        )
+        tasks.save_tasks(self.test_tasks_file, self.initial_data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)

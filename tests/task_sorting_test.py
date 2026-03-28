@@ -95,3 +95,27 @@ def test_failed_tasks_sorting_grouped_with_completed(tmp_path):
     assert project_data.tasks[1].description == "Pending"
     assert project_data.tasks[2].description == "Completed"
     assert project_data.tasks[3].description == "Failed"
+
+
+def test_task_sorting_tie_breaker(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+
+    # Add three tasks with the same creation time (roughly)
+    # We'll manually set them to be exactly the same
+    tasks.add_task(tasks_file, "Task A")
+    tasks.add_task(tasks_file, "Task B")
+    tasks.add_task(tasks_file, "Task C")
+
+    with tasks.lock_tasks(tasks_file):
+        data = tasks.load_tasks(tasks_file)
+        now = time.time()
+        for t in data.tasks:
+            t.created_at = now
+        tasks.save_tasks(tasks_file, data)
+
+    project_data = tasks.get_project_data(tasks_file)
+
+    # Should be reverse chronological by index: Task C, Task B, Task A
+    assert project_data.tasks[0].description == "Task C"
+    assert project_data.tasks[1].description == "Task B"
+    assert project_data.tasks[2].description == "Task A"
