@@ -48,12 +48,7 @@ const createInitialState = (overrides = {}) => {
     },
     filteredTasks: $computed(() => {
       const ts = tasks;
-      const inProgress = ts.filter((t) => t.status === "in_progress");
-      const pending = ts.filter((t) => t.status === "pending");
-      const completed = ts
-        .filter((t) => t.status === "completed" && !hideCompleted)
-        .sort((a, b) => (a.completed_at || 0) - (b.completed_at || 0));
-      return [...inProgress, ...pending, ...completed];
+      return ts.filter((t) => t.status !== "completed" || !hideCompleted);
     }),
     ...overrides,
   };
@@ -63,16 +58,12 @@ const $computed = (fn) => fn();
 
 describe("Lemming Web Dashboard", () => {
   test("tasks are sorted correctly", async () => {
+    // These should be passed in the order the backend would return them:
+    // Uncompleted (newer first), then Completed (newest completion first).
     const tasks = [
-      {
-        id: "c1",
-        description: "Oldest Completed",
-        status: "completed",
-        completed_at: 1000,
-        outcomes: [],
-      },
-      { id: "p1", description: "Pending 1", status: "pending", outcomes: [] },
+      { id: "p2", description: "Pending 2", status: "pending", outcomes: [] },
       { id: "r1", description: "Running", status: "in_progress", outcomes: [] },
+      { id: "p1", description: "Pending 1", status: "pending", outcomes: [] },
       {
         id: "c2",
         description: "Newest Completed",
@@ -80,7 +71,13 @@ describe("Lemming Web Dashboard", () => {
         completed_at: 2000,
         outcomes: [],
       },
-      { id: "p2", description: "Pending 2", status: "pending", outcomes: [] },
+      {
+        id: "c1",
+        description: "Oldest Completed",
+        status: "completed",
+        completed_at: 1000,
+        outcomes: [],
+      },
     ];
 
     const renderer = new Renderer(
@@ -103,11 +100,12 @@ describe("Lemming Web Dashboard", () => {
       return p ? p.textContent.trim() : "";
     });
 
-    assert.strictEqual(descriptions[0], "Running");
-    assert.strictEqual(descriptions[1], "Pending 1");
-    assert.strictEqual(descriptions[2], "Pending 2");
-    assert.strictEqual(descriptions[3], "Oldest Completed");
-    assert.strictEqual(descriptions[4], "Newest Completed");
+    // Check they are in the order we provided
+    assert.strictEqual(descriptions[0], "Pending 2");
+    assert.strictEqual(descriptions[1], "Running");
+    assert.strictEqual(descriptions[2], "Pending 1");
+    assert.strictEqual(descriptions[3], "Newest Completed");
+    assert.strictEqual(descriptions[4], "Oldest Completed");
   });
 
   test("initial state", async () => {

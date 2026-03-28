@@ -75,12 +75,7 @@
 
       $.filteredTasks = $.$computed(($) => {
         const ts = $.tasks;
-        const inProgress = ts.filter((t) => t.status === "in_progress");
-        const pending = ts.filter((t) => t.status === "pending");
-        const completed = ts
-          .filter((t) => t.status === "completed" && !$.hideCompleted)
-          .sort((a, b) => (a.completed_at || 0) - (b.completed_at || 0));
-        return [...inProgress, ...pending, ...completed];
+        return ts.filter((t) => t.status !== "completed" || !$.hideCompleted);
       });
 
       // --- Utilities ---

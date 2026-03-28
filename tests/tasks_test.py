@@ -170,3 +170,25 @@ def test_claim_already_in_progress(tmp_path):
     assert claimed_stale is not None
     assert claimed_stale.pid == 789
     assert claimed_stale.attempts == 2
+
+
+def test_get_project_data_deduplication(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+
+    # Create a corrupted roadmap with duplicate task IDs
+    data = tasks.Roadmap(
+        context="test",
+        tasks=[
+            tasks.Task(id="1", description="Task 1", status="pending"),
+            tasks.Task(id="1", description="Task 1 Duplicate", status="pending"),
+            tasks.Task(id="2", description="Task 2", status="pending"),
+        ],
+    )
+    tasks.save_tasks(tasks_file, data)
+
+    project_data = tasks.get_project_data(tasks_file)
+
+    # Should only have two unique tasks, newer first
+    assert len(project_data.tasks) == 2
+    assert project_data.tasks[0].description == "Task 2"
+    assert project_data.tasks[1].description == "Task 1"

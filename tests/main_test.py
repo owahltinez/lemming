@@ -284,13 +284,17 @@ class TestLemming(unittest.TestCase):
             main.cli, self.base_args + ["add", "Description", "-f", "desc.txt"]
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Cannot provide both description and --file.", result.output)
+        self.assertIn(
+            "Error: Cannot provide both description and --file.", result.output
+        )
         os.remove("desc.txt")
 
     def test_add_task_neither_error(self):
         result = self.cli_runner.invoke(main.cli, self.base_args + ["add"])
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Must provide either description or --file.", result.output)
+        self.assertIn(
+            "Error: Must provide either description or --file.", result.output
+        )
 
     def test_edit_task_file(self):
         with open("new_desc.txt", "w") as f:
@@ -312,7 +316,9 @@ class TestLemming(unittest.TestCase):
             + ["edit", "12345678", "--description", "Desc", "-f", "new_desc.txt"],
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Cannot provide both description and --file.", result.output)
+        self.assertIn(
+            "Error: Cannot provide both description and --file.", result.output
+        )
         os.remove("new_desc.txt")
 
     def test_outcome_add_file(self):
@@ -346,7 +352,9 @@ class TestLemming(unittest.TestCase):
             + ["outcome", "add", "12345678", "Desc", "-f", "outcome.txt"],
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Cannot provide both outcome text and --file.", result.output)
+        self.assertIn(
+            "Error: Cannot provide both outcome text and --file.", result.output
+        )
         os.remove("outcome.txt")
 
     def test_outcome_add_neither_error(self):
@@ -354,7 +362,9 @@ class TestLemming(unittest.TestCase):
             main.cli, self.base_args + ["outcome", "add", "12345678"]
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Must provide either outcome text or --file.", result.output)
+        self.assertIn(
+            "Error: Must provide either outcome text or --file.", result.output
+        )
 
     def test_outcome_edit_file(self):
         data = tasks.load_tasks(self.test_tasks_file)
@@ -385,7 +395,9 @@ class TestLemming(unittest.TestCase):
             + ["outcome", "edit", "12345678", "0", "New Desc", "-f", "edited.txt"],
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Cannot provide both outcome text and --file.", result.output)
+        self.assertIn(
+            "Error: Cannot provide both outcome text and --file.", result.output
+        )
         os.remove("edited.txt")
 
     def test_outcome_edit_neither_error(self):
@@ -397,7 +409,9 @@ class TestLemming(unittest.TestCase):
             main.cli, self.base_args + ["outcome", "edit", "12345678", "0"]
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Error: Must provide either outcome text or --file.", result.output)
+        self.assertIn(
+            "Error: Must provide either outcome text or --file.", result.output
+        )
 
     def test_reset_command(self):
         # 1. Add some state
@@ -1036,11 +1050,11 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
 
         # Order should be:
-        # 1. In Progress 1 (i1)
-        # 2. Pending 1 (p1)
-        # 3. Pending 2 (p2)
-        # 4. Completed 1 (c1) (earlier completed_at)
-        # 5. Completed 2 (c2) (later completed_at)
+        # 1. Pending 2 (p2) (newest uncompleted)
+        # 2. In Progress 1 (i1)
+        # 3. Pending 1 (p1)
+        # 4. Completed 2 (c2) (newest completed)
+        # 5. Completed 1 (c1)
 
         lines = [
             line.strip()
@@ -1055,7 +1069,7 @@ class TestLemming(unittest.TestCase):
                 task_ids.append(task_id)
 
         # Check expected order
-        expected_order = ["i1", "p1", "p2", "c1", "c2"]
+        expected_order = ["p2", "i1", "p1", "c2", "c1"]
         self.assertEqual(task_ids, expected_order)
 
 
