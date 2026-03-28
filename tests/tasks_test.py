@@ -192,3 +192,33 @@ def test_get_project_data_deduplication(tmp_path):
     assert len(project_data.tasks) == 2
     assert project_data.tasks[0].description == "Task 2"
     assert project_data.tasks[1].description == "Task 1"
+
+
+def test_loop_lock_management(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+
+    # Initially, no loop is running
+    assert tasks.get_loop_pid(tasks_file) is None
+    assert tasks.is_loop_running(tasks_file) is False
+
+    # Create a lock file
+    tasks.acquire_loop_lock(tasks_file)
+    pid = tasks.get_loop_pid(tasks_file)
+    assert pid == os.getpid()
+    assert tasks.is_loop_running(tasks_file) is True
+
+    # Release the lock
+    tasks.release_loop_lock(tasks_file)
+    assert tasks.get_loop_pid(tasks_file) is None
+    assert tasks.is_loop_running(tasks_file) is False
+
+
+def test_get_loop_pid_corrupted_lock_file(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    lock_path = tasks._get_loop_lock_path(tasks_file)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write "corrupted" content
+    lock_path.write_text("not-a-pid")
+    assert tasks.get_loop_pid(tasks_file) is None
+    assert tasks.is_loop_running(tasks_file) is False
