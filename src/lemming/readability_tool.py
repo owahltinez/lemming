@@ -4,6 +4,8 @@ import pathlib as pl
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
+from typing import Any
 
 import click
 import requests
@@ -19,19 +21,21 @@ logging.basicConfig(
 logger = logging.getLogger("readability")
 
 
-def get_guides_dir():
+def get_guides_dir() -> pl.Path:
     """
     Get the directory where style guides are cached.
     Defaults to 'guides/' in the same directory as this script,
     but can be overridden by the READABILITY_CACHE environment variable.
     """
-    return os.getenv("READABILITY_CACHE") or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "guides"
-    )
+    cache_env = os.getenv("READABILITY_CACHE")
+    if cache_env:
+        return pl.Path(cache_env)
+
+    return pl.Path(__file__).parent / "guides"
 
 
 # Mapping of languages to their Google Style Guide file paths
-LANGUAGE_MAP = {
+LANGUAGE_MAP: dict[str, str] = {
     "python": "pyguide.md",
     "shell": "shellguide.md",
     "objc": "objcguide.md",
@@ -58,7 +62,7 @@ LANGUAGE_MAP = {
 BASE_URL = "https://google.github.io/styleguide/"
 
 
-def fetch_guide_content(url):
+def fetch_guide_content(url: str) -> str:
     """
     Fetch raw content from the specified URL.
     """
@@ -75,7 +79,7 @@ def fetch_guide_content(url):
     return response.text
 
 
-def convert_to_markdown(content, filename):
+def convert_to_markdown(content: str, filename: str) -> str:
     """
     Convert the raw content to markdown based on file extension.
     """
@@ -87,7 +91,7 @@ def convert_to_markdown(content, filename):
 
     # Handle HTML files by converting them to Markdown
     if filename.endswith(".html"):
-        return md(content, heading_style="ATX")
+        return str(md(content, heading_style="ATX"))
 
     # Handle XML files (used for Vim script guide)
     if filename.endswith(".xml"):
@@ -98,16 +102,16 @@ def convert_to_markdown(content, filename):
     return content
 
 
-def get_local_path(filename):
+def get_local_path(filename: str) -> pl.Path:
     """
     Get the local path for a given style guide filename.
     """
     # Use the base filename and change extension to .md for uniform storage
     base_name = os.path.basename(filename).split(".")[0]
-    return os.path.join(get_guides_dir(), f"{base_name}.md")
+    return get_guides_dir() / f"{base_name}.md"
 
 
-def fetch_guide(language, remote=False):
+def fetch_guide(language: str, remote: bool = False) -> str:
     """
     Orchestrate fetching and converting the style guide for a given language.
     """
@@ -123,10 +127,9 @@ def fetch_guide(language, remote=False):
     local_path = get_local_path(filename)
 
     # If remote is False, check for local file first
-    if not remote and os.path.exists(local_path):
+    if not remote and local_path.exists():
         logger.info(f"Reading style guide from local file: {local_path}")
-        with open(local_path, "r") as f:
-            return f.read()
+        return local_path.read_text(encoding="utf-8")
 
     # Build the full URL and fetch the raw content
     url = f"{BASE_URL}{filename}"
@@ -136,11 +139,11 @@ def fetch_guide(language, remote=False):
     markdown_content = convert_to_markdown(content, filename)
 
     # Save to local cache for future use
-    if not os.path.exists(get_guides_dir()):
-        os.makedirs(get_guides_dir(), exist_ok=True)
+    guides_dir = get_guides_dir()
+    if not guides_dir.exists():
+        guides_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(local_path, "w") as f:
-        f.write(markdown_content)
+    local_path.write_text(markdown_content, encoding="utf-8")
     logger.debug(f"Cached style guide locally: {local_path}")
 
     return markdown_content
@@ -149,7 +152,7 @@ def fetch_guide(language, remote=False):
 @click.group(invoke_without_command=True)
 @click.pass_context
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
-def cli(ctx, verbose):
+def cli(ctx: click.Context, verbose: bool) -> None:
     """
     Pulls the latest Google style guide for the selected LANGUAGE in markdown format.
     """
@@ -164,7 +167,7 @@ def cli(ctx, verbose):
 )
 @click.option("--remote", "-r", is_flag=True, help="Force fetching from the web.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
-def fetch(language, output, remote, verbose):
+def fetch(language: str, output: str | None, remote: bool, verbose: bool) -> None:
     """
     Fetch the style guide for a specific LANGUAGE.
     """
@@ -179,8 +182,7 @@ def fetch(language, output, remote, verbose):
 
         # Handle output: either save to file or print to stdout
         if output:
-            with open(output, "w") as f:
-                f.write(markdown_content)
+            pl.Path(output).write_text(markdown_content, encoding="utf-8")
             logger.info(f"Style guide saved to {output}")
         else:
             click.echo(markdown_content)
@@ -193,7 +195,7 @@ def fetch(language, output, remote, verbose):
 
 @cli.command()
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
-def sync(verbose):
+def sync(verbose: bool) -> None:
     """
     Synchronize all supported style guides from the web to local storage.
     """
@@ -202,8 +204,9 @@ def sync(verbose):
 
     logger.info("Synchronizing all style guides...")
 
-    if not os.path.exists(get_guides_dir()):
-        os.makedirs(get_guides_dir(), exist_ok=True)
+    guides_dir = get_guides_dir()
+    if not guides_dir.exists():
+        guides_dir.mkdir(parents=True, exist_ok=True)
 
     # Get unique filenames to avoid redundant downloads
     filenames = set(LANGUAGE_MAP.values())
@@ -219,8 +222,7 @@ def sync(verbose):
             markdown_content = convert_to_markdown(content, filename)
             local_path = get_local_path(filename)
 
-            with open(local_path, "w") as f:
-                f.write(markdown_content)
+            local_path.write_text(markdown_content, encoding="utf-8")
 
             logger.info(f"Successfully synced {filename} to {local_path}")
             success_count += 1
@@ -232,12 +234,12 @@ def sync(verbose):
 
 
 @cli.command()
-def languages():
+def languages() -> None:
     """
     List all supported languages and their aliases.
     """
     # Group languages by their target guide
-    guides = {}
+    guides: dict[str, list[str]] = {}
     for lang, filename in LANGUAGE_MAP.items():
         if filename not in guides:
             guides[filename] = []
@@ -249,7 +251,9 @@ def languages():
         click.echo(f"  - {', '.join(aliases)}")
 
 
-def _run_tool(tool_name, tool_config, logger):
+def _run_tool(
+    tool_name: str, tool_config: dict[str, Any], logger: logging.Logger
+) -> None:
     """
     Run a specific formatting or linting tool.
     """
@@ -260,7 +264,7 @@ def _run_tool(tool_name, tool_config, logger):
     if not cmd:
         return
 
-    executable = cmd[0]
+    executable = str(cmd[0])
     if not shutil.which(executable):
         logger.debug(f"Tool {tool_name} ({executable}) not found in PATH, skipping.")
         return
@@ -289,61 +293,62 @@ def _run_tool(tool_name, tool_config, logger):
 
 
 @cli.command()
-@click.argument("path", type=click.Path(exists=True))
+@click.argument("paths", nargs=-1, type=click.Path(exists=True))
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
-def check(path, verbose):
+def check(paths: Sequence[str], verbose: bool) -> None:
     """
-    Run relevant formatters and linters for a given path.
+    Run relevant formatters and linters for given paths.
     """
     if verbose:
         logger.setLevel(logging.DEBUG)
 
-    logger.info(f"Checking path: {path}")
+    for path in paths:
+        logger.info(f"Checking path: {path}")
 
-    # Tool definitions with trigger files and commands
-    tools = [
-        {
-            "name": "ruff",
-            "check": ["ruff", "check", path],
-            "fix": ["ruff", "check", "--fix", path],
-            "format": ["ruff", "format", path],
-            "trigger": ["pyproject.toml", "ruff.toml", ".ruff.toml"],
-        },
-        {
-            "name": "biome",
-            "check": ["npx", "biome", "lint", path],
-            "fix": ["npx", "biome", "lint", "--apply", path],
-            "format": ["npx", "biome", "format", "--write", path],
-            "trigger": ["biome.json", "biome.jsonc"],
-        },
-        {
-            "name": "prettier",
-            "format": ["npx", "prettier", "--write", path],
-            "trigger": [
-                ".prettierrc",
-                ".prettierrc.json",
-                ".prettierrc.yml",
-                ".prettierrc.yaml",
-                ".prettierrc.js",
-                "prettier.config.js",
-                "prettier.config.cjs",
-            ],
-        },
-        {
-            "name": "go fmt",
-            "format": ["go", "fmt", path],
-            "trigger": ["go.mod"],
-        },
-    ]
+        # Tool definitions with trigger files and commands
+        tools = [
+            {
+                "name": "ruff",
+                "check": ["ruff", "check", path],
+                "fix": ["ruff", "check", "--fix", path],
+                "format": ["ruff", "format", path],
+                "trigger": ["pyproject.toml", "ruff.toml", ".ruff.toml"],
+            },
+            {
+                "name": "biome",
+                "check": ["npx", "biome", "lint", path],
+                "fix": ["npx", "biome", "lint", "--apply", path],
+                "format": ["npx", "biome", "format", "--write", path],
+                "trigger": ["biome.json", "biome.jsonc"],
+            },
+            {
+                "name": "prettier",
+                "format": ["npx", "prettier", "--write", path],
+                "trigger": [
+                    ".prettierrc",
+                    ".prettierrc.json",
+                    ".prettierrc.yml",
+                    ".prettierrc.yaml",
+                    ".prettierrc.js",
+                    "prettier.config.js",
+                    "prettier.config.cjs",
+                ],
+            },
+            {
+                "name": "go fmt",
+                "format": ["go", "fmt", path],
+                "trigger": ["go.mod"],
+            },
+        ]
 
-    project_root = pl.Path.cwd()
+        project_root = pl.Path.cwd()
 
-    for tool in tools:
-        # Check if any of the trigger files exist in the project root
-        has_trigger = any((project_root / t).exists() for t in tool["trigger"])
+        for tool in tools:
+            # Check if any of the trigger files exist in the project root
+            has_trigger = any((project_root / t).exists() for t in tool["trigger"])
 
-        if has_trigger:
-            _run_tool(tool["name"], tool, logger)
+            if has_trigger:
+                _run_tool(tool["name"], tool, logger)
 
 
 # Main entry point for the CLI
