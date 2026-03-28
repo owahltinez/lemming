@@ -7,12 +7,12 @@
 
       // --- Project Scoping ---
       // $$project is auto-synced with the ?project= URL query param by mancha.
-      $.$$project = $.$$project ?? "";
+      $.$$project = $.$$project ?? '';
 
       // Helper: build a URL with the project query param.
       function apiUrl(path, extraParams = {}) {
         const params = new URLSearchParams(extraParams);
-        if ($.$$project) params.set("project", $.$$project);
+        if ($.$$project) params.set('project', $.$$project);
         const qs = params.toString();
         return qs ? `${path}?${qs}` : path;
       }
@@ -20,7 +20,7 @@
       // --- Persistence Management (scoped by project) ---
       const storagePrefix = $.$$project
         ? `lemming[${$.$$project}]_`
-        : "lemming_";
+        : 'lemming_';
       const Storage = {
         get(key, fallback) {
           try {
@@ -37,42 +37,42 @@
 
       // --- Initial State ---
       $.tasks = [];
-      $.context = "";
+      $.context = '';
       $.config = {
         retries: 3,
-        runner: "gemini",
-        hooks: ["roadmap"],
+        runner: 'gemini',
+        hooks: ['roadmap'],
       };
-      $.cwd = "";
-      $.newTask = "";
+      $.cwd = '';
+      $.newTask = '';
       $.loading = true;
       $.runners = [];
       $.availableHooks = [];
-      $.selectedRunner = "gemini";
+      $.selectedRunner = 'gemini';
       $.retries = 3;
       $.envOverrides = []; // Will hydrate below
-      $.hideCompleted = Storage.get("hide_completed", false);
+      $.hideCompleted = Storage.get('hide_completed', false);
       $.toasts = [];
       $.expanded = {};
       $.loopRunning = false;
       $.editingTask = null;
-      $.editFormData = { description: "", parent: "" };
+      $.editFormData = { description: '', parent: '' };
 
       // --- Favicon Status ---
-      $.faviconState = "idle";
-      $.lastSeenState = Storage.get("last_seen_state", null);
+      $.faviconState = 'idle';
+      $.lastSeenState = Storage.get('last_seen_state', null);
       // --- Folder Picker State ---
-      $.folderPickerPath = "";
+      $.folderPickerPath = '';
       $.folderPickerDirs = [];
       $.folderPickerLoading = false;
       $.showNewFolderInput = false;
-      $.newFolderName = "";
+      $.newFolderName = '';
 
       // --- Computed Properties ---
       $.completedCount = $.$computed(
         ($) =>
           $.tasks.filter(
-            (t) => t.status === "completed" || t.status === "failed",
+            (t) => t.status === 'completed' || t.status === 'failed',
           ).length,
       );
 
@@ -84,9 +84,9 @@
         // Within each group, newest first (reverse chronological by completion/creation time).
         ts.sort((a, b) => {
           const aDone =
-            a.status === "completed" || a.status === "failed" ? 1 : 0;
+            a.status === 'completed' || a.status === 'failed' ? 1 : 0;
           const bDone =
-            b.status === "completed" || b.status === "failed" ? 1 : 0;
+            b.status === 'completed' || b.status === 'failed' ? 1 : 0;
           if (aDone !== bDone) return aDone - bDone;
 
           const aTime = a.completed_at || a.created_at || 0;
@@ -97,7 +97,7 @@
         });
         return ts.filter(
           (t) =>
-            (t.status !== "completed" && t.status !== "failed") ||
+            (t.status !== 'completed' && t.status !== 'failed') ||
             !$.hideCompleted,
         );
       });
@@ -105,9 +105,9 @@
       // --- Utilities ---
       $.trim = (s, l = 60) =>
         s && s.length > l ? `${s.substring(0, l - 3)}...` : s;
-      $.formatDate = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : "");
+      $.formatDate = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : '');
       $.formatDuration = (seconds) => {
-        if (!seconds) return "0s";
+        if (!seconds) return '0s';
         if (seconds < 60) return `${Math.floor(seconds)}s`;
         const minutes = Math.floor(seconds / 60);
         const remainingSeconds = Math.floor(seconds % 60);
@@ -115,7 +115,7 @@
       };
       $.formatTaskRunTime = (task) => {
         let total = task.run_time || 0;
-        if (task.status === "in_progress" && task.last_started_at) {
+        if (task.status === 'in_progress' && task.last_started_at) {
           total += Date.now() / 1000 - task.last_started_at;
         }
         return $.formatDuration(total);
@@ -127,20 +127,20 @@
 
       $.copyToClipboard = function (text) {
         if (!navigator.clipboard) {
-          const el = document.createElement("textarea");
+          const el = document.createElement('textarea');
           el.value = text;
           document.body.appendChild(el);
           el.select();
-          document.execCommand("copy");
+          document.execCommand('copy');
           document.body.removeChild(el);
         } else {
           navigator.clipboard.writeText(text);
         }
-        this.addToast("Copied to clipboard", "info");
+        this.addToast('Copied to clipboard', 'info');
       };
 
       // --- UI Feedback ---
-      $.addToast = function (message, type = "info") {
+      $.addToast = function (message, type = 'info') {
         const id = Date.now() + Math.random();
         this.toasts.push({ id, message: this.trim(message, 120), type });
         setTimeout(() => {
@@ -158,40 +158,40 @@
           if (!oldTask) continue;
 
           if (
-            oldTask.status !== "completed" &&
-            newTask.status === "completed"
+            oldTask.status !== 'completed' &&
+            newTask.status === 'completed'
           ) {
             $.addToast(
               `Task completed: ${$.trim(newTask.description, 60)}`,
-              "success",
+              'success',
             );
           } else if (
-            oldTask.status !== "failed" &&
-            newTask.status === "failed"
+            oldTask.status !== 'failed' &&
+            newTask.status === 'failed'
           ) {
             $.addToast(
               `Terminal failure: ${$.trim(newTask.description, 60)}`,
-              "error",
+              'error',
             );
           } else if (
-            oldTask.status === "in_progress" &&
-            newTask.status === "pending"
+            oldTask.status === 'in_progress' &&
+            newTask.status === 'pending'
           ) {
             $.addToast(
               `Attempt failed (retry pending): ${$.trim(newTask.description, 60)}`,
-              "error",
+              'error',
             );
           } else if (
             (newTask.outcomes?.length || 0) > (oldTask.outcomes?.length || 0)
           ) {
             $.addToast(
               `Outcome recorded: ${$.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
-              "info",
+              'info',
             );
           } else if (newTask.attempts > oldTask.attempts) {
             $.addToast(
               `Task attempt ${newTask.attempts}: ${$.trim(newTask.description, 60)}`,
-              "info",
+              'info',
             );
           }
         }
@@ -199,46 +199,46 @@
 
       $.updateTitle = () => {
         const project = $.$$project;
-        let folderName = "";
+        let folderName = '';
         if (project) {
-          folderName = project.split("/").filter(Boolean)[0];
+          folderName = project.split('/').filter(Boolean)[0];
         } else if ($.cwd) {
-          folderName = $.cwd.split("/").filter(Boolean).pop();
+          folderName = $.cwd.split('/').filter(Boolean).pop();
         }
-        document.title = folderName ? `Lemming · ${folderName}` : "Lemming";
+        document.title = folderName ? `Lemming · ${folderName}` : 'Lemming';
       };
 
       $.updateFaviconStatus = () => {
         if (!window.updateFavicon) return;
         const hasError = $.tasks.some(
-          (t) => t.status === "pending" && t.attempts > 0,
+          (t) => t.status === 'pending' && t.attempts > 0,
         );
         const allCompleted =
-          $.tasks.length > 0 && $.tasks.every((t) => t.status === "completed");
+          $.tasks.length > 0 && $.tasks.every((t) => t.status === 'completed');
         const state = $.loopRunning
-          ? "running"
+          ? 'running'
           : hasError
-            ? "error"
+            ? 'error'
             : allCompleted
-              ? "success"
-              : "idle";
+              ? 'success'
+              : 'idle';
 
         $.faviconState = state;
-        if (state === "running") {
+        if (state === 'running') {
           $.lastSeenState = null;
-          Storage.set("last_seen_state", null);
+          Storage.set('last_seen_state', null);
         }
 
         const effectiveState =
-          (state === "success" || state === "error") &&
+          (state === 'success' || state === 'error') &&
           state === $.lastSeenState
-            ? "idle"
+            ? 'idle'
             : state;
         window.updateFavicon(effectiveState);
       };
 
       $.fetchData = async () => {
-        const response = await fetch(apiUrl("/api/data"));
+        const response = await fetch(apiUrl('/api/data'));
         if (!response.ok) return;
         const data = await response.json();
         const newTasks = data.tasks || [];
@@ -246,7 +246,7 @@
         $.notifyChanges($.tasks, newTasks);
 
         // Update core state
-        $.cwd = data.cwd || "";
+        $.cwd = data.cwd || '';
         $.loopRunning = data.loop_running || false;
         $.tasks = newTasks;
 
@@ -260,25 +260,25 @@
         $.updateTitle();
         $.updateFaviconStatus();
 
-        const contextElem = document.querySelector("textarea");
+        const contextElem = document.querySelector('textarea');
         if (
           $.loading ||
           (contextElem && document.activeElement !== contextElem)
         ) {
-          $.context = data.context || "";
+          $.context = data.context || '';
         }
         $.loading = false;
       };
 
       $.fetchRunners = async () => {
-        const response = await fetch(apiUrl("/api/runners"));
+        const response = await fetch(apiUrl('/api/runners'));
         if (response.ok) {
           $.runners = await response.json();
         }
       };
 
       $.fetchHooks = async () => {
-        const response = await fetch(apiUrl("/api/hooks"));
+        const response = await fetch(apiUrl('/api/hooks'));
         if (response.ok) {
           $.availableHooks = await response.json();
         }
@@ -290,9 +290,9 @@
           runner: $.selectedRunner,
           hooks: $.config.hooks,
         };
-        await fetch(apiUrl("/api/config"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        await fetch(apiUrl('/api/config'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(config),
         });
       };
@@ -304,7 +304,7 @@
         $.saveConfigToServer();
       };
       $.saveHideCompletedPreference = () => {
-        Storage.set("hide_completed", $.hideCompleted);
+        Storage.set('hide_completed', $.hideCompleted);
       };
       $.toggleHook = (name) => {
         let hooks = $.config.hooks;
@@ -331,17 +331,17 @@
             key,
             value,
           }));
-          Storage.set("env_overrides", toSave);
+          Storage.set('env_overrides', toSave);
         }, 300);
       };
 
       // --- Operations ---
       $.addEnvOverride = () => {
         const id =
-          typeof crypto !== "undefined" && crypto.randomUUID
+          typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()
             : `env-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-        $.envOverrides.push({ id, key: "", value: "" });
+        $.envOverrides.push({ id, key: '', value: '' });
         $.saveEnvOverrides();
       };
 
@@ -352,45 +352,45 @@
 
       $.addTask = async () => {
         if (!$.newTask.trim()) return;
-        const res = await fetch(apiUrl("/api/tasks"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const res = await fetch(apiUrl('/api/tasks'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ description: $.newTask }),
         });
         if (res.ok) {
-          $.newTask = "";
+          $.newTask = '';
           await $.fetchData();
         }
       };
 
       $.deleteTask = async (id) => {
-        if (confirm("Delete this task?")) {
+        if (confirm('Delete this task?')) {
           const res = await fetch(apiUrl(`/api/tasks/${id}/delete`), {
-            method: "POST",
+            method: 'POST',
           });
           if (res.ok) await $.fetchData();
         }
       };
 
       $.deleteCompletedTasks = async () => {
-        if (confirm("Delete ALL completed tasks?")) {
-          const res = await fetch(apiUrl("/api/tasks/delete-completed"), {
-            method: "POST",
+        if (confirm('Delete ALL completed tasks?')) {
+          const res = await fetch(apiUrl('/api/tasks/delete-completed'), {
+            method: 'POST',
           });
           if (res.ok) {
-            $.addToast("Completed tasks deleted", "success");
+            $.addToast('Completed tasks deleted', 'success');
             await $.fetchData();
           }
         }
       };
 
       $.cancelTask = async (id) => {
-        if (confirm("Cancel execution? Process will be killed.")) {
+        if (confirm('Cancel execution? Process will be killed.')) {
           const res = await fetch(apiUrl(`/api/tasks/${id}/cancel`), {
-            method: "POST",
+            method: 'POST',
           });
           if (res.ok) {
-            $.addToast("Execution cancelled", "info");
+            $.addToast('Execution cancelled', 'info');
             await $.fetchData();
           }
         }
@@ -399,15 +399,15 @@
       $.editTask = (task) => {
         $.editingTask = task;
         $.editFormData = {
-          description: task.description || "",
-          parent: task.parent || "",
+          description: task.description || '',
+          parent: task.parent || '',
         };
-        const modal = document.getElementById("edit-modal");
+        const modal = document.getElementById('edit-modal');
         if (modal) modal.showModal();
       };
 
       $.closeEditModal = () => {
-        const modal = document.getElementById("edit-modal");
+        const modal = document.getElementById('edit-modal');
         if (modal) modal.close();
         $.editingTask = null;
       };
@@ -422,12 +422,12 @@
         };
 
         const res = await fetch(apiUrl(`/api/tasks/${task.id}/update`), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(update),
         });
         if (res.ok) {
-          $.addToast("Task updated", "success");
+          $.addToast('Task updated', 'success');
           await $.fetchData();
         }
 
@@ -436,23 +436,23 @@
 
       $.uncompleteTask = async (id) => {
         const res = await fetch(apiUrl(`/api/tasks/${id}/update`), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "pending" }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'pending' }),
         });
         if (res.ok) {
-          $.addToast("Task reset to pending", "info");
+          $.addToast('Task reset to pending', 'info');
           await $.fetchData();
         }
       };
 
       $.clearTask = async (id) => {
-        if (confirm("Clear task attempts and outcomes?")) {
+        if (confirm('Clear task attempts and outcomes?')) {
           const res = await fetch(apiUrl(`/api/tasks/${id}/clear`), {
-            method: "POST",
+            method: 'POST',
           });
           if (res.ok) {
-            $.addToast("Task cleared", "success");
+            $.addToast('Task cleared', 'success');
             await $.fetchData();
           }
         }
@@ -462,54 +462,54 @@
       $.updateContext = () => {
         clearTimeout($.ctxSaveTimeout);
         $.ctxSaveTimeout = setTimeout(async () => {
-          const res = await fetch(apiUrl("/api/context"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+          const res = await fetch(apiUrl('/api/context'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ context: $.context }),
           });
-          if (res.ok) $.addToast("Context saved", "info");
+          if (res.ok) $.addToast('Context saved', 'info');
         }, 1000);
       };
 
       $.runLemming = async () => {
         const env = {};
         for (const o of $.envOverrides) {
-          if (o.key?.trim()) env[o.key.trim()] = o.value || "";
+          if (o.key?.trim()) env[o.key.trim()] = o.value || '';
         }
 
         const payload = {
           env: Object.keys(env).length > 0 ? env : undefined,
         };
 
-        const res = await fetch(apiUrl("/api/run"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const res = await fetch(apiUrl('/api/run'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         if (res.ok) {
-          $.addToast("Run started!", "success");
+          $.addToast('Run started!', 'success');
           await $.fetchData();
         }
       };
 
       // --- Folder Picker ---
       $.openFolderPicker = async () => {
-        $.folderPickerPath = "";
+        $.folderPickerPath = '';
         $.showNewFolderInput = false;
-        $.newFolderName = "";
-        await $.fetchFolderPickerDirs("");
-        const modal = document.getElementById("folder-picker-modal");
+        $.newFolderName = '';
+        await $.fetchFolderPickerDirs('');
+        const modal = document.getElementById('folder-picker-modal');
         if (modal) modal.showModal();
       };
 
       $.closeFolderPicker = () => {
-        const modal = document.getElementById("folder-picker-modal");
+        const modal = document.getElementById('folder-picker-modal');
         if (modal) modal.close();
       };
 
       $.startNewFolder = () => {
         $.showNewFolderInput = true;
-        $.newFolderName = "";
+        $.newFolderName = '';
       };
 
       $.fetchFolderPickerDirs = async (path) => {
@@ -526,22 +526,22 @@
 
       $.createFolder = async () => {
         if (!$.newFolderName) return;
-        const res = await fetch("/api/directories", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const res = await fetch('/api/directories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             path: $.folderPickerPath,
             name: $.newFolderName,
           }),
         });
         if (res.ok) {
-          $.addToast("Folder created!", "success");
+          $.addToast('Folder created!', 'success');
           $.showNewFolderInput = false;
-          $.newFolderName = "";
+          $.newFolderName = '';
           await $.fetchFolderPickerDirs($.folderPickerPath);
         } else {
           const err = await res.json();
-          $.addToast(err.detail || "Failed to create folder", "error");
+          $.addToast(err.detail || 'Failed to create folder', 'error');
         }
       };
       $.folderPickerNavigate = async (path) => {
@@ -549,37 +549,37 @@
       };
 
       $.folderPickerUp = async () => {
-        const parts = $.folderPickerPath.split("/").filter(Boolean);
+        const parts = $.folderPickerPath.split('/').filter(Boolean);
         parts.pop();
-        await $.fetchFolderPickerDirs(parts.join("/"));
+        await $.fetchFolderPickerDirs(parts.join('/'));
       };
 
       $.folderPickerSelect = (path) => {
         // Navigate to the same page with the new project param.
         const url = new URL(window.location.href);
         if (path) {
-          url.searchParams.set("project", path);
+          url.searchParams.set('project', path);
         } else {
-          url.searchParams.delete("project");
+          url.searchParams.delete('project');
         }
-        window.open(url.toString(), "_blank");
+        window.open(url.toString(), '_blank');
         $.closeFolderPicker();
       };
 
       $.folderPickerBreadcrumbs = $.$computed(($) => {
-        const parts = $.folderPickerPath.split("/").filter(Boolean);
-        const crumbs = [{ name: "root", path: "" }];
+        const parts = $.folderPickerPath.split('/').filter(Boolean);
+        const crumbs = [{ name: 'root', path: '' }];
         for (let i = 0; i < parts.length; i++) {
           crumbs.push({
             name: parts[i],
-            path: parts.slice(0, i + 1).join("/"),
+            path: parts.slice(0, i + 1).join('/'),
           });
         }
         return crumbs;
       });
 
       // --- Final Hydration from Storage ---
-      const loadedOverrides = Storage.get("env_overrides", []);
+      const loadedOverrides = Storage.get('env_overrides', []);
       if (loadedOverrides.length > 0) {
         $.envOverrides = loadedOverrides.map((o, i) => ({
           ...o,
@@ -594,16 +594,16 @@
       await Promise.all([$.fetchData(), $.fetchRunners(), $.fetchHooks()]);
 
       // --- Auto-refresh via polling ---
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
           // Force an immediate fetch when returning to the tab.
           $.fetchData();
 
           const state = $.faviconState;
-          if (state === "success" || state === "error") {
+          if (state === 'success' || state === 'error') {
             $.lastSeenState = state;
-            Storage.set("last_seen_state", state);
-            if (window.updateFavicon) window.updateFavicon("idle");
+            Storage.set('last_seen_state', state);
+            if (window.updateFavicon) window.updateFavicon('idle');
           }
         }
       });

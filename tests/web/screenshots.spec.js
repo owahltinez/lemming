@@ -1,20 +1,20 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { expect, test } from "@playwright/test";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { expect, test } from '@playwright/test';
 
-const indexHtmlPath = path.resolve(process.cwd(), "src/lemming/web/index.html");
-const logsHtmlPath = path.resolve(process.cwd(), "src/lemming/web/logs.html");
-const manchaJsPath = path.resolve(process.cwd(), "src/lemming/web/mancha.js");
-const indexJsPath = path.resolve(process.cwd(), "src/lemming/web/index.js");
-const screenshotsDir = path.resolve(process.cwd(), "docs/screenshots");
+const indexHtmlPath = path.resolve(process.cwd(), 'src/lemming/web/index.html');
+const logsHtmlPath = path.resolve(process.cwd(), 'src/lemming/web/logs.html');
+const manchaJsPath = path.resolve(process.cwd(), 'src/lemming/web/mancha.js');
+const indexJsPath = path.resolve(process.cwd(), 'src/lemming/web/index.js');
+const screenshotsDir = path.resolve(process.cwd(), 'docs/screenshots');
 
 // Realistic mock data with anonymized content
 const mockTasks = [
   {
-    id: "a1b2c3",
+    id: 'a1b2c3',
     description:
-      "Set up CI/CD pipeline with GitHub Actions for automated testing and deployment",
-    status: "completed",
+      'Set up CI/CD pipeline with GitHub Actions for automated testing and deployment',
+    status: 'completed',
     attempts: 1,
     has_runner_log: true,
     pid: null,
@@ -24,15 +24,15 @@ const mockTasks = [
     run_time: 142.3,
     started_at: null,
     outcomes: [
-      "Created .github/workflows/ci.yml with build, test, and deploy stages",
-      "Added caching for node_modules to speed up builds",
+      'Created .github/workflows/ci.yml with build, test, and deploy stages',
+      'Added caching for node_modules to speed up builds',
     ],
   },
   {
-    id: "d4e5f6",
+    id: 'd4e5f6',
     description:
-      "Implement user authentication with JWT tokens and refresh token rotation",
-    status: "completed",
+      'Implement user authentication with JWT tokens and refresh token rotation',
+    status: 'completed',
     attempts: 2,
     has_runner_log: true,
     pid: null,
@@ -42,14 +42,14 @@ const mockTasks = [
     run_time: 287.6,
     started_at: null,
     outcomes: [
-      "Added /auth/login and /auth/refresh endpoints",
-      "Tokens expire after 15 minutes, refresh tokens after 7 days",
+      'Added /auth/login and /auth/refresh endpoints',
+      'Tokens expire after 15 minutes, refresh tokens after 7 days',
     ],
   },
   {
-    id: "g7h8i9",
-    description: "Migrate database schema to support multi-tenant architecture",
-    status: "in_progress",
+    id: 'g7h8i9',
+    description: 'Migrate database schema to support multi-tenant architecture',
+    status: 'in_progress',
     attempts: 0,
     has_runner_log: true,
     pid: 48291,
@@ -61,10 +61,10 @@ const mockTasks = [
     outcomes: [],
   },
   {
-    id: "j0k1l2",
+    id: 'j0k1l2',
     description:
-      "Add rate limiting middleware with Redis-backed sliding window",
-    status: "pending",
+      'Add rate limiting middleware with Redis-backed sliding window',
+    status: 'pending',
     attempts: 0,
     has_runner_log: false,
     pid: null,
@@ -76,9 +76,9 @@ const mockTasks = [
     outcomes: [],
   },
   {
-    id: "m3n4o5",
-    description: "Write integration tests for the payment processing module",
-    status: "pending",
+    id: 'm3n4o5',
+    description: 'Write integration tests for the payment processing module',
+    status: 'pending',
     attempts: 2,
     has_runner_log: true,
     pid: null,
@@ -88,19 +88,19 @@ const mockTasks = [
     run_time: 98.1,
     started_at: null,
     outcomes: [
-      "Stripe webhook signature verification failing in test environment",
+      'Stripe webhook signature verification failing in test environment',
     ],
   },
   {
-    id: "p6q7r8",
+    id: 'p6q7r8',
     description:
-      "Refactor API response serialization to use a shared schema layer",
-    status: "pending",
+      'Refactor API response serialization to use a shared schema layer',
+    status: 'pending',
     attempts: 0,
     has_runner_log: false,
     pid: null,
-    agent: "aider",
-    parent: "d4e5f6",
+    agent: 'aider',
+    parent: 'd4e5f6',
     completed_at: null,
     run_time: null,
     started_at: null,
@@ -178,7 +178,7 @@ const viewports = {
   mobile: { width: 390, height: 844 },
 };
 
-test.describe("Screenshot Generation", () => {
+test.describe('Screenshot Generation', () => {
   test.beforeAll(async () => {
     if (!fs.existsSync(screenshotsDir)) {
       fs.mkdirSync(screenshotsDir, { recursive: true });
@@ -187,76 +187,76 @@ test.describe("Screenshot Generation", () => {
 
   for (const [device, viewport] of Object.entries(viewports)) {
     test.describe(`${device} (${viewport.width}x${viewport.height})`, () => {
-      test("dashboard screenshot", async ({ browser }) => {
+      test('dashboard screenshot', async ({ browser }) => {
         const context = await browser.newContext({ viewport });
         const page = await context.newPage();
 
         // Serve static files
-        await page.route("http://localhost:8000/", async (route) => {
+        await page.route('http://localhost:8000/', async (route) => {
           await route.fulfill({
-            contentType: "text/html",
-            body: fs.readFileSync(indexHtmlPath, "utf8"),
+            contentType: 'text/html',
+            body: fs.readFileSync(indexHtmlPath, 'utf8'),
           });
         });
         await page.route(
-          "http://localhost:8000/static/mancha.js",
+          'http://localhost:8000/static/mancha.js',
           async (route) => {
             await route.fulfill({
-              contentType: "application/javascript",
-              body: fs.readFileSync(manchaJsPath, "utf8"),
+              contentType: 'application/javascript',
+              body: fs.readFileSync(manchaJsPath, 'utf8'),
             });
           },
         );
         await page.route(
-          "http://localhost:8000/static/index.js",
+          'http://localhost:8000/static/index.js',
           async (route) => {
             await route.fulfill({
-              contentType: "application/javascript",
-              body: fs.readFileSync(indexJsPath, "utf8"),
-              headers: { "Access-Control-Allow-Origin": "*" },
+              contentType: 'application/javascript',
+              body: fs.readFileSync(indexJsPath, 'utf8'),
+              headers: { 'Access-Control-Allow-Origin': '*' },
             });
           },
         );
 
         // Mock API endpoints
-        await page.route("**/api/data", async (route) => {
+        await page.route('**/api/data', async (route) => {
           await route.fulfill({
-            contentType: "application/json",
+            contentType: 'application/json',
             json: {
-              cwd: "/home/dev/projects/acme-saas-platform",
+              cwd: '/home/dev/projects/acme-saas-platform',
               loop_running: true,
               tasks: mockTasks,
               context:
-                "Use TypeScript with strict mode. Follow REST API conventions. Write tests for all new endpoints. Use Prisma as the ORM with PostgreSQL.",
+                'Use TypeScript with strict mode. Follow REST API conventions. Write tests for all new endpoints. Use Prisma as the ORM with PostgreSQL.',
             },
           });
         });
-        await page.route("**/api/runners", async (route) => {
+        await page.route('**/api/runners', async (route) => {
           await route.fulfill({
-            contentType: "application/json",
-            json: ["gemini", "aider", "claude", "codex"],
+            contentType: 'application/json',
+            json: ['gemini', 'aider', 'claude', 'codex'],
           });
         });
-        await page.route("**/api/hooks", async (route) => {
+        await page.route('**/api/hooks', async (route) => {
           await route.fulfill({
-            contentType: "application/json",
-            json: ["roadmap"],
+            contentType: 'application/json',
+            json: ['roadmap'],
           });
         });
 
-        await page.goto("http://localhost:8000/");
+        await page.goto('http://localhost:8000/');
         await page.evaluate(async () => {
           while (!window.ManchaApp) await new Promise((r) => setTimeout(r, 50));
           await window.ManchaApp;
         });
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState('networkidle');
 
         // Expand the in-progress task to show details
         const inProgressTask = page
           .locator('[role="listitem"]')
-          .filter({ hasText: "Migrate database" });
+          .filter({ hasText: 'Migrate database' });
         await inProgressTask
-          .getByRole("button", { name: "Show details" })
+          .getByRole('button', { name: 'Show details' })
           .click();
         await page.waitForTimeout(300);
 
@@ -268,28 +268,28 @@ test.describe("Screenshot Generation", () => {
         await context.close();
       });
 
-      test("task log screenshot", async ({ browser }) => {
+      test('task log screenshot', async ({ browser }) => {
         const context = await browser.newContext({ viewport });
         const page = await context.newPage();
 
-        const taskId = "g7h8i9";
+        const taskId = 'g7h8i9';
 
         // Serve the logs HTML
         await page.route(
           `http://localhost:8000/tasks/${taskId}/log`,
           async (route) => {
             await route.fulfill({
-              contentType: "text/html",
-              body: fs.readFileSync(logsHtmlPath, "utf8"),
+              contentType: 'text/html',
+              body: fs.readFileSync(logsHtmlPath, 'utf8'),
             });
           },
         );
         await page.route(
-          "http://localhost:8000/static/mancha.js",
+          'http://localhost:8000/static/mancha.js',
           async (route) => {
             await route.fulfill({
-              contentType: "application/javascript",
-              body: fs.readFileSync(manchaJsPath, "utf8"),
+              contentType: 'application/javascript',
+              body: fs.readFileSync(manchaJsPath, 'utf8'),
             });
           },
         );
@@ -297,13 +297,13 @@ test.describe("Screenshot Generation", () => {
         // Mock task detail and log APIs
         await page.route(`**/api/tasks/${taskId}`, async (route) => {
           await route.fulfill({
-            contentType: "application/json",
+            contentType: 'application/json',
             json: mockTasks.find((t) => t.id === taskId),
           });
         });
         await page.route(`**/api/tasks/${taskId}/log*`, async (route) => {
           await route.fulfill({
-            contentType: "application/json",
+            contentType: 'application/json',
             json: { log: cleanLog },
           });
         });
@@ -313,7 +313,7 @@ test.describe("Screenshot Generation", () => {
           while (!window.ManchaApp) await new Promise((r) => setTimeout(r, 50));
           await window.ManchaApp;
         });
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState('networkidle');
         await page.waitForTimeout(500);
 
         await page.screenshot({
