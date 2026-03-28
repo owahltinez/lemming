@@ -11,3 +11,4 @@ node_modules/
 .lemming_loop.lock
 test-results/
 *_tasks*.lock
+guides/

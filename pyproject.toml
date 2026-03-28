@@ -14,10 +14,12 @@ license = { text = "MIT" }
 requires-python = ">=3.14"
 keywords = ["ai", "agents", "automation", "gemini", "claude", "aider"]
 dependencies = [
+    "beautifulsoup4>=4.13.3",
     "click>=8.0.0",
     "fastapi>=0.124.4",
+    "markdownify>=0.14.1",
     "pyyaml>=6.0.3",
-    "readability",
+    "requests>=2.32.3",
     "uvicorn>=0.33.0",
 ]
 
@@ -33,8 +35,6 @@ name = "pypi"
 url = "https://pypi.org/simple"
 default = true
 
-[tool.uv.sources]
-readability = { git = "https://github.com/owahltinez/readability.git" }
-
 [project.scripts]
 lemming = "lemming.main:cli"
+readability = "lemming.readability_tool:main"
