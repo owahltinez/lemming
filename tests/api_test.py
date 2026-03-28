@@ -186,6 +186,35 @@ def test_delete_completed_tasks(test_tasks):
     assert len(data.tasks) == 2
 
 
+def test_delete_completed_tasks_includes_failed(test_tasks):
+    # Setup data with a failed task
+    with tasks.lock_tasks(test_tasks):
+        data = tasks.load_tasks(test_tasks)
+        data.tasks.append(
+            tasks.Task(
+                id="failed_task",
+                description="Failed Task",
+                status=tasks.TaskStatus.FAILED,
+                attempts=1,
+                outcomes=["Error"],
+                completed_at=123456789.0,
+            )
+        )
+        tasks.save_tasks(test_tasks, data)
+
+    response = client.post("/api/tasks/delete-completed")
+    assert response.status_code == 200
+
+    # Verify tasks in file
+    data = tasks.load_tasks(test_tasks)
+    task_ids = [t.id for t in data.tasks]
+    assert "task1" not in task_ids  # task1 is completed
+    assert "failed_task" not in task_ids  # failed_task should be deleted
+    assert "task2" in task_ids
+    assert "task3" in task_ids
+    assert len(data.tasks) == 2
+
+
 def test_delete_specific_task(test_tasks):
     response = client.post("/api/tasks/task2/delete")
     assert response.status_code == 200
@@ -215,6 +244,33 @@ def test_update_completed_task_description_fails(test_tasks):
     )
     assert response.status_code == 400
     assert "Cannot edit description of a completed task" in response.json()["detail"]
+
+
+def test_mark_task_failed_via_api(test_tasks):
+    # task2 is pending with no outcomes
+    # 1. Try to fail without outcomes -> should fail
+    response = client.post(
+        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.FAILED}
+    )
+    assert response.status_code == 400
+    assert "has no recorded outcomes" in response.json()["detail"]
+
+    # 2. Add outcome and try again
+    with tasks.lock_tasks(test_tasks):
+        data = tasks.load_tasks(test_tasks)
+        task2 = next(t for t in data.tasks if t.id == "task2")
+        task2.outcomes = ["Failed attempt"]
+        tasks.save_tasks(test_tasks, data)
+
+    response = client.post(
+        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.FAILED}
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == tasks.TaskStatus.FAILED
+
+    data = tasks.load_tasks(test_tasks)
+    task2 = next(t for t in data.tasks if t.id == "task2")
+    assert task2.status == tasks.TaskStatus.FAILED
 
 
 def test_uncomplete_task_via_api(test_tasks):

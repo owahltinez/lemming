@@ -116,7 +116,7 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.PENDING)
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.FAILED)
         self.assertIn("Failed due to missing dependency", data.tasks[0].outcomes)
 
     def test_info_no_args(self):
@@ -732,6 +732,7 @@ class TestLemming(unittest.TestCase):
             main.cli, self.base_args + ["outcome", "12345678", "Failed 1"]
         )
         self.cli_runner.invoke(main.cli, self.base_args + ["fail", "12345678"])
+        self.cli_runner.invoke(main.cli, self.base_args + ["uncomplete", "12345678"])
 
         # Second attempt
         tasks.mark_task_in_progress(self.test_tasks_file, "12345678")

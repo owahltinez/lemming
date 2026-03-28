@@ -2,52 +2,52 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: astral-sh/setup-uv@v7
-      with:
-        python-version: "3.14"
+      - name: Set up Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.14'
 
-    - name: Install Python dependencies
-      run: uv sync
+      - name: Install Python dependencies
+        run: uv sync
 
-    - name: Run Python linting
-      run: uv run ruff check .
+      - name: Run Python linting
+        run: uv run ruff check .
 
-    - name: Run Python formatting check
-      run: uv run ruff format --check .
+      - name: Run Python formatting check
+        run: uv run ruff format --check .
 
-    - name: Run Python tests
-      run: uv run pytest
+      - name: Run Python tests
+        run: uv run pytest
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v6
-      with:
-        node-version: "20"
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
 
-    - name: Install Node.js dependencies
-      run: npm install
+      - name: Install Node.js dependencies
+        run: npm install
 
-    - name: Run Web linting
-      run: npm run lint
+      - name: Run Web linting
+        run: npm run lint
 
-    - name: Run Web check
-      run: npm run check
+      - name: Run Web check
+        run: npm run check
 
-    - name: Run Web tests
-      run: |
-        npx playwright install --with-deps
-        npm test
+      - name: Run Web tests
+        run: |
+          npx playwright install --with-deps
+          npm test
 
-    - name: Build container image
-      run: docker build -t lemming:ci .
+      - name: Build container image
+        run: docker build -t lemming:ci .

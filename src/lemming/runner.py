@@ -2,6 +2,7 @@ import logging
 import os
 import pathlib
 import shlex
+import signal
 import subprocess
 import threading
 import time
@@ -288,46 +289,50 @@ def run_with_heartbeat(
 
     full_log: list[str] = []
 
-    # Heartbeat and cancellation management
-    is_claimed = tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
-
-    def heartbeat_loop():
-        """Updates the task heartbeat while the process is running."""
-        while process.poll() is None:
-            if not tasks.update_heartbeat(tasks_file, task_id):
-                # Task was cancelled or finished — kill the runner subprocess tree
-                try:
-                    os.killpg(os.getpgid(process.pid), __import__("signal").SIGTERM)
-                except OSError:
-                    try:
-                        process.kill()
-                    except OSError:
-                        pass
-                return
-            time.sleep(tasks.STALE_THRESHOLD // 2)
-
-    if is_claimed:
-        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
-        heartbeat_thread.start()
-
-    # Stream output to log file and optionally to console
     try:
-        if process.stdout:
-            with open(log_file, "a", encoding="utf-8") as f:
-                for line in process.stdout:
-                    full_log.append(line)
-                    f.write(line)
-                    f.flush()
-                    if verbose:
-                        echo_fn(line)
-    except Exception as e:
-        error_msg = f"\nError reading runner output: {e}\n"
-        full_log.append(error_msg)
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(error_msg)
+        # Heartbeat and cancellation management
+        is_claimed = tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
 
-    process.wait()
-    return process.returncode, "".join(full_log), ""
+        def heartbeat_loop():
+            """Updates the task heartbeat while the process is running."""
+            while process.poll() is None:
+                if not tasks.update_heartbeat(tasks_file, task_id):
+                    # Task was cancelled or finished — kill the runner subprocess tree
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    except OSError:
+                        try:
+                            process.kill()
+                        except OSError:
+                            pass
+                    return
+                time.sleep(tasks.STALE_THRESHOLD // 2)
+
+        if is_claimed:
+            heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+            heartbeat_thread.start()
+
+        # Stream output to log file and optionally to console
+        try:
+            if process.stdout:
+                with open(log_file, "a", encoding="utf-8") as f:
+                    for line in process.stdout:
+                        full_log.append(line)
+                        f.write(line)
+                        f.flush()
+                        if verbose:
+                            echo_fn(line)
+        except Exception as e:
+            error_msg = f"\nError reading runner output: {e}\n"
+            full_log.append(error_msg)
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(error_msg)
+
+        process.wait()
+        return process.returncode, "".join(full_log), ""
+    finally:
+        if process.stdout and hasattr(process.stdout, "close"):
+            process.stdout.close()
 
 
 def prepare_hook_prompt(
@@ -389,7 +394,7 @@ def prepare_hook_prompt(
         except Exception as e:
             finished_str += f"\n(Could not read log file: {e})\n"
 
-    tasks_file_str = shlex.quote(str(tasks_file))
+    tasks_file_str = _pretty_quote(str(tasks_file))
     prompt_template = load_prompt(hook_name, tasks_file)
 
     return (
@@ -466,7 +471,7 @@ def prepare_prompt(
             outcomes_str += f"- {outcome_item}\n"
         outcomes_str += "\n"
 
-    tasks_file_str = shlex.quote(str(tasks_file))
+    tasks_file_str = _pretty_quote(str(tasks_file))
     prompt_template = load_prompt("taskrunner", tasks_file)
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)

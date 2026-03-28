@@ -66,6 +66,8 @@ class CloudflareProvider(TunnelProvider):
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+            if self.process.stdout:
+                self.process.stdout.close()
             self.process = None
 
 

@@ -70,7 +70,10 @@
 
       // --- Computed Properties ---
       $.completedCount = $.$computed(
-        ($) => $.tasks.filter((t) => t.status === "completed").length,
+        ($) =>
+          $.tasks.filter(
+            (t) => t.status === "completed" || t.status === "failed",
+          ).length,
       );
 
       $.filteredTasks = $.$computed(($) => {
@@ -92,7 +95,11 @@
 
           return (b.index || 0) - (a.index || 0);
         });
-        return ts.filter((t) => t.status !== "completed" || !$.hideCompleted);
+        return ts.filter(
+          (t) =>
+            (t.status !== "completed" && t.status !== "failed") ||
+            !$.hideCompleted,
+        );
       });
 
       // --- Utilities ---
@@ -159,11 +166,19 @@
               "success",
             );
           } else if (
+            oldTask.status !== "failed" &&
+            newTask.status === "failed"
+          ) {
+            $.addToast(
+              `Terminal failure: ${$.trim(newTask.description, 60)}`,
+              "error",
+            );
+          } else if (
             oldTask.status === "in_progress" &&
             newTask.status === "pending"
           ) {
             $.addToast(
-              `Task failed: ${$.trim(newTask.description, 60)}`,
+              `Attempt failed (retry pending): ${$.trim(newTask.description, 60)}`,
               "error",
             );
           } else if (

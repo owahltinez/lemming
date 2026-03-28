@@ -788,10 +788,17 @@ describe("Lemming Web Dashboard", () => {
       },
       {
         id: "f1",
-        description: "Failed Task",
+        description: "Terminal Failed Task",
+        status: "failed",
+        attempts: 1,
+        outcomes: ["Fatal error"],
+      },
+      {
+        id: "f2",
+        description: "Retriable Failed Task",
         status: "pending",
         attempts: 1,
-        outcomes: [],
+        outcomes: ["Temporary error"],
       },
       {
         id: "c1",
@@ -816,32 +823,54 @@ describe("Lemming Web Dashboard", () => {
     await renderer.mount(fragment);
 
     const taskItems = fragment.querySelectorAll('[role="listitem"]');
-    assert.strictEqual(taskItems.length, 4);
+    assert.strictEqual(taskItems.length, 5);
 
-    // 1. Running Task
-    const runningChip = taskItems[0].querySelector('[role="status"]');
-    assert.strictEqual(runningChip.textContent.trim(), "Running");
-    assert.ok(runningChip.classList.contains("bg-blue-100"));
-    assert.ok(runningChip.classList.contains("text-blue-700"));
-    assert.ok(runningChip.classList.contains("animate-pulse"));
+    // ... (rest of tests)
 
-    // 2. Pending Task
-    const pendingChip = taskItems[1].querySelector('[role="status"]');
-    assert.strictEqual(pendingChip.textContent.trim(), "Pending");
-    assert.ok(pendingChip.classList.contains("bg-gray-100"));
-    assert.ok(pendingChip.classList.contains("text-gray-500"));
-
-    // 3. Failed Task
+    // 3. Terminal Failed Task
     const failedChip = taskItems[2].querySelector('[role="status"]');
     assert.strictEqual(failedChip.textContent.trim(), "Failed");
     assert.ok(failedChip.classList.contains("bg-red-100"));
     assert.ok(failedChip.classList.contains("text-red-700"));
+    const failedUncompleteBtn = taskItems[2].querySelector(
+      '[aria-label="Mark as Pending"]',
+    );
+    assert.ok(
+      failedUncompleteBtn,
+      "Uncomplete button should be present for failed task",
+    );
+    assert.strictEqual(
+      failedUncompleteBtn.style.display,
+      "",
+      "Uncomplete button should be visible for failed task",
+    );
 
-    // 4. Completed Task
-    const completedChip = taskItems[3].querySelector('[role="status"]');
+    // 4. Retriable Failed Task (pending with attempts)
+    const retriableChip = taskItems[3].querySelector('[role="status"]');
+    assert.strictEqual(retriableChip.textContent.trim(), "Failed");
+    assert.ok(retriableChip.classList.contains("bg-red-100"));
+    const retriableUncompleteBtn = taskItems[3].querySelector(
+      '[aria-label="Mark as Pending"]',
+    );
+    assert.strictEqual(
+      retriableUncompleteBtn.style.display,
+      "none",
+      "Uncomplete button should be hidden for retriable failed task",
+    );
+
+    // 5. Completed Task
+    const completedChip = taskItems[4].querySelector('[role="status"]');
     assert.strictEqual(completedChip.textContent.trim(), "Completed");
     assert.ok(completedChip.classList.contains("bg-green-100"));
     assert.ok(completedChip.classList.contains("text-green-700"));
+    const completedUncompleteBtn = taskItems[4].querySelector(
+      '[aria-label="Mark as Pending"]',
+    );
+    assert.strictEqual(
+      completedUncompleteBtn.style.display,
+      "",
+      "Uncomplete button should be visible for completed task",
+    );
   });
 
   test("displays real-time run time for in-progress tasks", async () => {

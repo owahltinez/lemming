@@ -2,8 +2,8 @@ services:
   lemming:
     build: .
     ports:
-      - "${LEMMING_PORT:-8999}:${LEMMING_PORT:-8999}"
-    command: ["--port", "${LEMMING_PORT:-8999}"]
+      - '${LEMMING_PORT:-8999}:${LEMMING_PORT:-8999}'
+    command: ['--port', '${LEMMING_PORT:-8999}']
     volumes:
       - lemming-data:/data
     restart: unless-stopped

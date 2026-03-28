@@ -11,4 +11,4 @@ node_modules/
 .lemming_loop.lock
 test-results/
 *tasks*.lock
-guides/
+.ruff_cache/

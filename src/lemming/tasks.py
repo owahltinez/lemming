@@ -430,6 +430,9 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> Task | None:
             if task.completion_requested:
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = time.time()
+            elif task.failure_requested:
+                task.status = TaskStatus.FAILED
+                task.completed_at = time.time()
             else:
                 # If it failed or simply finished without requesting completion,
                 # we keep it as pending so it can be retried.
@@ -614,11 +617,17 @@ def delete_tasks(
             data.context = ""
         elif completed_only:
             completed_tasks = [
-                t for t in data.tasks if t.status == TaskStatus.COMPLETED
+                t
+                for t in data.tasks
+                if t.status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
             ]
             for t in completed_tasks:
                 reset_task_logs(tasks_file, t.id)
-            data.tasks = [t for t in data.tasks if t.status != TaskStatus.COMPLETED]
+            data.tasks = [
+                t
+                for t in data.tasks
+                if t.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+            ]
         elif task_id:
             tasks_to_delete = [t for t in data.tasks if t.id.startswith(task_id)]
             for t in tasks_to_delete:
@@ -700,7 +709,7 @@ def update_task(
 
         if status and status != target.status:
             # If we are running inside the task itself (via an agent), we don't
-            # immediately transition to completed/pending. Instead, we set a
+            # immediately transition to completed/failed. Instead, we set a
             # request flag so the orchestrator loop can run hooks while the
             # task is still 'in_progress' and claimed.
             parent_id = os.environ.get("LEMMING_PARENT_TASK_ID")
@@ -710,15 +719,20 @@ def update_task(
                     target.failure_requested = False
                     save_tasks(tasks_file, data)
                     return target
-                if status == TaskStatus.PENDING:
+                if status == TaskStatus.FAILED:
                     target.failure_requested = True
                     target.completion_requested = False
+                    save_tasks(tasks_file, data)
+                    return target
+                if status == TaskStatus.PENDING:
+                    target.completion_requested = False
+                    target.failure_requested = False
                     save_tasks(tasks_file, data)
                     return target
 
             if target.status == TaskStatus.IN_PROGRESS:
                 update_run_time(target)
-            if status == TaskStatus.COMPLETED:
+            if status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
                 target.completed_at = time.time()
             elif status == TaskStatus.PENDING:
                 target.completed_at = None

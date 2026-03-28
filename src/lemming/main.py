@@ -808,7 +808,7 @@ def hooks_install(ctx: click.Context):
 @click.argument("task_id")
 @click.pass_context
 def fail(ctx: click.Context, task_id: str):
-    """Records a task failure (requires at least one recorded outcome).
+    """Marks a task as failed (requires at least one recorded outcome).
 
     Args:
         task_id: The ID of the task to mark as failed.
@@ -816,9 +816,9 @@ def fail(ctx: click.Context, task_id: str):
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(
-            tasks_file, task_id, status=tasks.TaskStatus.PENDING, require_outcomes=True
+            tasks_file, task_id, status=tasks.TaskStatus.FAILED, require_outcomes=True
         )
-        click.echo(f"Failure recorded for task {target_task.id}.")
+        click.echo(f"Task {target_task.id} marked as failed.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)

@@ -220,12 +220,19 @@ def update_task(task_id: str, update: dict, project: str | None = None):
     status = update.get("status")
 
     # Validation: require outcomes if completing or failing from the UI,
-    # but not if we are just marking a completed task as pending (uncomplete).
+    # but not if we are just marking a finished task as pending (uncomplete).
     require_outcomes = False
-    if status in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.PENDING):
+    if status in (
+        tasks.TaskStatus.COMPLETED,
+        tasks.TaskStatus.FAILED,
+        tasks.TaskStatus.PENDING,
+    ):
         data = tasks.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
-        if target and target.status != tasks.TaskStatus.COMPLETED:
+        if target and target.status not in (
+            tasks.TaskStatus.COMPLETED,
+            tasks.TaskStatus.FAILED,
+        ):
             require_outcomes = True
 
     try:

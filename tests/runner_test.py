@@ -1,4 +1,3 @@
-import shlex
 from lemming import runner
 from lemming import tasks
 from lemming import paths
@@ -156,8 +155,8 @@ def test_pretty_quote():
     # Test exclamation mark fallback
     assert runner._pretty_quote("Hello!") == "'Hello!'"
 
-    assert runner._pretty_quote("has 'single' and !") == shlex.quote(
-        "has 'single' and !"
+    assert runner._pretty_quote("has 'single' and !") == (
+        "'has '\"'\"'single'\"'\"' and !'"
     )
 
 
@@ -285,7 +284,7 @@ File Path: {{tasks_file_path}}
     # Verify other placeholders
     assert "ID: task1" in prompt
     assert f"File Name: {tasks_file.name}" in prompt
-    assert f"File Path: {shlex.quote(str(tasks_file))}" in prompt
+    assert f"File Path: {runner._pretty_quote(str(tasks_file))}" in prompt
 
 
 def test_prepare_prompt_local_override(tmp_path):

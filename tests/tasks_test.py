@@ -1,5 +1,9 @@
 import os
+import time
 from unittest.mock import patch
+
+import pytest
+import yaml
 
 from lemming import tasks
 
@@ -33,8 +37,6 @@ def test_generate_task_id():
 
 
 def test_is_pid_alive():
-    import os
-
     assert tasks.is_pid_alive(os.getpid()) is True
     assert tasks.is_pid_alive(999999) is False  # Assuming this PID doesn't exist
 
@@ -82,6 +84,131 @@ def test_claim_task(tmp_path):
     assert claimed.attempts == 1
 
 
+def test_update_task_description(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Old description")
+    task_id = task.id
+
+    # 1. Successful update
+    updated = tasks.update_task(tasks_file, task_id, description="New description")
+    assert updated.description == "New description"
+
+    # 2. Cannot edit description of a completed task
+    tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.COMPLETED)
+
+    with pytest.raises(ValueError, match="Cannot edit description of a completed task"):
+        tasks.update_task(tasks_file, task_id, description="Trying to change")
+
+
+def test_update_task_runner(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Task without runner")
+    task_id = task.id
+
+    assert task.runner is None
+
+    updated = tasks.update_task(tasks_file, task_id, runner="custom-runner")
+    assert updated.runner == "custom-runner"
+
+
+def test_update_task_index(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    tasks.add_task(tasks_file, "Task 0")
+    tasks.add_task(tasks_file, "Task 1")
+    t2 = tasks.add_task(tasks_file, "Task 2")
+    task_id = t2.id
+
+    # data.tasks is [Task 0, Task 1, Task 2]
+    # Move Task 2 to index 0
+    tasks.update_task(tasks_file, task_id, index=0)
+    data = tasks.load_tasks(tasks_file)
+    assert [t.description for t in data.tasks] == ["Task 2", "Task 0", "Task 1"]
+
+    # Move Task 2 to the end
+    tasks.update_task(tasks_file, task_id, index=-1)
+    data = tasks.load_tasks(tasks_file)
+    assert [t.description for t in data.tasks] == ["Task 0", "Task 1", "Task 2"]
+
+    # Move Task 0 to index 1
+    t0_id = next(t.id for t in data.tasks if t.description == "Task 0")
+    tasks.update_task(tasks_file, t0_id, index=1)
+    data = tasks.load_tasks(tasks_file)
+    assert [t.description for t in data.tasks] == ["Task 1", "Task 0", "Task 2"]
+
+
+def test_update_task_status_lifecycle(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Status lifecycle")
+    task_id = task.id
+
+    # 1. PENDING -> COMPLETED
+    updated = tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.COMPLETED)
+    assert updated.status == tasks.TaskStatus.COMPLETED
+    assert updated.completed_at is not None
+
+    # 2. COMPLETED -> PENDING (resets attempts and completed_at)
+    updated.attempts = 5
+    with tasks.lock_tasks(tasks_file):
+        data = tasks.load_tasks(tasks_file)
+        data.tasks[0].attempts = 5
+        tasks.save_tasks(tasks_file, data)
+
+    updated = tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.PENDING)
+    assert updated.status == tasks.TaskStatus.PENDING
+    assert updated.completed_at is None
+    assert updated.attempts == 0
+
+    # 3. PENDING -> FAILED
+    updated = tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
+    assert updated.status == tasks.TaskStatus.FAILED
+    assert updated.completed_at is not None
+
+    # 4. IN_PROGRESS -> REQUESTED (when running as self)
+    tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.PENDING)
+    tasks.claim_task(tasks_file, task_id, pid=1234)
+
+    with patch.dict(os.environ, {"LEMMING_PARENT_TASK_ID": task_id}):
+        # Request completion
+        updated = tasks.update_task(
+            tasks_file, task_id, status=tasks.TaskStatus.COMPLETED
+        )
+        assert updated.status == tasks.TaskStatus.IN_PROGRESS
+        assert updated.completion_requested is True
+
+        # Request failure
+        updated = tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
+        assert updated.status == tasks.TaskStatus.IN_PROGRESS
+        assert updated.failure_requested is True
+        assert updated.completion_requested is False
+
+        # Reset to pending (clears flags)
+        updated = tasks.update_task(
+            tasks_file, task_id, status=tasks.TaskStatus.PENDING
+        )
+        assert updated.status == tasks.TaskStatus.IN_PROGRESS
+        assert updated.completion_requested is False
+        assert updated.failure_requested is False
+
+
+def test_update_task_requires_outcomes(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Requires outcomes")
+    task_id = task.id
+
+    # Should raise error if no outcomes
+    with pytest.raises(ValueError, match="has no recorded outcomes"):
+        tasks.update_task(
+            tasks_file, task_id, status="completed", require_outcomes=True
+        )
+
+    # Should succeed after adding an outcome
+    tasks.add_outcome(tasks_file, task_id, "All good")
+    updated = tasks.update_task(
+        tasks_file, task_id, status="completed", require_outcomes=True
+    )
+    assert updated.status == tasks.TaskStatus.COMPLETED
+
+
 def test_update_task_parent_fields(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task = tasks.add_task(tasks_file, "Update parent fields")
@@ -106,6 +233,20 @@ def test_update_task_parent_fields(tmp_path):
     )
     assert cleared.parent is None
     assert cleared.parent_tasks_file is None
+
+
+def test_update_task_invalid_inputs(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = tasks.add_task(tasks_file, "Invalid inputs test")
+    task_id = task.id
+
+    # 1. Invalid task ID
+    with pytest.raises(ValueError, match="Task notfound-123 not found"):
+        tasks.update_task(tasks_file, "notfound-123", description="Oops")
+
+    # 2. Invalid status
+    with pytest.raises(ValueError, match="'invalid-status' is not a valid TaskStatus"):
+        tasks.update_task(tasks_file, task_id, status="invalid-status")
 
 
 def test_add_outcome(tmp_path):
@@ -161,16 +302,12 @@ def test_reset_task(tmp_path):
 
 
 def test_update_run_time():
-    import time
-
     task = tasks.Task(id="1", description="test", last_started_at=time.time() - 5)
     tasks.update_run_time(task)
     assert task.run_time >= 5.0
 
 
 def test_claim_already_in_progress(tmp_path):
-    import os
-
     tasks_file = tmp_path / "tasks.yml"
     task = tasks.add_task(tasks_file, "Already in progress")
     task_id = task.id
@@ -185,8 +322,6 @@ def test_claim_already_in_progress(tmp_path):
     assert claimed_again is None
 
     # But if it's stale, it should succeed
-    import time
-
     with tasks.lock_tasks(tasks_file):
         data = tasks.load_tasks(tasks_file)
         data.tasks[0].last_heartbeat = time.time() - (tasks.STALE_THRESHOLD + 1)
@@ -264,8 +399,6 @@ def test_get_loop_pid_corrupted_lock_file(tmp_path):
 
 
 def test_save_tasks_excludes_computed_fields(tmp_path):
-    import yaml
-
     tasks_file = tmp_path / "tasks.yml"
     task = tasks.Task(
         id="123",
