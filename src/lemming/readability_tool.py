@@ -249,8 +249,9 @@ def languages() -> None:
 
 @cli.command()
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
+@click.option("--fix", is_flag=True, help="Automatically fix issues if possible.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
-def check(paths: Sequence[str], verbose: bool) -> None:
+def check(paths: Sequence[str], fix: bool, verbose: bool) -> None:
     """
     Run relevant formatters and linters for given paths.
     """
@@ -262,10 +263,10 @@ def check(paths: Sequence[str], verbose: bool) -> None:
 
     # Process each provided path independently
     for path_str in paths:
-        _check_path(Path(path_str), project_root)
+        _check_path(Path(path_str), project_root, fix=fix)
 
 
-def _check_path(path: Path, project_root: Path) -> None:
+def _check_path(path: Path, project_root: Path, fix: bool = False) -> None:
     """
     Apply relevant tools to a single path.
     """
@@ -274,7 +275,7 @@ def _check_path(path: Path, project_root: Path) -> None:
     # Iterate through all supported tool definitions
     for tool in _get_tool_definitions(path):
         if _should_run_tool(tool, path, project_root):
-            _run_tool(tool["name"], tool, logger)
+            _run_tool(tool["name"], tool, logger, fix=fix)
 
 
 def _should_run_tool(tool: dict[str, Any], path: Path, project_root: Path) -> bool:
@@ -302,6 +303,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
         {
             "name": "ruff",
             "check": ["ruff", "check", path_str],
+            "check_format": ["ruff", "format", "--check", path_str],
             "fix": ["ruff", "check", "--fix", path_str],
             "format": ["ruff", "format", path_str],
             "trigger": ["pyproject.toml", "ruff.toml", ".ruff.toml"],
@@ -310,6 +312,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
         {
             "name": "biome",
             "check": ["npx", "biome", "lint", path_str],
+            "check_format": ["npx", "biome", "format", path_str],
             "fix": ["npx", "biome", "lint", "--apply", path_str],
             "format": ["npx", "biome", "format", "--write", path_str],
             "trigger": ["biome.json", "biome.jsonc"],
@@ -326,6 +329,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
         },
         {
             "name": "prettier",
+            "check_format": ["npx", "prettier", "--check", path_str],
             "format": ["npx", "prettier", "--write", path_str],
             "trigger": [
                 ".prettierrc",
@@ -352,6 +356,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
         },
         {
             "name": "go fmt",
+            "check_format": ["gofmt", "-l", path_str],
             "format": ["go", "fmt", path_str],
             "trigger": ["go.mod"],
             "extensions": [".go"],
@@ -360,14 +365,20 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
 
 
 def _run_tool(
-    tool_name: str, tool_config: dict[str, Any], logger: logging.Logger
+    tool_name: str,
+    tool_config: dict[str, Any],
+    logger: logging.Logger,
+    fix: bool = False,
 ) -> None:
     """
     Orchestrate the execution of a specific formatting or linting tool.
     """
     # Identify the primary command to check for executable availability
     cmd = (
-        tool_config.get("format") or tool_config.get("check") or tool_config.get("fix")
+        tool_config.get("format")
+        or tool_config.get("check")
+        or tool_config.get("fix")
+        or tool_config.get("check_format")
     )
     if not cmd:
         return
@@ -379,13 +390,30 @@ def _run_tool(
 
     logger.info(f"Running {tool_name}...")
     try:
-        # 1. Run formatters (if available) - these are expected to modify files
-        if "format" in tool_config:
-            _execute_tool_command(tool_config["format"], logger)
+        if fix:
+            # 1. Run formatters (if available) - these are expected to modify files
+            if "format" in tool_config:
+                _execute_tool_command(tool_config["format"], logger)
 
-        # 2. Run fixers (if available) - these apply automatic linting fixes
-        if "fix" in tool_config:
-            _execute_tool_command(tool_config["fix"], logger)
+            # 2. Run fixers (if available) - these apply automatic linting fixes
+            if "fix" in tool_config:
+                _execute_tool_command(tool_config["fix"], logger)
+        else:
+            # 1. Run check_format (if available) - check-only
+            if "check_format" in tool_config:
+                logger.debug(f"Executing: {' '.join(tool_config['check_format'])}")
+                result = subprocess.run(
+                    tool_config["check_format"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode != 0 or (
+                    tool_name == "go fmt" and result.stdout.strip()
+                ):
+                    click.echo(
+                        f"--- {tool_name} formatting findings ---\n{result.stdout}\n{result.stderr}"
+                    )
 
         # 3. Run checks and report findings - these provide feedback to the user
         if "check" in tool_config:

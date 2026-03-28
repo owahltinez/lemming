@@ -38,9 +38,9 @@ Review the changes made in the last task. Focus on:
     modified files. The easiest way is to use:
     -   `readability check <file>`
 
-    This command will automatically detect and run tools like `ruff` or `biome`
-    if they are configured for the project. You can also run project-specific
-    tools manually if needed.
+    This command will automatically detect and run tools like `ruff`, `biome`,
+    `prettier`, or `go fmt` in check-only mode. It will NOT modify any files
+    unless the `--fix` flag is explicitly provided (which you should NOT use).
 
 **How to act:**
 - If you find minor issues, record them as outcomes of the finished task using
@@ -52,11 +52,8 @@ Review the changes made in the last task. Focus on:
   anything.
 - **IMPORTANT**: Do NOT make any code changes yourself. Your role is to identify
   issues and ensure they are addressed via the roadmap. If the code needs
-  formatting or linting fixes, add a new task to do so. Do NOT run tools that
-  automatically modify files (e.g., `readability check` currently runs
-  formatters and fixers, so use it only if you can confirm it won't change the
-  codebase, or prefer running check-only commands like `ruff check` or `npx
-  biome lint` without fix flags).
+  formatting or linting fixes, add a new task to do so. The `readability check`
+  command is safe to use as it is check-only by default.
 
 **Important**:
 - Only review the files that were modified or created in the last task.

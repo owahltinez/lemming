@@ -51,10 +51,27 @@ def test_run_tool_success(mock_run, mock_which):
         "format": ["tool", "format"],
         "check": ["tool", "check"],
         "fix": ["tool", "fix"],
+        "check_format": ["tool", "check-format"],
     }
 
-    _run_tool("mytool", tool_config, logger)
+    # Test with fix=False (default)
+    _run_tool("mytool", tool_config, logger, fix=False)
 
+    # Should run check_format and check
+    assert mock_run.call_count == 2
+    mock_run.assert_any_call(
+        ["tool", "check-format"], capture_output=True, text=True, check=False
+    )
+    mock_run.assert_any_call(
+        ["tool", "check"], capture_output=True, text=True, check=False
+    )
+
+    mock_run.reset_mock()
+
+    # Test with fix=True
+    _run_tool("mytool", tool_config, logger, fix=True)
+
+    # Should run format, fix, and check
     assert mock_run.call_count == 3
     mock_run.assert_any_call(["tool", "format"], capture_output=True, check=True)
     mock_run.assert_any_call(["tool", "fix"], capture_output=True, check=True)
