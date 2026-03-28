@@ -1,5 +1,7 @@
+import shlex
 from lemming import runner
 from lemming import tasks
+from lemming import paths
 
 
 def test_load_prompt():
@@ -64,7 +66,8 @@ def test_build_runner_command_template_with_runner_args():
 
 
 def test_build_runner_command_template_ignores_defaults():
-    # Even though runner starts with "gemini", template mode should not inject --yolo etc.
+    # Even though runner starts with "gemini", template mode should not
+    # inject --yolo etc.
     cmd = runner.build_runner_command(
         "gemini --custom {{prompt}}", "do stuff", yolo=True
     )
@@ -85,8 +88,13 @@ def test_prepare_prompt(tmp_path):
     data = tasks.Roadmap(
         context="My context",
         tasks=[
-            tasks.Task(id="1", description="T1", status="completed", outcomes=["O1"]),
-            tasks.Task(id="2", description="T2", status="pending"),
+            tasks.Task(
+                id="1",
+                description="T1",
+                status=tasks.TaskStatus.COMPLETED,
+                outcomes=["O1"],
+            ),
+            tasks.Task(id="2", description="T2", status=tasks.TaskStatus.PENDING),
         ],
     )
     task = data.tasks[1]
@@ -147,7 +155,6 @@ def test_pretty_quote():
 
     # Test exclamation mark fallback
     assert runner._pretty_quote("Hello!") == "'Hello!'"
-    import shlex
 
     assert runner._pretty_quote("has 'single' and !") == shlex.quote(
         "has 'single' and !"
@@ -166,3 +173,116 @@ def test_shlex_join_pretty():
         joined
         == "example-cli --dangerously-skip-permissions --print \"You are 'Lemming'\""
     )
+
+
+def test_load_prompt_discovery(tmp_path, monkeypatch):
+    """Tests the discovery of hook prompts across different layers.
+
+    Scenarios tested:
+    1. Local project hook.
+    2. Global hook (fallback from local).
+    3. Precedence: local > global.
+    4. Built-in hook (fallback from global).
+    5. Precedence: global > built-in.
+    6. Empty global hook (fallback to built-in).
+    """
+    # Setup global hooks dir
+    lemming_home = tmp_path / "lemming_home"
+    global_hooks_dir = lemming_home / "hooks"
+    global_hooks_dir.mkdir(parents=True)
+    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
+
+    # Setup project dir
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    local_hooks_dir = project_dir / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    tasks_file = project_dir / "tasks.yml"
+    tasks_file.write_text("tasks: []")
+
+    # 1. Test local hook
+    (local_hooks_dir / "myhook.md").write_text("local content")
+    assert runner.load_prompt("myhook", tasks_file) == "local content"
+
+    # 2. Test global hook (when local doesn't exist)
+    (global_hooks_dir / "globalhook.md").write_text("global content")
+    assert runner.load_prompt("globalhook", tasks_file) == "global content"
+
+    # 3. Test precedence: local > global
+    (global_hooks_dir / "myhook.md").write_text("global content")
+    assert runner.load_prompt("myhook", tasks_file) == "local content"
+
+    # 4. Test built-in (fallback)
+    # "roadmap" is a built-in hook in prompts/hooks/roadmap.md
+    assert "You are a roadmap orchestrator" in runner.load_prompt("roadmap", tasks_file)
+
+    # 5. Test global > built-in
+    (global_hooks_dir / "roadmap.md").write_text("custom roadmap")
+    assert runner.load_prompt("roadmap", tasks_file) == "custom roadmap"
+
+    # 6. Test empty global hook (should fallback to built-in)
+    (global_hooks_dir / "readability.md").write_text("   ")
+    assert "senior code reviewer" in runner.load_prompt("readability", tasks_file)
+
+
+def test_prepare_hook_prompt_substitution(tmp_path, monkeypatch):
+    # Setup paths to avoid polluting real global/home
+    lemming_home = tmp_path / "lemming_home"
+    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
+
+    tasks_file = tmp_path / "tasks.yml"
+    data = tasks.Roadmap(
+        context="Project Context",
+        tasks=[
+            tasks.Task(
+                id="task1",
+                description="Task 1",
+                status=tasks.TaskStatus.COMPLETED,
+                outcomes=["Done"],
+            ),
+            tasks.Task(
+                id="task2", description="Task 2", status=tasks.TaskStatus.IN_PROGRESS
+            ),
+        ],
+    )
+    finished_task = data.tasks[0]
+
+    # Create a mock hook prompt with all placeholders
+    local_hooks_dir = tmp_path / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    hook_prompt_file = local_hooks_dir / "test-hook.md"
+    hook_prompt_file.write_text("""
+Roadmap: {{roadmap}}
+Finished Task: {{finished_task}}
+ID: {{finished_task_id}}
+File Name: {{tasks_file_name}}
+File Path: {{tasks_file_path}}
+""")
+
+    # Mock log file
+    log_file = paths.get_log_file(tasks_file, finished_task.id)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.write_text("line 1\nline 2\nline 3")
+
+    prompt = runner.prepare_hook_prompt("test-hook", data, finished_task, tasks_file)
+
+    # Verify roadmap substitution
+    assert "Roadmap: ## Project Context" in prompt
+    assert "- [COMPLETED] (task1) Task 1" in prompt
+    assert "  - Done" in prompt
+    assert "- [IN PROGRESS] (task2) Task 2" in prompt
+
+    # Verify finished task substitution
+    assert "Finished Task: Task ID: task1" in prompt
+    assert "Description: Task 1" in prompt
+    assert "Result: completed" in prompt
+    assert "Outcomes:\n- Done" in prompt
+
+    # Verify log inclusion
+    assert "Execution log of THIS task" in prompt
+    assert "line 1\nline 2\nline 3" in prompt
+
+    # Verify other placeholders
+    assert "ID: task1" in prompt
+    assert f"File Name: {tasks_file.name}" in prompt
+    assert f"File Path: {shlex.quote(str(tasks_file))}" in prompt

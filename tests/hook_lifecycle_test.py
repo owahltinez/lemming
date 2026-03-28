@@ -11,6 +11,16 @@ from lemming import tasks
 from lemming import runner
 
 
+
+
+def enum_representer(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data.value)
+
+
+yaml.add_representer(tasks.TaskStatus, enum_representer)
+yaml.SafeDumper.add_representer(tasks.TaskStatus, enum_representer)
+
+
 class TestHookLifecycle(unittest.TestCase):
     def setUp(self):
         self.cli_runner = click.testing.CliRunner()
@@ -25,7 +35,7 @@ class TestHookLifecycle(unittest.TestCase):
                 {
                     "id": "task1",
                     "description": "Task 1",
-                    "status": "pending",
+                    "status": tasks.TaskStatus.PENDING,
                     "attempts": 0,
                     "outcomes": [],
                 }
@@ -90,11 +100,11 @@ class TestHookLifecycle(unittest.TestCase):
 
         # Verify fix: status was 'in_progress' during the hook
         print(f"\nStatus during hook: {self.status_during_hook}")
-        self.assertEqual(self.status_during_hook, "in_progress")
+        self.assertEqual(self.status_during_hook, tasks.TaskStatus.IN_PROGRESS)
 
         # Final status should be 'completed' after hooks
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, "completed")
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
 
     def test_symlink_recreation_fixed(self):
         """

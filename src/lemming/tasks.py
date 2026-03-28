@@ -1,4 +1,5 @@
 import contextlib
+import enum
 import fcntl
 import os
 import pathlib
@@ -14,18 +15,28 @@ STALE_THRESHOLD = 30  # seconds
 LOOP_LOCK_FILENAME = ".lemming_loop.lock"
 
 
+class TaskStatus(enum.StrEnum):
+    """Enumeration of possible task statuses."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class Task(pydantic.BaseModel):
     """Represents a single task in the roadmap."""
 
     id: str
     description: str
-    status: str = "pending"
+    status: TaskStatus = TaskStatus.PENDING
     attempts: int = 0
     outcomes: list[str] = pydantic.Field(default_factory=list)
     runner: str | None = None
     completed_at: float | None = None
     started_at: float | None = None
     last_started_at: float | None = None
+    created_at: float = pydantic.Field(default_factory=time.time)
     run_time: float = 0.0
     pid: int | None = None
     last_heartbeat: float | None = None
@@ -34,7 +45,7 @@ class Task(pydantic.BaseModel):
     parent_tasks_file: str | None = None
     completion_requested: bool = False
     failure_requested: bool = False
-    index: int | None = pydantic.Field(default=-1, exclude=True)
+    index: int | None = pydantic.Field(default=None, exclude=True)
 
 
 class RoadmapConfig(pydantic.BaseModel):
@@ -188,7 +199,7 @@ def save_tasks(tasks_file: pathlib.Path, data: Roadmap) -> None:
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
     with open(tasks_file, "w", encoding="utf-8") as f:
         yaml.dump(
-            data.model_dump(exclude_none=True),
+            data.model_dump(exclude_none=True, mode="json"),
             f,
             default_flow_style=False,
             sort_keys=False,
@@ -208,22 +219,22 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     data = load_tasks(tasks_file)
     now = time.time()
 
-    # Deduplicate tasks by ID to prevent UI issues if the file is corrupted.
+    # Deduplicate tasks by ID and enrich metadata.
     seen_ids = set()
     unique_tasks = []
-    for t in data.tasks:
-        if t.id not in seen_ids:
-            unique_tasks.append(t)
-            seen_ids.add(t.id)
-    data.tasks = unique_tasks
-
     loop_running = is_loop_running(tasks_file)
-    for t in data.tasks:
-        # Check which log files exist
+
+    for i, t in enumerate(data.tasks):
+        if t.id in seen_ids:
+            continue
+        seen_ids.add(t.id)
+        unique_tasks.append(t)
+
+        t.index = i
         t.has_runner_log = paths.get_log_file(tasks_file, t.id).exists()
 
-        # Also detect running tasks as a secondary signal (e.g. external callers)
-        if not loop_running and t.status == "in_progress":
+        # Detect active loop from task heartbeats if not already known.
+        if not loop_running and t.status == TaskStatus.IN_PROGRESS:
             is_stale = False
             if t.last_heartbeat and (now - t.last_heartbeat > STALE_THRESHOLD):
                 is_stale = True
@@ -233,20 +244,26 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
             if not is_stale:
                 loop_running = True
 
-    # Sort tasks: uncompleted (in_progress + pending) first, then completed.
-    # Within each group, newer first, then older.
-    uncompleted = [t for t in data.tasks if t.status != "completed"]
-    # We use reverse() because data.tasks is already in creation order (oldest first).
-    uncompleted.reverse()
+    # Unified sort: uncompleted (pending, in_progress) first, then completed (completed, failed).
+    # Within each group, newer tasks appear first (reverse chronological).
+    # We use completed_at for completed tasks, and created_at as a fallback for all.
+    def sort_key(t):
+        # We sort by:
+        # 1. Completion status (uncompleted first, completed/failed last)
+        # 2. Reverse chronological order based on completion date or creation date
+        # 3. Original task index as a final tie-breaker
+        is_done = t.status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+        return (
+            is_done,
+            -(t.completed_at or t.created_at or 0),
+            -(t.index if t.index is not None else 0),
+        )
 
-    completed = [t for t in data.tasks if t.status == "completed"]
-    completed.sort(key=lambda x: x.completed_at or 0, reverse=True)
-
-    sorted_tasks = uncompleted + completed
+    unique_tasks.sort(key=sort_key)
 
     return ProjectData(
         context=data.context,
-        tasks=sorted_tasks,
+        tasks=unique_tasks,
         config=data.config,
         cwd=str(paths.get_working_dir(tasks_file)),
         loop_running=loop_running,
@@ -265,7 +282,7 @@ def get_pending_task(data: Roadmap) -> Task | None:
     """
     now = time.time()
     for task in data.tasks:
-        if task.status == "in_progress":
+        if task.status == TaskStatus.IN_PROGRESS:
             last_heartbeat = task.last_heartbeat or 0
 
             # If heartbeat is too old, it's stale
@@ -279,7 +296,7 @@ def get_pending_task(data: Roadmap) -> Task | None:
             # If it's in progress and not stale, we shouldn't start anything else
             return None
 
-        if task.status == "pending":
+        if task.status == TaskStatus.PENDING:
             return task
 
     return None
@@ -300,9 +317,9 @@ def _mark_task_in_progress(data: Roadmap, task_id: str, pid: int | None = None) 
     for task in data.tasks:
         if task.id == task_id:
             # Check if it's still available (pending or stale)
-            is_pending = task.status == "pending"
+            is_pending = task.status == TaskStatus.PENDING
             is_stale = False
-            if task.status == "in_progress":
+            if task.status == TaskStatus.IN_PROGRESS:
                 last_heartbeat = task.last_heartbeat or 0
                 if now - last_heartbeat > STALE_THRESHOLD:
                     is_stale = True
@@ -310,7 +327,7 @@ def _mark_task_in_progress(data: Roadmap, task_id: str, pid: int | None = None) 
                     is_stale = True
 
             if is_pending or is_stale:
-                task.status = "in_progress"
+                task.status = TaskStatus.IN_PROGRESS
                 task.last_heartbeat = now
                 if task.started_at is None:
                     task.started_at = now
@@ -381,17 +398,17 @@ def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> Task | None:
         if not task:
             return None
 
-        if task.status == "in_progress":
+        if task.status == TaskStatus.IN_PROGRESS:
             # Finalize the task based on the runner's request.
             update_run_time(task)
 
             if task.completion_requested:
-                task.status = "completed"
+                task.status = TaskStatus.COMPLETED
                 task.completed_at = time.time()
             else:
                 # If it failed or simply finished without requesting completion,
                 # we keep it as pending so it can be retried.
-                task.status = "pending"
+                task.status = TaskStatus.PENDING
 
             task.pid = None
             task.last_heartbeat = None
@@ -420,7 +437,7 @@ def update_heartbeat(
         data = load_tasks(tasks_file)
         for task in data.tasks:
             if task.id == task_id:
-                if task.status != "in_progress":
+                if task.status != TaskStatus.IN_PROGRESS:
                     return False
                 task.last_heartbeat = time.time()
                 if pid is not None:
@@ -473,7 +490,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
 
                 # Then kill the loop orchestrator if it's running AND the task was active
                 if (
-                    task.status == "in_progress"
+                    task.status == TaskStatus.IN_PROGRESS
                     and loop_pid
                     and loop_pid != os.getpid()
                 ):
@@ -483,7 +500,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
                         pass
 
                 update_run_time(task)
-                task.status = "pending"
+                task.status = TaskStatus.PENDING
                 task.pid = None
                 task.last_heartbeat = None
 
@@ -571,10 +588,12 @@ def delete_tasks(
             data.tasks = []
             data.context = ""
         elif completed_only:
-            completed_tasks = [t for t in data.tasks if t.status == "completed"]
+            completed_tasks = [
+                t for t in data.tasks if t.status == TaskStatus.COMPLETED
+            ]
             for t in completed_tasks:
                 reset_task_logs(tasks_file, t.id)
-            data.tasks = [t for t in data.tasks if t.status != "completed"]
+            data.tasks = [t for t in data.tasks if t.status != TaskStatus.COMPLETED]
         elif task_id:
             tasks_to_delete = [t for t in data.tasks if t.id.startswith(task_id)]
             for t in tasks_to_delete:
@@ -636,7 +655,7 @@ def update_task(
         if not target:
             raise ValueError(f"Task {task_id} not found")
 
-        if target.status == "completed" and description:
+        if target.status == TaskStatus.COMPLETED and description:
             raise ValueError("Cannot edit description of a completed task")
 
         if require_outcomes and not target.outcomes:
@@ -661,28 +680,28 @@ def update_task(
             # request flag so the orchestrator loop can run hooks while the
             # task is still 'in_progress' and claimed.
             parent_id = os.environ.get("LEMMING_PARENT_TASK_ID")
-            if parent_id == target.id and target.status == "in_progress":
-                if status == "completed":
+            if parent_id == target.id and target.status == TaskStatus.IN_PROGRESS:
+                if status == TaskStatus.COMPLETED:
                     target.completion_requested = True
                     target.failure_requested = False
                     save_tasks(tasks_file, data)
                     return target
-                if status == "pending":
+                if status == TaskStatus.PENDING:
                     target.failure_requested = True
                     target.completion_requested = False
                     save_tasks(tasks_file, data)
                     return target
 
-            if target.status == "in_progress":
+            if target.status == TaskStatus.IN_PROGRESS:
                 update_run_time(target)
-            if status == "completed":
+            if status == TaskStatus.COMPLETED:
                 target.completed_at = time.time()
-            elif status == "pending":
+            elif status == TaskStatus.PENDING:
                 target.completed_at = None
                 target.attempts = 0
             elif target.completed_at is not None:
                 target.completed_at = None
-            target.status = status
+            target.status = TaskStatus(status)
             target.completion_requested = False
             target.failure_requested = False
 
@@ -793,7 +812,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> Task:
         if not target:
             raise ValueError(f"Task {task_id} not found")
 
-        target.status = "pending"
+        target.status = TaskStatus.PENDING
         target.attempts = 0
         target.outcomes = []
         target.run_time = 0.0

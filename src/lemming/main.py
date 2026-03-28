@@ -259,13 +259,13 @@ def status(ctx: click.Context, task_id: str | None):
             return
 
         for t in project_data.tasks:
-            if not verbose and t.status == "completed":
+            if not verbose and t.status == tasks.TaskStatus.COMPLETED:
                 continue
 
-            if t.status == "completed":
+            if t.status == tasks.TaskStatus.COMPLETED:
                 marker = "[x]"
                 status_color = "green"
-            elif t.status == "in_progress":
+            elif t.status == tasks.TaskStatus.IN_PROGRESS:
                 marker = "[*]"
                 status_color = "cyan"
             else:
@@ -280,7 +280,7 @@ def status(ctx: click.Context, task_id: str | None):
 
         if not verbose:
             completed_count = sum(
-                1 for t in project_data.tasks if t.status == "completed"
+                1 for t in project_data.tasks if t.status == tasks.TaskStatus.COMPLETED
             )
             if completed_count > 0:
                 click.echo(f"({completed_count} completed tasks hidden)")
@@ -293,8 +293,8 @@ def status(ctx: click.Context, task_id: str | None):
         return
 
     click.secho(f"Task ID:     {target.id}", bold=True)
-    status_str = target.status
-    if target.status == "in_progress":
+    status_str = str(target.status)
+    if target.status == tasks.TaskStatus.IN_PROGRESS:
         if target.completion_requested:
             status_str += " (completion requested, hooks running)"
         elif target.failure_requested:
@@ -318,7 +318,7 @@ def status(ctx: click.Context, task_id: str | None):
         )
         click.echo(f"Completed At: {comp_time}")
     run_time = target.run_time
-    if target.status == "in_progress" and target.last_started_at:
+    if target.status == tasks.TaskStatus.IN_PROGRESS and target.last_started_at:
         run_time += time.time() - target.last_started_at
 
     if run_time > 0:
@@ -357,10 +357,14 @@ def logs(ctx: click.Context, task_id: str | None):
             ctx.exit(1)
     else:
         # Try to find an active task
-        target = next((t for t in data.tasks if t.status == "in_progress"), None)
+        target = next(
+            (t for t in data.tasks if t.status == tasks.TaskStatus.IN_PROGRESS), None
+        )
         if not target:
             # Fall back to the most recently completed task
-            completed = [t for t in data.tasks if t.status == "completed"]
+            completed = [
+                t for t in data.tasks if t.status == tasks.TaskStatus.COMPLETED
+            ]
             if completed:
                 target = sorted(completed, key=lambda x: x.completed_at or 0)[-1]
 
@@ -424,7 +428,10 @@ def complete(ctx: click.Context, task_id: str):
 
     try:
         target_task = tasks.update_task(
-            tasks_file, task_id, status="completed", require_outcomes=True
+            tasks_file,
+            task_id,
+            status=tasks.TaskStatus.COMPLETED,
+            require_outcomes=True,
         )
         click.echo(f"Task {target_task.id} marked as completed.")
     except ValueError as e:
@@ -443,7 +450,9 @@ def uncomplete(ctx: click.Context, task_id: str):
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
-        target_task = tasks.update_task(tasks_file, task_id, status="pending")
+        target_task = tasks.update_task(
+            tasks_file, task_id, status=tasks.TaskStatus.PENDING
+        )
         click.echo(f"Task {target_task.id} marked as pending.")
     except ValueError as e:
         click.echo(f"Error: {e}")
@@ -807,7 +816,7 @@ def fail(ctx: click.Context, task_id: str):
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(
-            tasks_file, task_id, status="pending", require_outcomes=True
+            tasks_file, task_id, status=tasks.TaskStatus.PENDING, require_outcomes=True
         )
         click.echo(f"Failure recorded for task {target_task.id}.")
     except ValueError as e:
@@ -1134,7 +1143,7 @@ def _run_loop(
             click.echo("Error: Task disappeared from roadmap during execution.")
             break
 
-        if post_task.status == "completed":
+        if post_task.status == tasks.TaskStatus.COMPLETED:
             if verbose:
                 click.echo("Runner successfully reported task completion.")
             else:

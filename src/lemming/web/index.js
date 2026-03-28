@@ -74,7 +74,22 @@
       );
 
       $.filteredTasks = $.$computed(($) => {
-        const ts = $.tasks;
+        const ts = [...$.tasks];
+        // Sort in frontend to ensure consistent order:
+        // 1. Uncompleted tasks (pending, in_progress) first.
+        // 2. Completed tasks (completed, failed) at the bottom.
+        // Within each group, newest first (reverse chronological by completion/creation time).
+        ts.sort((a, b) => {
+          const aDone =
+            a.status === "completed" || a.status === "failed" ? 1 : 0;
+          const bDone =
+            b.status === "completed" || b.status === "failed" ? 1 : 0;
+          if (aDone !== bDone) return aDone - bDone;
+
+          const aTime = a.completed_at || a.created_at || 0;
+          const bTime = b.completed_at || b.created_at || 0;
+          return bTime - aTime;
+        });
         return ts.filter((t) => t.status !== "completed" || !$.hideCompleted);
       });
 
@@ -125,50 +140,93 @@
       };
 
       // --- Data Actions ---
+      $.notifyChanges = (oldTasks, newTasks) => {
+        if ($.loading || !oldTasks.length) return;
+        const oldTaskMap = new Map(oldTasks.map((t) => [t.id, t]));
+
+        for (const newTask of newTasks) {
+          const oldTask = oldTaskMap.get(newTask.id);
+          if (!oldTask) continue;
+
+          if (
+            oldTask.status !== "completed" &&
+            newTask.status === "completed"
+          ) {
+            $.addToast(
+              `Task completed: ${$.trim(newTask.description, 60)}`,
+              "success",
+            );
+          } else if (
+            oldTask.status === "in_progress" &&
+            newTask.status === "pending"
+          ) {
+            $.addToast(
+              `Task failed: ${$.trim(newTask.description, 60)}`,
+              "error",
+            );
+          } else if (
+            (newTask.outcomes?.length || 0) > (oldTask.outcomes?.length || 0)
+          ) {
+            $.addToast(
+              `Outcome recorded: ${$.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
+              "info",
+            );
+          } else if (newTask.attempts > oldTask.attempts) {
+            $.addToast(
+              `Task attempt ${newTask.attempts}: ${$.trim(newTask.description, 60)}`,
+              "info",
+            );
+          }
+        }
+      };
+
+      $.updateTitle = () => {
+        const project = $.$$project;
+        let folderName = "";
+        if (project) {
+          folderName = project.split("/").filter(Boolean)[0];
+        } else if ($.cwd) {
+          folderName = $.cwd.split("/").filter(Boolean).pop();
+        }
+        document.title = folderName ? `Lemming · ${folderName}` : "Lemming";
+      };
+
+      $.updateFaviconStatus = () => {
+        if (!window.updateFavicon) return;
+        const hasError = $.tasks.some(
+          (t) => t.status === "pending" && t.attempts > 0,
+        );
+        const allCompleted =
+          $.tasks.length > 0 && $.tasks.every((t) => t.status === "completed");
+        const state = $.loopRunning
+          ? "running"
+          : hasError
+            ? "error"
+            : allCompleted
+              ? "success"
+              : "idle";
+
+        $.faviconState = state;
+        if (state === "running") {
+          $.lastSeenState = null;
+          Storage.set("last_seen_state", null);
+        }
+
+        const effectiveState =
+          (state === "success" || state === "error") &&
+          state === $.lastSeenState
+            ? "idle"
+            : state;
+        window.updateFavicon(effectiveState);
+      };
+
       $.fetchData = async () => {
         const response = await fetch(apiUrl("/api/data"));
         if (!response.ok) return;
         const data = await response.json();
-
         const newTasks = data.tasks || [];
 
-        // Show toast notifications for task state changes.
-        if (!$.loading && $.tasks.length > 0) {
-          const oldTaskMap = new Map($.tasks.map((t) => [t.id, t]));
-          for (const newTask of newTasks) {
-            const oldTask = oldTaskMap.get(newTask.id);
-            if (!oldTask) continue;
-            if (
-              oldTask.status !== "completed" &&
-              newTask.status === "completed"
-            ) {
-              $.addToast(
-                `Task completed: ${$.trim(newTask.description, 60)}`,
-                "success",
-              );
-            } else if (
-              oldTask.status === "in_progress" &&
-              newTask.status === "pending"
-            ) {
-              $.addToast(
-                `Task failed: ${$.trim(newTask.description, 60)}`,
-                "error",
-              );
-            } else if (
-              (newTask.outcomes?.length || 0) > (oldTask.outcomes?.length || 0)
-            ) {
-              $.addToast(
-                `Outcome recorded: ${$.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
-                "info",
-              );
-            } else if (newTask.attempts > oldTask.attempts) {
-              $.addToast(
-                `Task attempt ${newTask.attempts}: ${$.trim(newTask.description, 60)}`,
-                "info",
-              );
-            }
-          }
-        }
+        $.notifyChanges($.tasks, newTasks);
 
         // Update core state
         $.cwd = data.cwd || "";
@@ -182,56 +240,8 @@
           $.retries = data.config.retries;
         }
 
-        // --- Update HTML Title ---
-        const project = $.$$project;
-        let folderName = "";
-        if (project) {
-          // Get the top-most folder from the project path (e.g. "a/b/c" -> "a")
-          folderName = project.split("/").filter(Boolean)[0];
-        } else if ($.cwd) {
-          // If no project is selected, use the name of the server root folder.
-          folderName = $.cwd.split("/").filter(Boolean).pop();
-        }
-
-        if (folderName) {
-          document.title = `Lemming · ${folderName}`;
-        } else {
-          document.title = "Lemming";
-        }
-
-        // Update favicon status
-        if (window.updateFavicon) {
-          const hasError = $.tasks.some(
-            (t) => t.status === "pending" && t.attempts > 0,
-          );
-          const allCompleted =
-            $.tasks.length > 0 &&
-            $.tasks.every((t) => t.status === "completed");
-          const state = $.loopRunning
-            ? "running"
-            : hasError
-              ? "error"
-              : allCompleted
-                ? "success"
-                : "idle";
-
-          $.faviconState = state;
-
-          // If a run starts, reset the last seen state
-          if (state === "running") {
-            $.lastSeenState = null;
-            Storage.set("last_seen_state", null);
-          }
-
-          // If the current terminal state has already been seen by the user, show 'idle' favicon instead.
-          const effectiveState =
-            (state === "success" || state === "error") &&
-            state === $.lastSeenState
-              ? "idle"
-              : state;
-
-          window.updateFavicon(effectiveState);
-        }
+        $.updateTitle();
+        $.updateFaviconStatus();
 
         const contextElem = document.querySelector("textarea");
         if (

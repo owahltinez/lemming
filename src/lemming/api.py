@@ -222,10 +222,10 @@ def update_task(task_id: str, update: dict, project: str | None = None):
     # Validation: require outcomes if completing or failing from the UI,
     # but not if we are just marking a completed task as pending (uncomplete).
     require_outcomes = False
-    if status in ("completed", "pending"):
+    if status in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.PENDING):
         data = tasks.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
-        if target and target.status != "completed":
+        if target and target.status != tasks.TaskStatus.COMPLETED:
             require_outcomes = True
 
     try:
@@ -239,7 +239,7 @@ def update_task(task_id: str, update: dict, project: str | None = None):
             require_outcomes=require_outcomes,
             parent=update.get("parent"),
         )
-        if status == "pending":
+        if status == tasks.TaskStatus.PENDING:
             _start_loop_if_needed(tasks_file, cwd=resolve_project_dir(project))
         return updated_task
     except ValueError as e:

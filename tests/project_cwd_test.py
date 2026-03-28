@@ -26,7 +26,9 @@ def test_workspace():
     data = tasks.Roadmap(
         context="Subproject context",
         tasks=[
-            tasks.Task(id="sub1", description="Sub Task 1", status="pending"),
+            tasks.Task(
+                id="sub1", description="Sub Task 1", status=tasks.TaskStatus.PENDING
+            ),
         ],
     )
     tasks.save_tasks(sub_tasks_file, data)
@@ -93,7 +95,7 @@ def test_update_task_starts_loop_with_cwd(test_workspace):
         # Updating a task to pending should trigger auto-start
         response = client.post(
             "/api/tasks/sub1/update",
-            json={"status": "pending"},
+            json={"status": tasks.TaskStatus.PENDING},
             params={"project": "my-subproject"},
         )
         assert response.status_code == 200
@@ -109,7 +111,7 @@ def test_clear_task_starts_loop_with_cwd(test_workspace):
     # First, make the task "failed" so it can be cleared
     sub_tasks_file = subproject_dir / "tasks.yml"
     data = tasks.load_tasks(sub_tasks_file)
-    data.tasks[0].status = "failed"
+    data.tasks[0].status = tasks.TaskStatus.FAILED
     tasks.save_tasks(sub_tasks_file, data)
 
     with patch("subprocess.Popen") as mock_popen:

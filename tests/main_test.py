@@ -17,6 +17,16 @@ from lemming import paths
 from lemming import tasks
 
 
+
+
+def enum_representer(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data.value)
+
+
+yaml.add_representer(tasks.TaskStatus, enum_representer)
+yaml.SafeDumper.add_representer(tasks.TaskStatus, enum_representer)
+
+
 class TestLemming(unittest.TestCase):
     def setUp(self):
         self.cli_runner = click.testing.CliRunner()
@@ -31,7 +41,7 @@ class TestLemming(unittest.TestCase):
                 {
                     "id": "12345678",
                     "description": "Initial Task",
-                    "status": "pending",
+                    "status": tasks.TaskStatus.PENDING,
                     "attempts": 0,
                     "outcomes": [],
                 }
@@ -78,7 +88,7 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, "completed")
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
 
     def test_task_complete_after_outcome(self):
         # Record outcome first
@@ -92,7 +102,7 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, "completed")
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
         self.assertIn("Did the thing", data.tasks[0].outcomes)
 
     def test_task_fail(self):
@@ -118,7 +128,7 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, "pending")
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.PENDING)
         self.assertIn("Failed due to missing dependency", data.tasks[0].outcomes)
 
     def test_info_no_args(self):
@@ -246,7 +256,7 @@ class TestLemming(unittest.TestCase):
         self.assertIn("marked as pending", result.output)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, "pending")
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.PENDING)
 
     def test_outcome_command(self):
         result = self.cli_runner.invoke(
@@ -432,7 +442,7 @@ class TestLemming(unittest.TestCase):
         data = tasks.load_tasks(self.test_tasks_file)
         data.tasks[0].attempts = 5
         data.tasks[0].outcomes = ["outcome 1"]
-        data.tasks[0].status = "completed"
+        data.tasks[0].status = tasks.TaskStatus.COMPLETED
         tasks.save_tasks(self.test_tasks_file, data)
 
         # 2. Reset
@@ -445,7 +455,7 @@ class TestLemming(unittest.TestCase):
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].attempts, 0)
         self.assertEqual(data.tasks[0].outcomes, [])
-        self.assertEqual(data.tasks[0].status, "pending")
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.PENDING)
 
     def test_add_task_with_runner(self):
         result = self.cli_runner.invoke(
@@ -509,7 +519,9 @@ class TestLemming(unittest.TestCase):
     def test_prepare_prompt(self):
         data = tasks.Roadmap(
             context="Context",
-            tasks=[tasks.Task(id="1", description="T1", status="pending")],
+            tasks=[
+                tasks.Task(id="1", description="T1", status=tasks.TaskStatus.PENDING)
+            ],
         )
         prompt = runner.prepare_prompt(data, data.tasks[0], self.test_tasks_file)
         self.assertIn("T1", prompt)
@@ -534,7 +546,7 @@ class TestLemming(unittest.TestCase):
         # Let's make it completed
         with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = "completed"
+            data.tasks[0].status = tasks.TaskStatus.COMPLETED
             tasks.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(
@@ -774,10 +786,14 @@ class TestLemming(unittest.TestCase):
         with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
             data.tasks.append(
-                tasks.Task(id="t1", description="Completed", status="completed")
+                tasks.Task(
+                    id="t1", description="Completed", status=tasks.TaskStatus.COMPLETED
+                )
             )
             data.tasks.append(
-                tasks.Task(id="t2", description="Pending", status="pending")
+                tasks.Task(
+                    id="t2", description="Pending", status=tasks.TaskStatus.PENDING
+                )
             )
             tasks.save_tasks(self.test_tasks_file, data)
 
@@ -883,7 +899,7 @@ class TestLemming(unittest.TestCase):
                 tasks.Task(
                     id="task_cancel",
                     description="task cancel",
-                    status="in_progress",
+                    status=tasks.TaskStatus.IN_PROGRESS,
                     pid=pid,
                     last_heartbeat=time.time(),
                 )
@@ -906,7 +922,7 @@ class TestLemming(unittest.TestCase):
         # Verify task status is pending and PID is removed
         updated_data = tasks.load_tasks(self.test_tasks_file)
         task = updated_data.tasks[0]
-        self.assertEqual(task.status, "pending")
+        self.assertEqual(task.status, tasks.TaskStatus.PENDING)
         self.assertIsNone(task.pid)
         self.assertIsNone(task.last_heartbeat)
 
@@ -917,7 +933,7 @@ class TestLemming(unittest.TestCase):
                 tasks.Task(
                     id="task_cancel_no_pid",
                     description="task cancel no pid",
-                    status="in_progress",
+                    status=tasks.TaskStatus.IN_PROGRESS,
                     last_heartbeat=time.time(),
                 )
             ],
@@ -928,12 +944,16 @@ class TestLemming(unittest.TestCase):
 
         updated_data = tasks.load_tasks(self.test_tasks_file)
         task = updated_data.tasks[0]
-        self.assertEqual(task.status, "pending")
+        self.assertEqual(task.status, tasks.TaskStatus.PENDING)
         self.assertIsNone(task.last_heartbeat)
 
     def test_get_pending_task_normal(self):
         data = tasks.Roadmap(
-            tasks=[tasks.Task(id="t1", description="Task 1", status="pending")]
+            tasks=[
+                tasks.Task(
+                    id="t1", description="Task 1", status=tasks.TaskStatus.PENDING
+                )
+            ]
         )
         task = tasks.get_pending_task(data)
         self.assertIsNotNone(task)
@@ -945,7 +965,7 @@ class TestLemming(unittest.TestCase):
                 tasks.Task(
                     id="t1",
                     description="Task 1",
-                    status="in_progress",
+                    status=tasks.TaskStatus.IN_PROGRESS,
                     last_heartbeat=time.time(),
                 )
             ]
@@ -959,7 +979,7 @@ class TestLemming(unittest.TestCase):
                 tasks.Task(
                     id="t1",
                     description="Task 1",
-                    status="in_progress",
+                    status=tasks.TaskStatus.IN_PROGRESS,
                     last_heartbeat=time.time() - (tasks.STALE_THRESHOLD + 1),
                 )
             ]
@@ -980,7 +1000,7 @@ class TestLemming(unittest.TestCase):
                 tasks.Task(
                     id="t1",
                     description="Task 1",
-                    status="in_progress",
+                    status=tasks.TaskStatus.IN_PROGRESS,
                     last_heartbeat=time.time(),
                     pid=dead_pid,
                 )
@@ -998,7 +1018,7 @@ class TestLemming(unittest.TestCase):
                 tasks.Task(
                     id="t1",
                     description="Task 1",
-                    status="in_progress",
+                    status=tasks.TaskStatus.IN_PROGRESS,
                     last_heartbeat=time.time(),
                     pid=alive_pid,
                 )
@@ -1021,14 +1041,14 @@ class TestLemming(unittest.TestCase):
                 {
                     "id": "p1",
                     "description": "Pending 1",
-                    "status": "pending",
+                    "status": tasks.TaskStatus.PENDING,
                     "attempts": 0,
                     "outcomes": [],
                 },
                 {
                     "id": "c1",
                     "description": "Completed 1",
-                    "status": "completed",
+                    "status": tasks.TaskStatus.COMPLETED,
                     "completed_at": 1000,
                     "attempts": 1,
                     "outcomes": ["done"],
@@ -1036,14 +1056,14 @@ class TestLemming(unittest.TestCase):
                 {
                     "id": "i1",
                     "description": "In Progress 1",
-                    "status": "in_progress",
+                    "status": tasks.TaskStatus.IN_PROGRESS,
                     "attempts": 1,
                     "outcomes": [],
                 },
                 {
                     "id": "c2",
                     "description": "Completed 2",
-                    "status": "completed",
+                    "status": tasks.TaskStatus.COMPLETED,
                     "completed_at": 2000,
                     "attempts": 1,
                     "outcomes": ["done"],
@@ -1051,7 +1071,7 @@ class TestLemming(unittest.TestCase):
                 {
                     "id": "p2",
                     "description": "Pending 2",
-                    "status": "pending",
+                    "status": tasks.TaskStatus.PENDING,
                     "attempts": 0,
                     "outcomes": [],
                 },
@@ -1168,7 +1188,7 @@ class TestLemmingRun(unittest.TestCase):
                 {
                     "id": "task1",
                     "description": "Task 1",
-                    "status": "pending",
+                    "status": tasks.TaskStatus.PENDING,
                     "attempts": 0,
                     "outcomes": [],
                 }
@@ -1198,7 +1218,7 @@ class TestLemmingRun(unittest.TestCase):
         def wait_side_effect():
             with tasks.lock_tasks(self.test_tasks_file):
                 data = tasks.load_tasks(self.test_tasks_file)
-                data.tasks[0].status = "completed"
+                data.tasks[0].status = tasks.TaskStatus.COMPLETED
                 data.tasks[0].completed_at = 123456789.0
                 tasks.save_tasks(self.test_tasks_file, data)
             return 0
@@ -1281,7 +1301,7 @@ class TestLemmingRun(unittest.TestCase):
         # 1. Mark a task as in_progress with a very old heartbeat
         with tasks.lock_tasks(self.test_tasks_file):
             data = tasks.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = "in_progress"
+            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
             data.tasks[0].last_heartbeat = time.time() - (tasks.STALE_THRESHOLD + 10)
             data.tasks[0].pid = 999999  # Some fake PID
             tasks.save_tasks(self.test_tasks_file, data)
@@ -1297,7 +1317,7 @@ class TestLemmingRun(unittest.TestCase):
             # Simulate task completion
             with tasks.lock_tasks(self.test_tasks_file):
                 data = tasks.load_tasks(self.test_tasks_file)
-                data.tasks[0].status = "completed"
+                data.tasks[0].status = tasks.TaskStatus.COMPLETED
                 tasks.save_tasks(self.test_tasks_file, data)
             return 0
 
@@ -1318,7 +1338,7 @@ class TestLemmingRun(unittest.TestCase):
 
         # Verify it was indeed picked up
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, "completed")
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
 
 
 class TestLemmingLogging(unittest.TestCase):

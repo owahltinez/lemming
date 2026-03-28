@@ -351,9 +351,9 @@ def prepare_hook_prompt(
 
     roadmap_str += "## All Tasks\n"
     for t in data.tasks:
-        if t.status == "completed":
+        if t.status == tasks.TaskStatus.COMPLETED:
             marker = "[COMPLETED]"
-        elif t.status == "in_progress":
+        elif t.status == tasks.TaskStatus.IN_PROGRESS:
             marker = "[IN PROGRESS]"
         elif t.attempts > 0:
             marker = f"[PENDING - {t.attempts} attempt(s) so far]"
@@ -414,8 +414,12 @@ def prepare_prompt(
     Returns:
         The fully rendered prompt string.
     """
-    completed_tasks = [t for t in data.tasks if t.status == "completed"]
-    future_tasks = [t for t in data.tasks if t.status == "pending" and t.id != task.id]
+    completed_tasks = [t for t in data.tasks if t.status == tasks.TaskStatus.COMPLETED]
+    future_tasks = [
+        t
+        for t in data.tasks
+        if t.status == tasks.TaskStatus.PENDING and t.id != task.id
+    ]
 
     roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
 

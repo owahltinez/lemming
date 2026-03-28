@@ -30,7 +30,7 @@ def test_tasks():
             tasks.Task(
                 id="task1",
                 description="Completed Task",
-                status="completed",
+                status=tasks.TaskStatus.COMPLETED,
                 attempts=1,
                 outcomes=["All good"],
                 completed_at=123456789.0,
@@ -38,14 +38,14 @@ def test_tasks():
             tasks.Task(
                 id="task2",
                 description="Pending Task",
-                status="pending",
+                status=tasks.TaskStatus.PENDING,
                 attempts=0,
                 outcomes=[],
             ),
             tasks.Task(
                 id="task3",
                 description="In Progress Task",
-                status="in_progress",
+                status=tasks.TaskStatus.IN_PROGRESS,
                 attempts=1,
                 outcomes=[],
                 pid=os.getpid(),
@@ -147,7 +147,7 @@ def test_get_data(test_tasks):
     assert len(data["tasks"]) == 3
     # Check that task1 is in the list
     task1 = next(t for t in data["tasks"] if t["id"] == "task1")
-    assert task1["status"] == "completed"
+    assert task1["status"] == tasks.TaskStatus.COMPLETED
     assert data["loop_running"] is True
 
 
@@ -157,7 +157,7 @@ def test_add_task(test_tasks):
     data = response.json()
     assert data["description"] == "New task from test"
     assert data["id"]  # id should be auto-generated
-    assert data["status"] == "pending"
+    assert data["status"] == tasks.TaskStatus.PENDING
 
     # Verify task was persisted
     roadmap = tasks.load_tasks(test_tasks)
@@ -219,14 +219,16 @@ def test_update_completed_task_description_fails(test_tasks):
 
 def test_uncomplete_task_via_api(test_tasks):
     # Updating status of a completed task should still be allowed
-    response = client.post("/api/tasks/task1/update", json={"status": "pending"})
+    response = client.post(
+        "/api/tasks/task1/update", json={"status": tasks.TaskStatus.PENDING}
+    )
     assert response.status_code == 200
-    assert response.json()["status"] == "pending"
+    assert response.json()["status"] == tasks.TaskStatus.PENDING
     assert response.json()["attempts"] == 0
 
     data = tasks.load_tasks(test_tasks)
     task1 = next(t for t in data.tasks if t.id == "task1")
-    assert task1.status == "pending"
+    assert task1.status == tasks.TaskStatus.PENDING
     assert task1.attempts == 0
 
 
@@ -508,7 +510,7 @@ def test_api_delete_log_cleanup(test_tasks):
         tasks.Task(
             id=task_id,
             description="api delete test",
-            status="pending",
+            status=tasks.TaskStatus.PENDING,
             attempts=0,
             outcomes=[],
         )
@@ -649,7 +651,7 @@ def test_project_delete_completed_isolation(test_tasks):
     tasks.update_task(
         paths.get_tasks_file_for_dir(subdir),
         task_id,
-        status="completed",
+        status=tasks.TaskStatus.COMPLETED,
         require_outcomes=False,
     )
 

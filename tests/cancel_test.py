@@ -26,7 +26,7 @@ def test_cancel_task(tmp_path):
     with open(tasks_file, "r") as f:
         content = yaml.safe_load(f)
 
-    content["tasks"][0]["status"] = "in_progress"
+    content["tasks"][0]["status"] = tasks.TaskStatus.IN_PROGRESS.value
     content["tasks"][0]["pid"] = pid
     content["tasks"][0]["last_heartbeat"] = time.time()
 
@@ -42,7 +42,7 @@ def test_cancel_task(tmp_path):
 
     # 4. Verify status is pending and PID is gone
     data = tasks.load_tasks(tasks_file)
-    assert data.tasks[0].status == "pending"
+    assert data.tasks[0].status == tasks.TaskStatus.PENDING
     assert data.tasks[0].pid is None
 
     # 5. Verify process is killed
@@ -75,7 +75,7 @@ def test_cancel_task_stops_loop(tmp_path):
 
     with open(tasks_file, "r") as f:
         content = yaml.safe_load(f)
-    content["tasks"][0]["status"] = "in_progress"
+    content["tasks"][0]["status"] = tasks.TaskStatus.IN_PROGRESS.value
     content["tasks"][0]["pid"] = task_pid
     content["tasks"][0]["last_heartbeat"] = time.time()
     with open(tasks_file, "w") as f:

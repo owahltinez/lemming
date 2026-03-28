@@ -72,14 +72,15 @@ def test_update_task_to_pending_auto_starts_loop(test_tasks):
     # Add a completed task
     task = tasks.add_task(test_tasks, "Completed task")
     tasks.add_outcome(test_tasks, task.id, "Done")
-    tasks.update_task(test_tasks, task.id, status="completed")
+    tasks.update_task(test_tasks, task.id, status=tasks.TaskStatus.COMPLETED)
 
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return False
         with patch("lemming.tasks.is_loop_running", return_value=False):
             # Update to pending
             response = client.post(
-                f"/api/tasks/{task.id}/update", json={"status": "pending"}
+                f"/api/tasks/{task.id}/update",
+                json={"status": tasks.TaskStatus.PENDING},
             )
             assert response.status_code == 200
 
@@ -93,7 +94,7 @@ def test_clear_task_auto_starts_loop(test_tasks):
     # Add a completed task
     task = tasks.add_task(test_tasks, "Completed task")
     tasks.add_outcome(test_tasks, task.id, "Done")
-    tasks.update_task(test_tasks, task.id, status="completed")
+    tasks.update_task(test_tasks, task.id, status=tasks.TaskStatus.COMPLETED)
 
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return False

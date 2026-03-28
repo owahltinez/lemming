@@ -43,7 +43,14 @@ def test_load_save_tasks(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = tasks.Roadmap(
         context="test",
-        tasks=[tasks.Task(id="1", description="task 1", status="pending", attempts=0)],
+        tasks=[
+            tasks.Task(
+                id="1",
+                description="task 1",
+                status=tasks.TaskStatus.PENDING,
+                attempts=0,
+            )
+        ],
     )
     tasks.save_tasks(tasks_file, data)
 
@@ -57,7 +64,7 @@ def test_add_task(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task = tasks.add_task(tasks_file, "New task")
     assert task.description == "New task"
-    assert task.status == "pending"
+    assert task.status == tasks.TaskStatus.PENDING
 
     data = tasks.load_tasks(tasks_file)
     assert len(data.tasks) == 1
@@ -70,7 +77,7 @@ def test_claim_task(tmp_path):
 
     claimed = tasks.claim_task(tasks_file, task_id, pid=123)
     assert claimed is not None
-    assert claimed.status == "in_progress"
+    assert claimed.status == tasks.TaskStatus.IN_PROGRESS
     assert claimed.pid == 123
     assert claimed.attempts == 1
 
@@ -124,12 +131,14 @@ def test_reset_task(tmp_path):
     task = tasks.add_task(tasks_file, "Reset me")
     task_id = task.id
 
-    tasks.update_task(tasks_file, task_id, status="completed", require_outcomes=False)
+    tasks.update_task(
+        tasks_file, task_id, status=tasks.TaskStatus.COMPLETED, require_outcomes=False
+    )
     tasks.add_outcome(tasks_file, task_id, "Outcome")
 
     tasks.reset_task(tasks_file, task_id)
     data = tasks.load_tasks(tasks_file)
-    assert data.tasks[0].status == "pending"
+    assert data.tasks[0].status == tasks.TaskStatus.PENDING
     assert data.tasks[0].attempts == 0
     assert data.tasks[0].outcomes == []
 
@@ -152,7 +161,7 @@ def test_claim_already_in_progress(tmp_path):
     # First claim with alive PID
     claimed = tasks.claim_task(tasks_file, task_id, pid=os.getpid())
     assert claimed is not None
-    assert claimed.status == "in_progress"
+    assert claimed.status == tasks.TaskStatus.IN_PROGRESS
 
     # Second claim should fail
     claimed_again = tasks.claim_task(tasks_file, task_id, pid=456)
@@ -179,9 +188,11 @@ def test_get_project_data_deduplication(tmp_path):
     data = tasks.Roadmap(
         context="test",
         tasks=[
-            tasks.Task(id="1", description="Task 1", status="pending"),
-            tasks.Task(id="1", description="Task 1 Duplicate", status="pending"),
-            tasks.Task(id="2", description="Task 2", status="pending"),
+            tasks.Task(id="1", description="Task 1", status=tasks.TaskStatus.PENDING),
+            tasks.Task(
+                id="1", description="Task 1 Duplicate", status=tasks.TaskStatus.PENDING
+            ),
+            tasks.Task(id="2", description="Task 2", status=tasks.TaskStatus.PENDING),
         ],
     )
     tasks.save_tasks(tasks_file, data)
