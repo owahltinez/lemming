@@ -11,7 +11,7 @@ Use the Lemming CLI to make changes. Do NOT edit `{{tasks_file_name}}` directly.
 
 ```
 lemming --tasks-file {{tasks_file_path}} add "<description>"          # Add a new task (e.g. for refactoring)
-lemming --tasks-file {{tasks_file_path}} outcome add <id> "<finding>"  # Record a readability finding
+lemming --tasks-file {{tasks_file_path}} outcome add {{finished_task_id}} "<finding>"  # Record a readability finding
 readability fetch <language>                                          # Get the style guide for a language
 readability check <path>                                              # Run relevant formatters and linters
 ```

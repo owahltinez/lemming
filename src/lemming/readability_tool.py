@@ -1,8 +1,12 @@
+import logging
 import os
+import pathlib as pl
+import shutil
+import subprocess
 import sys
+
 import click
 import requests
-import logging
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
 
@@ -13,6 +17,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stderr)],
 )
 logger = logging.getLogger("readability")
+
 
 def get_guides_dir():
     """
@@ -244,6 +249,45 @@ def languages():
         click.echo(f"  - {', '.join(aliases)}")
 
 
+def _run_tool(tool_name, tool_config, logger):
+    """
+    Run a specific formatting or linting tool.
+    """
+    # Check if the primary command exists in the environment
+    cmd = (
+        tool_config.get("format") or tool_config.get("check") or tool_config.get("fix")
+    )
+    if not cmd:
+        return
+
+    executable = cmd[0]
+    if not shutil.which(executable):
+        logger.debug(f"Tool {tool_name} ({executable}) not found in PATH, skipping.")
+        return
+
+    logger.info(f"Running {tool_name}...")
+    try:
+        if "format" in tool_config:
+            logger.debug(f"Executing: {' '.join(tool_config['format'])}")
+            subprocess.run(tool_config["format"], capture_output=True, check=False)
+
+        if "fix" in tool_config:
+            logger.debug(f"Executing: {' '.join(tool_config['fix'])}")
+            subprocess.run(tool_config["fix"], capture_output=True, check=False)
+
+        if "check" in tool_config:
+            logger.debug(f"Executing: {' '.join(tool_config['check'])}")
+            result = subprocess.run(
+                tool_config["check"], capture_output=True, text=True, check=False
+            )
+            if result.returncode != 0:
+                click.echo(
+                    f"--- {tool_name} findings ---\n{result.stdout}\n{result.stderr}"
+                )
+    except Exception as e:
+        logger.warning(f"Failed to run {tool_name}: {e}")
+
+
 @cli.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
@@ -251,46 +295,55 @@ def check(path, verbose):
     """
     Run relevant formatters and linters for a given path.
     """
-    import subprocess
-    import pathlib as pl
-    
-    logger = logging.getLogger("readability")
     if verbose:
         logger.setLevel(logging.DEBUG)
 
     logger.info(f"Checking path: {path}")
 
+    # Tool definitions with trigger files and commands
     tools = [
         {
             "name": "ruff",
             "check": ["ruff", "check", path],
             "fix": ["ruff", "check", "--fix", path],
             "format": ["ruff", "format", path],
-            "trigger": "pyproject.toml"
+            "trigger": ["pyproject.toml", "ruff.toml", ".ruff.toml"],
         },
         {
             "name": "biome",
             "check": ["npx", "biome", "lint", path],
             "fix": ["npx", "biome", "lint", "--apply", path],
             "format": ["npx", "biome", "format", "--write", path],
-            "trigger": "biome.json"
-        }
+            "trigger": ["biome.json", "biome.jsonc"],
+        },
+        {
+            "name": "prettier",
+            "format": ["npx", "prettier", "--write", path],
+            "trigger": [
+                ".prettierrc",
+                ".prettierrc.json",
+                ".prettierrc.yml",
+                ".prettierrc.yaml",
+                ".prettierrc.js",
+                "prettier.config.js",
+                "prettier.config.cjs",
+            ],
+        },
+        {
+            "name": "go fmt",
+            "format": ["go", "fmt", path],
+            "trigger": ["go.mod"],
+        },
     ]
 
     project_root = pl.Path.cwd()
-    
+
     for tool in tools:
-        trigger_file = project_root / tool["trigger"]
-        if trigger_file.exists():
-            logger.info(f"Running {tool['name']}...")
-            if "format" in tool:
-                subprocess.run(tool["format"], capture_output=True)
-            if "fix" in tool:
-                subprocess.run(tool["fix"], capture_output=True)
-            if "check" in tool:
-                result = subprocess.run(tool["check"], capture_output=True, text=True)
-                if result.returncode != 0:
-                    click.echo(f"--- {tool['name']} findings ---\n{result.stdout}\n{result.stderr}")
+        # Check if any of the trigger files exist in the project root
+        has_trigger = any((project_root / t).exists() for t in tool["trigger"])
+
+        if has_trigger:
+            _run_tool(tool["name"], tool, logger)
 
 
 # Main entry point for the CLI
