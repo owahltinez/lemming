@@ -17,8 +17,6 @@ from lemming import paths
 from lemming import tasks
 
 
-
-
 def enum_representer(dumper, data):
     return dumper.represent_scalar("tag:yaml.org,2002:str", data.value)
 
@@ -1075,6 +1073,13 @@ class TestLemming(unittest.TestCase):
                     "attempts": 0,
                     "outcomes": [],
                 },
+                {
+                    "id": "f1",
+                    "description": "Failed 1",
+                    "status": tasks.TaskStatus.FAILED,
+                    "attempts": 3,
+                    "outcomes": ["error"],
+                },
             ],
         }
         with open(self.test_tasks_file, "w", encoding="utf-8") as f:
@@ -1087,8 +1092,9 @@ class TestLemming(unittest.TestCase):
         # 1. Pending 2 (p2) (newest uncompleted)
         # 2. In Progress 1 (i1)
         # 3. Pending 1 (p1)
-        # 4. Completed 2 (c2) (newest completed)
-        # 5. Completed 1 (c1)
+        # 4. Failed 1 (f1) (newest done, but uses created_at as completed_at is None)
+        # 5. Completed 2 (c2) (completed at 2000)
+        # 6. Completed 1 (c1) (completed at 1000)
 
         lines = [
             line.strip()
@@ -1103,7 +1109,7 @@ class TestLemming(unittest.TestCase):
                 task_ids.append(task_id)
 
         # Check expected order
-        expected_order = ["p2", "i1", "p1", "c2", "c1"]
+        expected_order = ["p2", "i1", "p1", "f1", "c2", "c1"]
         self.assertEqual(task_ids, expected_order)
 
 

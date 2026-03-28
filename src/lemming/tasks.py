@@ -281,25 +281,41 @@ def get_pending_task(data: Roadmap) -> Task | None:
         is already in progress.
     """
     now = time.time()
+
+    # 1. Check if ANY task is currently in_progress and not stale.
+    # If so, we must not start any other task.
     for task in data.tasks:
         if task.status == TaskStatus.IN_PROGRESS:
             last_heartbeat = task.last_heartbeat or 0
-
-            # If heartbeat is too old, it's stale
+            is_stale = False
             if now - last_heartbeat > STALE_THRESHOLD:
-                return task
+                is_stale = True
+            elif task.pid and not is_pid_alive(task.pid):
+                is_stale = True
 
-            # If we have a PID and it's dead, it's stale
-            if task.pid and not is_pid_alive(task.pid):
-                return task
+            if not is_stale:
+                return None
 
-            # If it's in progress and not stale, we shouldn't start anything else
-            return None
+    # 2. Sort uncompleted tasks (pending or stale in_progress) to pick the newest one.
+    # We follow the same logic as get_project_data (newer first).
+    uncompleted = []
+    for i, task in enumerate(data.tasks):
+        if task.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS):
+            # We need to preserve the original index for tie-breaking
+            task.index = i
+            uncompleted.append(task)
 
-        if task.status == TaskStatus.PENDING:
-            return task
+    if not uncompleted:
+        return None
 
-    return None
+    def sort_key(t):
+        return (
+            -(t.created_at or 0),
+            -(t.index if t.index is not None else 0),
+        )
+
+    uncompleted.sort(key=sort_key)
+    return uncompleted[0]
 
 
 def _mark_task_in_progress(data: Roadmap, task_id: str, pid: int | None = None) -> bool:
