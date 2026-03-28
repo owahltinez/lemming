@@ -877,6 +877,8 @@ def run(
     if env_overrides:
         os.environ.update(env_overrides)
 
+    runner.ensure_hooks_symlinked()
+
     tasks.acquire_loop_lock(tasks_file)
     try:
         _run_loop(
@@ -1122,6 +1124,8 @@ def serve(
 
     from . import api
     from . import providers
+
+    runner.ensure_hooks_symlinked()
 
     api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
     api.app.state.verbose = ctx.obj["VERBOSE"]

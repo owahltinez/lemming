@@ -105,15 +105,20 @@ lemming hooks set roadmap lint
 lemming hooks reset
 ```
 
-### Built-in Hook: `roadmap`
-The default `roadmap` hook is **conservative by default** — if the project is progressing normally, it does nothing. It only intervenes when it detects one of these situations:
+### Built-in Hooks ⚓️
+Lemming comes with several built-in hooks to help manage your project:
 
-*   **A task is stuck**: It has exhausted its retries. The orchestrator may rewrite the task, insert a prerequisite, or remove it.
-*   **The goal isn't met**: All tasks are complete, but the project goal hasn't been achieved. The orchestrator adds new tasks.
-*   **Tasks are obsolete**: Results reveal that remaining pending tasks are unnecessary. The orchestrator cleans them up.
+*   **`roadmap`**: The primary mechanism for autonomous project management. It analyzes the results of the finished task and decides if the remaining roadmap needs to be adjusted (e.g., adding a missing prerequisite, skipping obsolete tasks, or breaking down a broad task).
+*   **`readability`**: A code quality hook that reviews changes for adherence to the Google Style Guide and general readability using the `readability` tool. It can record findings as task outcomes or suggest follow-up refactoring tasks.
 
-### Custom Hooks
-You can create your own hooks by adding Markdown files to `.lemming/hooks/*.md`. These hooks receive the current roadmap and the finished task's results (including logs) as context. See [DOCS/HOOKS.md](docs/HOOKS.md) for details.
+### Custom and Global Hooks
+You can create your own hooks by adding Markdown files to:
+1.  **Project-specific**: `.lemming/hooks/*.md`
+2.  **Global**: `~/.local/lemming/hooks/*.md`
+
+Lemming automatically symlinks its built-in hooks to the global directory on startup. This allows you to easily **override** a built-in hook by replacing its symlink with a file, or **disable** it globally by deleting the symlink.
+
+Hooks follow a specific discovery precedence: **Project > Global > Built-in**. See [DOCS/HOOKS.md](docs/HOOKS.md) for more details.
 
 ### Managing Hooks and Configuration
 Use the `config` and `hooks` commands to manage your project's execution loop:

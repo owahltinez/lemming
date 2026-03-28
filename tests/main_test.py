@@ -1063,6 +1063,9 @@ class TestLemmingRun(unittest.TestCase):
         self.cli_runner.invoke(
             main.cli, self.base_args + ["config", "set", "retries", "2"]
         )
+        self.cli_runner.invoke(
+            main.cli, self.base_args + ["hooks", "set", "roadmap"]
+        )
         result = self.cli_runner.invoke(
             main.cli,
             self.base_args + ["run", "--retry-delay", "0"],

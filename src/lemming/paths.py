@@ -16,6 +16,11 @@ def get_lemming_home() -> pathlib.Path:
     return pathlib.Path.home() / ".local" / "lemming"
 
 
+def get_global_hooks_dir() -> pathlib.Path:
+    """Returns the global hooks directory in Lemming home."""
+    return get_lemming_home() / "hooks"
+
+
 def get_project_dir(tasks_file: pathlib.Path) -> pathlib.Path:
     """Determines the isolated project directory for a given tasks file.
 

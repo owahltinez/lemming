@@ -10,8 +10,33 @@ from . import paths
 from . import tasks
 
 
+def ensure_hooks_symlinked():
+    """Ensures that all built-in hooks are symlinked in the global hooks directory.
+
+    If a hook already exists (as a file or symlink), it is not overwritten.
+    This allows users to 'comment' them out (by deleting the symlink) or
+    override them (by replacing the symlink with their own file).
+    """
+    global_hooks_dir = paths.get_global_hooks_dir()
+    global_hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    base_path = pathlib.Path(__file__).parent / "prompts" / "hooks"
+    if not base_path.exists():
+        return
+
+    for f in base_path.glob("*.md"):
+        target = global_hooks_dir / f.name
+        if not target.exists() and not target.is_symlink():
+            # Use relative symlink if possible for portability within the same drive
+            try:
+                # We need absolute for symlink to work if lemming is installed in site-packages
+                target.symlink_to(f.absolute())
+            except OSError:
+                pass
+
+
 def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
-    """Loads a prompt template from the prompts directory or local hooks.
+    """Loads a prompt template from the project, global, or built-in hooks.
 
     Args:
         name: Name of the prompt template (without .md extension).
@@ -30,7 +55,13 @@ def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
         if local_hook_path.exists():
             return local_hook_path.read_text(encoding="utf-8")
 
-    # 2. Look in built-in prompts directory
+    # 2. Look in global hooks directory (~/.local/lemming/hooks)
+    global_hooks_dir = paths.get_global_hooks_dir()
+    global_hook_path = global_hooks_dir / f"{name}.md"
+    if global_hook_path.exists():
+        return global_hook_path.read_text(encoding="utf-8")
+
+    # 3. Look in built-in prompts directory (fallback if symlink was deleted)
     base_path = pathlib.Path(__file__).parent / "prompts"
 
     # Try exact name first (e.g. taskrunner)
@@ -55,6 +86,7 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
     Returns:
         A list of hook names.
     """
+    ensure_hooks_symlinked()
     hooks = set()
 
     # 1. Look for local hooks in the project directory
@@ -65,7 +97,13 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
             for f in local_hooks_dir.glob("*.md"):
                 hooks.add(f.stem)
 
-    # 2. Look in built-in prompts directory
+    # 2. Look in global hooks directory
+    global_hooks_dir = paths.get_global_hooks_dir()
+    if global_hooks_dir.exists():
+        for f in global_hooks_dir.glob("*.md"):
+            hooks.add(f.stem)
+
+    # 3. Look in built-in prompts directory (fallback)
     base_path = pathlib.Path(__file__).parent / "prompts" / "hooks"
     if base_path.exists():
         for f in base_path.glob("*.md"):
@@ -349,6 +387,7 @@ def prepare_hook_prompt(
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)
         .replace("{{finished_task}}", finished_str)
+        .replace("{{finished_task_id}}", finished_task.id)
         .replace("{{tasks_file_name}}", tasks_file.name)
         .replace("{{tasks_file_path}}", tasks_file_str)
     )

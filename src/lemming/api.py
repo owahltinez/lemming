@@ -143,7 +143,9 @@ def create_directory(request: CreateDirectoryRequest):
 
 @app.get("/api/data", response_model=tasks.ProjectData)
 def get_data(project: str | None = None):
-    return tasks.get_project_data(resolve_tasks_file(project))
+    data = tasks.get_project_data(resolve_tasks_file(project))
+    data.cwd = str(resolve_project_dir(project))
+    return data
 
 
 @app.get("/api/runners")
