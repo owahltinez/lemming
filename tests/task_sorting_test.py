@@ -35,12 +35,14 @@ def test_completed_tasks_sorting_newest_first(tmp_path):
     assert completed_tasks[2].description == "Task 1"
 
 
-def test_uncompleted_tasks_sorting_newest_first(tmp_path):
+def test_uncompleted_tasks_sorting_prioritizes_in_progress(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
 
     # Add three tasks, some pending, some in progress
     tasks.add_task(tasks_file, "Task 1")
+    time.sleep(0.01)
     tasks.add_task(tasks_file, "Task 2")
+    time.sleep(0.01)
     tasks.add_task(tasks_file, "Task 3")
 
     with tasks.lock_tasks(tasks_file):
@@ -56,11 +58,11 @@ def test_uncompleted_tasks_sorting_newest_first(tmp_path):
         if t.status not in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.FAILED)
     ]
 
-    # Should be newest first (regardless of in_progress status)
-    # T3 (index 2), T2 (index 1), T1 (index 0)
-    assert uncompleted_tasks[0].description == "Task 3"
-    assert uncompleted_tasks[1].description == "Task 2"
-    assert uncompleted_tasks[2].description == "Task 1"
+    # Should prioritize in_progress first, then chronological index
+    # Task 2 (in_progress), Task 1 (index 0), Task 3 (index 2)
+    assert uncompleted_tasks[0].description == "Task 2"
+    assert uncompleted_tasks[1].description == "Task 1"
+    assert uncompleted_tasks[2].description == "Task 3"
 
 
 def test_failed_tasks_sorting_grouped_with_completed(tmp_path):
@@ -68,8 +70,11 @@ def test_failed_tasks_sorting_grouped_with_completed(tmp_path):
 
     # Add four tasks: one pending, one in progress, one failed, one completed
     tasks.add_task(tasks_file, "Pending")
+    time.sleep(0.01)
     tasks.add_task(tasks_file, "In Progress")
+    time.sleep(0.01)
     tasks.add_task(tasks_file, "Failed")
+    time.sleep(0.01)
     tasks.add_task(tasks_file, "Completed")
 
     with tasks.lock_tasks(tasks_file):
@@ -86,8 +91,8 @@ def test_failed_tasks_sorting_grouped_with_completed(tmp_path):
     project_data = tasks.get_project_data(tasks_file)
 
     # Order should be:
-    # 1. In Progress (uncompleted, newest of the two)
-    # 2. Pending (uncompleted, older)
+    # 1. In Progress (uncompleted, prioritized)
+    # 2. Pending (uncompleted, index 0)
     # 3. Completed (completed/failed, newest)
     # 4. Failed (completed/failed, older)
 
@@ -115,7 +120,7 @@ def test_task_sorting_tie_breaker(tmp_path):
 
     project_data = tasks.get_project_data(tasks_file)
 
-    # Should be reverse chronological by index: Task C, Task B, Task A
-    assert project_data.tasks[0].description == "Task C"
+    # Should be chronological by index for uncompleted: Task A, Task B, Task C
+    assert project_data.tasks[0].description == "Task A"
     assert project_data.tasks[1].description == "Task B"
-    assert project_data.tasks[2].description == "Task A"
+    assert project_data.tasks[2].description == "Task C"

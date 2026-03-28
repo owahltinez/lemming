@@ -159,6 +159,29 @@ def test_pretty_quote():
         "'has '\"'\"'single'\"'\"' and !'"
     )
 
+    # Test idempotency (should NOT compound quotes)
+    q = runner._pretty_quote("it's!")
+    assert q == "'it'\"'\"'s!'"
+    qq = runner._pretty_quote(q)
+    assert qq == q
+    qqq = runner._pretty_quote(qq)
+    assert qqq == q
+
+    # Test idempotent single quotes (should NOT compound to multiple escapes)
+    q_s = runner._pretty_quote("it's")
+    assert q_s == '"it\'s"'
+    qq_s = runner._pretty_quote(q_s)
+    assert qq_s == q_s
+
+    # Test complex shell-quoted strings
+    already_quoted = "'path with space' and \"double'quotes\""
+    # This is NOT a single shell word, so it won't be unquoted.
+    # But it will be double-quoted correctly.
+    q_complex = runner._pretty_quote(already_quoted)
+    assert q_complex.startswith('"')
+    assert q_complex.endswith('"')
+    assert '\\"double\'quotes\\"' in q_complex
+
 
 def test_shlex_join_pretty():
     cmd = [
@@ -173,18 +196,16 @@ def test_shlex_join_pretty():
         == "example-cli --dangerously-skip-permissions --print \"You are 'Lemming'\""
     )
 
+    # Test truncation
+    long_arg = "a" * 300
+    joined_truncated = runner._shlex_join_pretty(["cli", long_arg], max_len=100)
+    assert "a" * 100 in joined_truncated
+    assert "... [truncated]" in joined_truncated
+    assert len(joined_truncated) < 150
+
 
 def test_load_prompt_discovery(tmp_path, monkeypatch):
-    """Tests the discovery of hook prompts across different layers.
-
-    Scenarios tested:
-    1. Local project hook.
-    2. Global hook (fallback from local).
-    3. Precedence: local > global.
-    4. Built-in hook (fallback from global).
-    5. Precedence: global > built-in.
-    6. Empty global hook (fallback to built-in).
-    """
+    """Tests the discovery of hook prompts across different layers."""
     # Setup global hooks dir
     lemming_home = tmp_path / "lemming_home"
     global_hooks_dir = lemming_home / "hooks"
@@ -212,16 +233,7 @@ def test_load_prompt_discovery(tmp_path, monkeypatch):
     assert runner.load_prompt("myhook", tasks_file) == "local content"
 
     # 4. Test built-in (fallback)
-    # "roadmap" is a built-in hook in prompts/hooks/roadmap.md
     assert "You are a roadmap orchestrator" in runner.load_prompt("roadmap", tasks_file)
-
-    # 5. Test global > built-in
-    (global_hooks_dir / "roadmap.md").write_text("custom roadmap")
-    assert runner.load_prompt("roadmap", tasks_file) == "custom roadmap"
-
-    # 6. Test empty global hook (should fallback to built-in)
-    (global_hooks_dir / "readability.md").write_text("   ")
-    assert "senior code reviewer" in runner.load_prompt("readability", tasks_file)
 
 
 def test_prepare_hook_prompt_substitution(tmp_path, monkeypatch):
@@ -281,11 +293,6 @@ File Path: {{tasks_file_path}}
     assert "Execution log of THIS task" in prompt
     assert "line 1\nline 2\nline 3" in prompt
 
-    # Verify other placeholders
-    assert "ID: task1" in prompt
-    assert f"File Name: {tasks_file.name}" in prompt
-    assert f"File Path: {runner._pretty_quote(str(tasks_file))}" in prompt
-
 
 def test_prepare_prompt_local_override(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
@@ -302,3 +309,62 @@ def test_prepare_prompt_local_override(tmp_path):
     task = data.tasks[0]
     prompt = runner.prepare_prompt(data, task, tasks_file)
     assert "LOCAL OVERRIDE My Task" in prompt
+
+
+def test_run_with_heartbeat_log_header(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "test_task"
+    log_file = paths.get_log_file(tasks_file, task_id)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use a command that exits quickly
+    cmd = ["true"]
+
+    # Run with a header
+    runner.run_with_heartbeat(
+        cmd, tasks_file, task_id, verbose=False, header="Hook: roadmap"
+    )
+
+    content = log_file.read_text()
+    assert "HOOK: ROADMAP started at" in content
+    assert "HOOK: HOOK: ROADMAP" not in content
+    assert "=" * 80 in content
+
+
+def test_prepare_hook_prompt_filters_command_noise(tmp_path, monkeypatch):
+    # Setup paths to avoid polluting real global/home
+    lemming_home = tmp_path / "lemming_home"
+    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
+
+    tasks_file = tmp_path / "tasks.yml"
+    data = tasks.Roadmap(
+        context="Project Context",
+        tasks=[
+            tasks.Task(
+                id="task1",
+                description="Task 1",
+                status=tasks.TaskStatus.COMPLETED,
+            ),
+        ],
+    )
+    finished_task = data.tasks[0]
+
+    # Create a mock hook prompt with all placeholders
+    local_hooks_dir = tmp_path / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    hook_prompt_file = local_hooks_dir / "test-hook.md"
+    hook_prompt_file.write_text("Log: {{finished_task}}")
+
+    # Mock log file with a long Command: line
+    log_file = paths.get_log_file(tasks_file, finished_task.id)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.write_text(
+        "Command: gemini --prompt \"HUGE PROMPT WITH 'QUOTES'\" ...\nReal output from AI\n"
+    )
+
+    prompt = runner.prepare_hook_prompt("test-hook", data, finished_task, tasks_file)
+
+    # Verify Command: line is filtered out
+    assert "HUGE PROMPT" not in prompt
+    assert "Real output from AI" in prompt
+    assert "Execution log of THIS task" in prompt

@@ -123,9 +123,26 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
 
 
 def _pretty_quote(s: str) -> str:
-    """Quotes a string for shell execution, preferring readable double quotes if it contains single quotes."""
+    """Quotes a string for shell execution, preferring readable double quotes if it contains single quotes.
+
+    This function is idempotent for single shell words: if s is already a valid shell-quoted
+    single word, it is unquoted before being re-quoted prettily.
+    """
     if not s:
         return "''"
+
+    # If it's already a single shell word, try to unquote it first to avoid compounding.
+    # We only unquote if shlex.split succeeds and returns exactly one token.
+    try:
+        parts = shlex.split(s)
+        if len(parts) == 1:
+            # Check if it was actually quoted or escaped.
+            # shlex.split("foo") is "foo", but shlex.split("'foo'") is also "foo".
+            # We want to canonicalize any quoted string back to its literal form.
+            if parts[0] != s or (s.startswith("'") or s.startswith('"')):
+                s = parts[0]
+    except Exception:
+        pass
 
     # If shlex.quote says it doesn't need quotes, return as-is
     if shlex.quote(s) == s:
@@ -150,9 +167,21 @@ def _pretty_quote(s: str) -> str:
     return shlex.quote(s)
 
 
-def _shlex_join_pretty(cmd: list[str]) -> str:
-    """Joins command arguments into a single string with pretty quoting."""
-    return " ".join(_pretty_quote(arg) for arg in cmd)
+def _shlex_join_pretty(cmd: list[str], max_len: int = -1) -> str:
+    """Joins command arguments into a single string with pretty quoting.
+
+    Args:
+        cmd: List of command arguments.
+        max_len: If > 0, truncate each quoted argument to this length.
+    """
+    parts = []
+    for arg in cmd:
+        quoted = _pretty_quote(arg)
+        if max_len > 0 and len(quoted) > max_len:
+            parts.append(quoted[:max_len] + "... [truncated]")
+        else:
+            parts.append(quoted)
+    return " ".join(parts)
 
 
 def build_runner_command(
@@ -257,14 +286,20 @@ def run_with_heartbeat(
     log_file = paths.get_log_file(tasks_file, task_id)
 
     # Use a separator for new attempts or hooks
+    # For the log file, we truncate long arguments (like the prompt) to avoid
+    # unreadable logs and exponential escaping growth when prompts are re-quoted.
+    log_command_str = _shlex_join_pretty(cmd, max_len=200)
     command_str = _shlex_join_pretty(cmd)
+
     with open(log_file, "a", encoding="utf-8") as f:
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         if header:
-            f.write(f"\n--- {header} started at {timestamp} ---\n")
+            f.write(f"\n{'=' * 80}\n")
+            f.write(f"{header.upper()} started at {timestamp}\n")
+            f.write(f"{'=' * 80}\n")
         else:
             f.write(f"\n--- Attempt started at {timestamp} ---\n")
-        f.write(f"Command: {command_str}\n")
+        f.write(f"Command: {log_command_str}\n")
         f.flush()
 
     if verbose:
@@ -379,14 +414,16 @@ def prepare_hook_prompt(
         for o in finished_task.outcomes:
             finished_str += f"- {o}\n"
 
-    # Include the last 100 lines of the runner log for the finished task
+    # Include the last 100 lines of the runner log for the finished task.
+    # We filter out 'Command:' lines because they contain the full previous prompt
+    # and cause exponential escaping growth when prompts are re-quoted.
     log_file = paths.get_log_file(tasks_file, finished_task.id)
     if log_file.exists():
         try:
             with open(log_file, "r", encoding="utf-8") as f:
-                log_content = f.read()
-                lines = log_content.splitlines()
-                last_lines = lines[-100:]
+                lines = f.readlines()
+                filtered = [line for line in lines if not line.startswith("Command: ")]
+                last_lines = [line.rstrip() for line in filtered[-100:]]
                 finished_str += "\nExecution log of THIS task (last 100 lines):\n"
                 finished_str += "```\n"
                 finished_str += "\n".join(last_lines)

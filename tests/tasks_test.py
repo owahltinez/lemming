@@ -64,12 +64,15 @@ def test_load_save_tasks(tmp_path):
 
 def test_add_task(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
+    now = time.time()
     task = tasks.add_task(tasks_file, "New task")
     assert task.description == "New task"
     assert task.status == tasks.TaskStatus.PENDING
+    assert task.created_at >= now
 
     data = tasks.load_tasks(tasks_file)
     assert len(data.tasks) == 1
+    assert data.tasks[0].created_at == task.created_at
 
 
 def test_claim_task(tmp_path):
@@ -163,31 +166,32 @@ def test_update_task_status_lifecycle(tmp_path):
     assert updated.status == tasks.TaskStatus.FAILED
     assert updated.completed_at is not None
 
-    # 4. IN_PROGRESS -> REQUESTED (when running as self)
+    # 4. IN_PROGRESS -> IMMEDIATE (when running as self)
     tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.PENDING)
     tasks.claim_task(tasks_file, task_id, pid=1234)
 
     with patch.dict(os.environ, {"LEMMING_PARENT_TASK_ID": task_id}):
-        # Request completion
+        # Status changes to requested_status for IN_PROGRESS tasks
         updated = tasks.update_task(
             tasks_file, task_id, status=tasks.TaskStatus.COMPLETED
         )
         assert updated.status == tasks.TaskStatus.IN_PROGRESS
-        assert updated.completion_requested is True
+        assert updated.requested_status == tasks.TaskStatus.COMPLETED
 
-        # Request failure
+        # Reset and claim for failure test
+        tasks.update_task(
+            tasks_file, task_id, status=tasks.TaskStatus.PENDING, force=True
+        )
+        tasks.claim_task(tasks_file, task_id, pid=1234)
         updated = tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
         assert updated.status == tasks.TaskStatus.IN_PROGRESS
-        assert updated.failure_requested is True
-        assert updated.completion_requested is False
+        assert updated.requested_status == tasks.TaskStatus.FAILED
 
-        # Reset to pending (clears flags)
+        # Reset to pending (clears status)
         updated = tasks.update_task(
-            tasks_file, task_id, status=tasks.TaskStatus.PENDING
+            tasks_file, task_id, status=tasks.TaskStatus.PENDING, force=True
         )
-        assert updated.status == tasks.TaskStatus.IN_PROGRESS
-        assert updated.completion_requested is False
-        assert updated.failure_requested is False
+        assert updated.status == tasks.TaskStatus.PENDING
 
 
 def test_update_task_requires_outcomes(tmp_path):
@@ -351,10 +355,10 @@ def test_get_project_data_deduplication(tmp_path):
 
     project_data = tasks.get_project_data(tasks_file)
 
-    # Should only have two unique tasks, newer first
+    # Should only have two unique tasks, oldest first (chronological)
     assert len(project_data.tasks) == 2
-    assert project_data.tasks[0].description == "Task 2"
-    assert project_data.tasks[1].description == "Task 1"
+    assert project_data.tasks[0].description == "Task 1"
+    assert project_data.tasks[1].description == "Task 2"
 
 
 def test_loop_lock_management(tmp_path):
@@ -447,3 +451,26 @@ def test_get_project_data_enriches_metadata(tmp_path):
 
     assert t2.index == 1
     assert t2.has_runner_log is True
+
+
+def test_save_tasks_uses_block_style_for_multiline_strings(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    multiline_description = "Line 1\nLine 2\nLine 3"
+    task = tasks.Task(
+        id="123",
+        description=multiline_description,
+    )
+    roadmap = tasks.Roadmap(tasks=[task])
+
+    tasks.save_tasks(tasks_file, roadmap)
+
+    # Read the raw content to check for '|'
+    content = tasks_file.read_text(encoding="utf-8")
+    assert "description: |" in content
+    assert "Line 1" in content
+    assert "Line 2" in content
+    assert "Line 3" in content
+
+    # Verify that it still loads correctly
+    loaded = tasks.load_tasks(tasks_file)
+    assert loaded.tasks[0].description == multiline_description

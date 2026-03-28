@@ -101,7 +101,8 @@
           class="text-sm font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded truncate min-w-0"
           :attr:title="task.description"
         >
-          {{ task.id }} &middot; {{ task.status }}
+          {{ task.id }} &middot; {{ task.status === 'in_progress' &&
+          task.requested_status ? 'finalizing' : task.status }}
         </div>
       </header>
 
@@ -157,15 +158,15 @@
             >
               <span class="relative flex h-2 w-2">
                 <span
-                  class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"
+                  :attr:class="'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ' + (task.requested_status ? 'bg-indigo-400' : 'bg-blue-400')"
                 ></span>
                 <span
-                  class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"
+                  :attr:class="'relative inline-flex rounded-full h-2 w-2 ' + (task.requested_status ? 'bg-indigo-500' : 'bg-blue-500')"
                 ></span>
               </span>
               <span
-                class="text-xs font-medium text-blue-600 uppercase tracking-wider"
-                >Live</span
+                :attr:class="'text-xs font-medium uppercase tracking-wider ' + (task.requested_status ? 'text-indigo-600' : 'text-blue-600')"
+                >{{ task.requested_status ? 'Finalizing' : 'Live' }}</span
               >
             </div>
           </div>
@@ -174,9 +175,8 @@
           <pre
             id="log-container"
             class="text-gray-100 text-[11px] font-mono leading-tight overflow-auto whitespace-pre-wrap grow"
-          >
-{{ taskLog || 'Loading log content...' }}</pre
-          >
+            :text="taskLog || 'Loading log content...'"
+          ></pre>
         </div>
       </section>
 

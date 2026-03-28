@@ -1,15 +1,15 @@
-import { defineConfig, devices } from "@playwright/test";
+import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: "./tests/web",
+  testDir: './tests/web',
   testMatch: /.*\.spec\.js/,
   use: {
-    trace: "on-first-retry",
+    trace: 'on-first-retry',
   },
   projects: [
     {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
 });

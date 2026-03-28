@@ -1,6 +1,7 @@
 import os
 import pathlib
 import random
+import threading
 import time
 import typing
 
@@ -91,6 +92,8 @@ def add(
             click.echo("Error: Cannot provide both description and --file.")
             ctx.exit(1)
         description = file.read().strip()
+    elif description:
+        description = description.strip()
 
     if not description:
         click.echo("Error: Must provide either description or --file.")
@@ -158,6 +161,8 @@ def edit(
             click.echo("Error: Cannot provide both description and --file.")
             ctx.exit(1)
         description = file.read().strip()
+    elif description:
+        description = description.strip()
 
     if (
         description is None
@@ -276,6 +281,7 @@ def status(ctx: click.Context, task_id: str | None):
             parent_str = ""
             if t.parent:
                 parent_str = f" [parent:{t.parent}]"
+
             click.echo(f"({t.id}){parent_str} {t.description}")
 
         if not verbose:
@@ -292,31 +298,33 @@ def status(ctx: click.Context, task_id: str | None):
         click.echo(f"Error: Task {task_id} not found.")
         return
 
-    click.secho(f"Task ID:     {target.id}", bold=True)
+    click.secho(f"Task ID:       {target.id}", bold=True)
     status_str = str(target.status)
-    if target.status == tasks.TaskStatus.IN_PROGRESS:
-        if target.completion_requested:
-            status_str += " (completion requested, hooks running)"
-        elif target.failure_requested:
-            status_str += " (failure requested, hooks running)"
-    click.echo(f"Status:      {status_str}")
-    click.echo(f"Description: {target.description}")
+    if target.status == tasks.TaskStatus.IN_PROGRESS and target.requested_status:
+        status_str += f" ({target.requested_status} requested, hooks running)"
+    click.echo(f"Status:        {status_str}")
+    click.echo(f"Description:   {target.description}")
     if target.parent:
-        click.echo(f"Parent:      {target.parent}")
+        click.echo(f"Parent:        {target.parent}")
     if target.runner:
         click.echo(f"Custom Runner: {target.runner}")
-    click.echo(f"Attempts:    {target.attempts}")
+    click.echo(f"Attempts:      {target.attempts}")
+    if target.created_at:
+        created_time = time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime(target.created_at)
+        )
+        click.echo(f"Created At:    {created_time}")
 
     log_parts = []
     if paths.get_log_file(tasks_file, target.id).exists():
         log_parts.append("runner (includes hooks)")
-    click.echo(f"Logs:        {', '.join(log_parts) if log_parts else 'None'}")
+    click.echo(f"Logs:          {', '.join(log_parts) if log_parts else 'None'}")
 
     if target.completed_at:
         comp_time = time.strftime(
             "%Y-%m-%d %H:%M:%S", time.localtime(target.completed_at)
         )
-        click.echo(f"Completed At: {comp_time}")
+        click.echo(f"Completed At:  {comp_time}")
     run_time = target.run_time
     if target.status == tasks.TaskStatus.IN_PROGRESS and target.last_started_at:
         run_time += time.time() - target.last_started_at
@@ -326,7 +334,7 @@ def status(ctx: click.Context, task_id: str | None):
             rt_str = f"{run_time:.1f}s"
         else:
             rt_str = f"{int(run_time // 60)}m {int(run_time % 60)}s"
-        click.echo(f"Run Time:     {rt_str}")
+        click.echo(f"Run Time:      {rt_str}")
 
     if target.outcomes:
         click.secho("\n--- Outcomes ---", fg="magenta", bold=True)
@@ -514,6 +522,8 @@ def outcome_add(
             click.echo("Error: Cannot provide both outcome text and --file.")
             ctx.exit(1)
         text = file.read().strip()
+    elif text:
+        text = text.strip()
 
     if not text:
         click.echo("Error: Must provide either outcome text or --file.")
@@ -580,6 +590,8 @@ def outcome_edit(
             click.echo("Error: Cannot provide both outcome text and --file.")
             ctx.exit(1)
         text = file.read().strip()
+    elif text:
+        text = text.strip()
 
     if not text:
         click.echo("Error: Must provide either outcome text or --file.")
@@ -869,11 +881,13 @@ def _run_hooks(
     verbose: bool,
     hooks: list[str] | None = None,
     working_dir: pathlib.Path | None = None,
+    final_status: tasks.TaskStatus | None = None,
 ) -> None:
     """Discovers and executes orchestrator hooks for a finished task.
 
     Args:
         hooks: Explicit list of hooks to run. If None, uses config.hooks.
+        final_status: If provided, mark the task with this status after hooks.
     """
     data = tasks.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
@@ -884,6 +898,11 @@ def _run_hooks(
     active_hooks = hooks if hooks is not None else data.config.hooks
     if active_hooks is None:
         active_hooks = runner.list_hooks(tasks_file)
+
+    if not active_hooks:
+        if final_status:
+            tasks.update_task(tasks_file, task_id, status=final_status, force=True)
+        return
 
     for hook_name in active_hooks:
         try:
@@ -923,6 +942,16 @@ def _run_hooks(
                     click.echo(f"Hook '{hook_name}' exited with code {returncode}.")
         except Exception as e:
             click.echo(f"Hook '{hook_name}' error: {e}")
+
+    # Finally mark the task as completed or failed if requested
+    if final_status:
+        try:
+            tasks.update_task(tasks_file, task_id, status=final_status, force=True)
+        except Exception as e:
+            import traceback
+
+            click.echo(f"Error finalizing task {task_id}: {e}")
+            traceback.print_exc()
 
 
 @cli.command(
@@ -1008,6 +1037,8 @@ def _run_loop(
     working_dir: pathlib.Path | None = None,
 ) -> None:
     while True:
+        returncode = 0
+
         # Reload configuration on each iteration to respond to changes (e.g., from Web UI)
         data = tasks.load_tasks(tasks_file)
         retries = data.config.retries
@@ -1027,17 +1058,29 @@ def _run_loop(
         if current_task.attempts >= retries:
             # Run hooks (like roadmap revision) even on final failure to give them
             # a chance to heal the task before we abort.
-            _run_hooks(
-                tasks_file,
-                task_id,
-                runner_name,
-                yolo,
-                runner_args,
-                no_defaults,
-                verbose,
-                hooks=active_hooks,
-                working_dir=working_dir,
-            )
+            # But do NOT run them if the task was cancelled.
+            if returncode != -15:
+                # Mark as in_progress so hooks can run and heartbeats work.
+                # We use update_task to set requested_status=FAILED so it shows
+                # as "Finalizing" in the UI.
+                tasks.mark_task_in_progress(tasks_file, task_id)
+                tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
+
+                _run_hooks(
+                    tasks_file,
+                    task_id,
+                    runner_name,
+                    yolo,
+                    runner_args,
+                    no_defaults,
+                    verbose,
+                    hooks=active_hooks,
+                    working_dir=working_dir,
+                    final_status=tasks.TaskStatus.FAILED,
+                )
+            else:
+                if verbose:
+                    click.echo("Task was cancelled. Skipping final failure hooks.")
 
             # Re-check: if a hook reset/edited/replaced the task, continue the loop
             data = tasks.load_tasks(tasks_file)
@@ -1121,27 +1164,31 @@ def _run_loop(
         except Exception as e:
             click.echo(f"\nAn error occurred while executing {runner_name}: {e}")
 
-        # Run orchestrator hooks while the task is still claimed and "in_progress".
-        # This keeps the execution sequence unified in the logs and ensures
-        # that another loop doesn't pick up the next task prematurely.
-        _run_hooks(
-            tasks_file,
-            task_id,
-            runner_name,
-            yolo,
-            runner_args,
-            no_defaults,
-            verbose,
-            hooks=active_hooks,
-            working_dir=working_dir,
-        )
-
         # Post-execution validation and heartbeat cleanup
+        # This will mark the task as COMPLETED or PENDING based on whether
+        # the agent called 'lemming complete'.
         post_task = tasks.finish_task_attempt(tasks_file, task_id)
 
         if not post_task:
             click.echo("Error: Task disappeared from roadmap during execution.")
             break
+
+        # Run orchestrator hooks synchronously if the task requested a status
+        # change (completion or failure). This ensures the roadmap is updated
+        # and all validation hooks complete before the next task is picked up.
+        if post_task.requested_status:
+            _run_hooks(
+                tasks_file,
+                task_id,
+                runner_name,
+                yolo,
+                runner_args,
+                no_defaults,
+                verbose,
+                hooks=active_hooks,
+                working_dir=working_dir,
+                final_status=post_task.requested_status,
+            )
 
         if post_task.status == tasks.TaskStatus.COMPLETED:
             if verbose:
@@ -1158,12 +1205,24 @@ def _run_loop(
                 click.echo(
                     "Runner finished execution but did NOT report completion. Retrying..."
                 )
-            if post_task.attempts < retries and retry_delay > 0:
-                if verbose:
-                    click.echo(
-                        f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
-                    )
-                time.sleep(retry_delay)
+
+            # Only sleep if the task is still pending AND it wasn't cancelled (it would have requested a status if not)
+            if (
+                post_task.status == tasks.TaskStatus.PENDING
+                and post_task.attempts < retries
+                and retry_delay > 0
+                and post_task.requested_status is None
+            ):
+                # If returncode is -15 (SIGTERM), it was probably cancelled.
+                if returncode == -15:
+                    if verbose:
+                        click.echo("Task was cancelled. Skipping retry delay.")
+                else:
+                    if verbose:
+                        click.echo(
+                            f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
+                        )
+                    time.sleep(retry_delay)
 
 
 def parse_timeout(t_str: str) -> float:
@@ -1221,7 +1280,6 @@ def serve(
     import os
     import secrets
     import sys
-    import threading
 
     import uvicorn
     import uvicorn.config

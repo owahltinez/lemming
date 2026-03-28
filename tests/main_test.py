@@ -125,16 +125,17 @@ class TestLemming(unittest.TestCase):
         self.assertIn("=== Project Context ===", result.output)
         self.assertIn("Initial context", result.output)
         self.assertIn("=== Tasks ===", result.output)
-        self.assertIn("(12345678) Initial Task", result.output)
+        self.assertIn("(12345678)", result.output)
+        self.assertIn("Initial Task", result.output)
 
     def test_info_with_id(self):
         result = self.cli_runner.invoke(
             main.cli, self.base_args + ["status", "12345678"]
         )
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Task ID:     12345678", result.output)
-        self.assertIn("Status:      pending", result.output)
-        self.assertIn("Description: Initial Task", result.output)
+        self.assertIn("Task ID:       12345678", result.output)
+        self.assertIn("Status:        pending", result.output)
+        self.assertIn("Description:   Initial Task", result.output)
 
     def test_context_no_args(self):
         result = self.cli_runner.invoke(main.cli, self.base_args + ["context"])
@@ -1079,10 +1080,10 @@ class TestLemming(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
 
         # Order should be:
-        # 1. Pending 2 (p2) (newest uncompleted)
-        # 2. In Progress 1 (i1)
-        # 3. Pending 1 (p1)
-        # 4. Failed 1 (f1) (newest done, but uses created_at as completed_at is None)
+        # 1. In Progress 1 (i1) (prioritized)
+        # 2. Pending 1 (p1) (index 0)
+        # 3. Pending 2 (p2) (index 4)
+        # 4. Failed 1 (f1) (newest done, but uses created_at as completed_at is None, and f1 is newest created)
         # 5. Completed 2 (c2) (completed at 2000)
         # 6. Completed 1 (c1) (completed at 1000)
 
@@ -1099,8 +1100,56 @@ class TestLemming(unittest.TestCase):
                 task_ids.append(task_id)
 
         # Check expected order
-        expected_order = ["p2", "i1", "p1", "f1", "c2", "c1"]
+        expected_order = ["i1", "p1", "p2", "f1", "c2", "c1"]
         self.assertEqual(task_ids, expected_order)
+
+    def test_add_task_strips_whitespace(self):
+        # Task with leading/trailing whitespace
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["add", "  New Task with Whitespace  "]
+        )
+        self.assertEqual(result.exit_code, 0)
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        # Find the newly added task
+        new_task = next(t for t in data.tasks if t.id != "12345678")
+        self.assertEqual(new_task.description, "New Task with Whitespace")
+
+    def test_edit_task_strips_whitespace(self):
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args + ["edit", "12345678", "--description", "  Updated Task  "],
+        )
+        self.assertEqual(result.exit_code, 0)
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].description, "Updated Task")
+
+    def test_outcome_add_strips_whitespace(self):
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "12345678", "  New Outcome  "]
+        )
+        self.assertEqual(result.exit_code, 0)
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertIn("New Outcome", data.tasks[0].outcomes)
+        self.assertNotIn("  New Outcome  ", data.tasks[0].outcomes)
+
+    def test_outcome_edit_strips_whitespace(self):
+        # First add an outcome
+        tasks.add_outcome(self.test_tasks_file, "12345678", "Original Outcome")
+
+        # Now edit it with whitespace
+        # outcome edit <id> <index> <text>
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args + ["outcome", "edit", "12345678", "0", "  Edited Outcome  "],
+        )
+        self.assertEqual(result.exit_code, 0)
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertIn("Edited Outcome", data.tasks[0].outcomes)
+        self.assertNotIn("  Edited Outcome  ", data.tasks[0].outcomes)
 
 
 class TestTasksLocation(unittest.TestCase):
@@ -1256,8 +1305,9 @@ class TestLemmingRun(unittest.TestCase):
         self.assertIn(
             "Task task1 failed after 2 attempts. Aborting run.", result.output
         )
-        # 2 attempts (Task + Hook) + 1 final failure Hook run = 5
-        self.assertEqual(mock_popen.call_count, 5)
+        # 2 attempts (Task only, no background hooks because no completion requested)
+        # + 1 final failure Hook run = 3
+        self.assertEqual(mock_popen.call_count, 3)
 
     @unittest.mock.patch("subprocess.Popen")
     def test_run_subprocess_error(self, mock_popen):
@@ -1334,6 +1384,101 @@ class TestLemmingRun(unittest.TestCase):
         # Verify it was indeed picked up
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
+
+    def test_synchronous_hooks_execution(self):
+        """Verifies that a new task starts only AFTER the hooks of the previous task have finished."""
+        # 1. Setup two pending tasks. Explicitly set created_at to ensure task1 is newer and picked first.
+        now = time.time()
+        with tasks.lock_tasks(self.test_tasks_file):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data.tasks = [
+                tasks.Task(
+                    id="task2",
+                    description="Task 2",
+                    status=tasks.TaskStatus.PENDING,
+                    created_at=now,
+                ),
+                tasks.Task(
+                    id="task1",
+                    description="Task 1",
+                    status=tasks.TaskStatus.PENDING,
+                    created_at=now + 10,
+                ),
+            ]
+            data.config.retries = 1
+            data.config.runner = "true"
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        # 2. We want to track when tasks start and when hooks run.
+        task_starts = {}
+        hook_starts = {}
+        hook_ends = {}
+
+        def mocked_run_with_heartbeat(
+            cmd, t_file, t_id, verbose, echo_fn, header=None, cwd=None
+        ):
+            if header and header.startswith("Hook:"):
+                # This is a hook
+                hook_starts[t_id] = time.time()
+                # Simulate a slow hook
+                time.sleep(0.5)
+                hook_ends[t_id] = time.time()
+                return 0, "hook stdout", ""
+            else:
+                # This is a task execution
+                task_starts[t_id] = time.time()
+                return 0, "task stdout", ""
+
+        # Mock tasks.finish_task_attempt to always succeed for this test
+        def mocked_finish_task_attempt(t_file, t_id):
+            with tasks.lock_tasks(t_file):
+                data = tasks.load_tasks(t_file)
+                task = next(t for t in data.tasks if t.id == t_id)
+                # In real execution, the agent would have set requested_status
+                # via lemming complete, which we simulate here.
+                task.requested_status = tasks.TaskStatus.COMPLETED
+                task.status = tasks.TaskStatus.COMPLETED
+                task.completed_at = time.time()
+                tasks.save_tasks(t_file, data)
+                return task
+
+        with (
+            unittest.mock.patch(
+                "lemming.runner.run_with_heartbeat",
+                side_effect=mocked_run_with_heartbeat,
+            ),
+            unittest.mock.patch(
+                "lemming.tasks.finish_task_attempt",
+                side_effect=mocked_finish_task_attempt,
+            ),
+            unittest.mock.patch(
+                "lemming.runner.list_hooks", return_value=["test_hook"]
+            ),
+            unittest.mock.patch(
+                "lemming.runner.prepare_hook_prompt", return_value="Dummy hook"
+            ),
+        ):
+            # Run the loop
+            result = self.cli_runner.invoke(
+                main.cli, ["--tasks-file", str(self.test_tasks_file), "run"]
+            )
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("All tasks completed!", result.output)
+
+        # 3. Analyze timing
+        # task1 should have started AFTER task2's hook was finished.
+        # (Since task2 is at the top of the list, it's picked first in YAML order)
+        self.assertIn("task1", task_starts)
+        self.assertIn("task2", task_starts)
+        self.assertIn("task2", hook_starts)
+        self.assertIn("task2", hook_ends)
+
+        self.assertGreaterEqual(
+            task_starts["task1"],
+            hook_ends["task2"],
+            "Task 1 should start after Task 2 hooks finish",
+        )
 
 
 class TestLemmingLogging(unittest.TestCase):

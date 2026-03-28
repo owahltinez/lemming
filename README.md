@@ -87,9 +87,10 @@ lemming serve --tunnel cloudflare
 
 - **Real-time Monitoring**: Watch tasks move from pending to in-progress to
   completed.
-- **Project Explorer**: A built-in, `.gitignore`-aware file browser to inspect
-  your workspace alongside the roadmap. **Includes the ability to create new
-  folders directly from the browser.**
+- **Switch Project**: Easily switch between different projects or create new
+  folders directly from the UI.
+- **Browse Files**: Quickly open your workspace in a separate window to inspect
+  files and directory structure alongside the roadmap.
 - **Interactive Controls**: Add tasks, edit context, and manage the execution
   loop from your browser.
 

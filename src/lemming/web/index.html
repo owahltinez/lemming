@@ -654,9 +654,8 @@
             >
               <div
                 class="mt-2 text-gray-700 dark:text-gray-300 font-normal break-words whitespace-pre-wrap"
-              >
-                {{ task.description }}
-              </div>
+                :text="task.description"
+              ></div>
               <div class="mt-2 flex flex-wrap gap-4">
                 <div :if="task.runner">
                   <span
@@ -747,9 +746,8 @@
                     :for="outcome in task.outcomes"
                     :key="task.id + '-' + $index"
                     class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap"
-                  >
-                    {{ outcome }}
-                  </li>
+                    :text="outcome"
+                  ></li>
                 </ul>
               </div>
             </div>

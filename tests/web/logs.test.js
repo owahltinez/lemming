@@ -52,7 +52,7 @@ describe('Lemming Task Log Viewer', () => {
 
     const logContainer = fragment.querySelector('#log-container');
     assert.ok(logContainer, 'Log container should exist');
-    assert.strictEqual(logContainer.textContent.trim(), logContent);
+    assert.strictEqual(logContainer.textContent, logContent);
 
     // Verify it doesn't contain the minified function string
     assert.ok(
