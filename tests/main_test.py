@@ -258,6 +258,147 @@ class TestLemming(unittest.TestCase):
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertIn("Observed behavior X", data.tasks[0].outcomes)
 
+    def test_add_task_file(self):
+        with open("desc.txt", "w") as f:
+            f.write("Task from file")
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["add", "-f", "desc.txt"]
+        )
+        self.assertEqual(result.exit_code, 0)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[-1].description, "Task from file")
+        os.remove("desc.txt")
+
+    def test_add_task_stdin(self):
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["add", "-f", "-"], input="Task from stdin"
+        )
+        self.assertEqual(result.exit_code, 0)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[-1].description, "Task from stdin")
+
+    def test_add_task_both_error(self):
+        with open("desc.txt", "w") as f:
+            f.write("Task from file")
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["add", "Description", "-f", "desc.txt"]
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Cannot provide both description and --file.", result.output)
+        os.remove("desc.txt")
+
+    def test_add_task_neither_error(self):
+        result = self.cli_runner.invoke(main.cli, self.base_args + ["add"])
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Must provide either description or --file.", result.output)
+
+    def test_edit_task_file(self):
+        with open("new_desc.txt", "w") as f:
+            f.write("Updated description")
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["edit", "12345678", "-f", "new_desc.txt"]
+        )
+        self.assertEqual(result.exit_code, 0)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].description, "Updated description")
+        os.remove("new_desc.txt")
+
+    def test_edit_task_both_error(self):
+        with open("new_desc.txt", "w") as f:
+            f.write("Updated description")
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args
+            + ["edit", "12345678", "--description", "Desc", "-f", "new_desc.txt"],
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Cannot provide both description and --file.", result.output)
+        os.remove("new_desc.txt")
+
+    def test_outcome_add_file(self):
+        with open("outcome.txt", "w") as f:
+            f.write("Outcome from file")
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args + ["outcome", "add", "12345678", "-f", "outcome.txt"],
+        )
+        self.assertEqual(result.exit_code, 0)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertIn("Outcome from file", data.tasks[0].outcomes)
+        os.remove("outcome.txt")
+
+    def test_outcome_add_stdin(self):
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args + ["outcome", "add", "12345678", "-f", "-"],
+            input="Outcome from stdin",
+        )
+        self.assertEqual(result.exit_code, 0)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertIn("Outcome from stdin", data.tasks[0].outcomes)
+
+    def test_outcome_add_both_error(self):
+        with open("outcome.txt", "w") as f:
+            f.write("Outcome from file")
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args
+            + ["outcome", "add", "12345678", "Desc", "-f", "outcome.txt"],
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Cannot provide both outcome text and --file.", result.output)
+        os.remove("outcome.txt")
+
+    def test_outcome_add_neither_error(self):
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "add", "12345678"]
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Must provide either outcome text or --file.", result.output)
+
+    def test_outcome_edit_file(self):
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.tasks[0].outcomes = ["original"]
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        with open("edited.txt", "w") as f:
+            f.write("edited outcome")
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args + ["outcome", "edit", "12345678", "0", "-f", "edited.txt"],
+        )
+        self.assertEqual(result.exit_code, 0)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].outcomes[0], "edited outcome")
+        os.remove("edited.txt")
+
+    def test_outcome_edit_both_error(self):
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.tasks[0].outcomes = ["original"]
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        with open("edited.txt", "w") as f:
+            f.write("edited outcome")
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args
+            + ["outcome", "edit", "12345678", "0", "New Desc", "-f", "edited.txt"],
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Cannot provide both outcome text and --file.", result.output)
+        os.remove("edited.txt")
+
+    def test_outcome_edit_neither_error(self):
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.tasks[0].outcomes = ["original"]
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        result = self.cli_runner.invoke(
+            main.cli, self.base_args + ["outcome", "edit", "12345678", "0"]
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: Must provide either outcome text or --file.", result.output)
+
     def test_reset_command(self):
         # 1. Add some state
         data = tasks.load_tasks(self.test_tasks_file)
@@ -896,10 +1037,10 @@ class TestLemming(unittest.TestCase):
 
         # Order should be:
         # 1. In Progress 1 (i1)
-        # 2. Completed 2 (c2) (later completed_at)
-        # 3. Completed 1 (c1) (earlier completed_at)
-        # 4. Pending 1 (p1)
-        # 5. Pending 2 (p2)
+        # 2. Pending 1 (p1)
+        # 3. Pending 2 (p2)
+        # 4. Completed 1 (c1) (earlier completed_at)
+        # 5. Completed 2 (c2) (later completed_at)
 
         lines = [
             line.strip()
@@ -914,7 +1055,7 @@ class TestLemming(unittest.TestCase):
                 task_ids.append(task_id)
 
         # Check expected order
-        expected_order = ["i1", "c2", "c1", "p1", "p2"]
+        expected_order = ["i1", "p1", "p2", "c1", "c2"]
         self.assertEqual(task_ids, expected_order)
 
 

@@ -8,12 +8,12 @@ You are a roadmap orchestrator for the Lemming task orchestrator. A task has jus
 Use the Lemming CLI to make changes. Do NOT edit `{{tasks_file_name}}` directly.
 
 ```
-lemming --tasks-file {{tasks_file_path}} add "<description>"          # Add a new task
-lemming --tasks-file {{tasks_file_path}} add "<description>" --index N # Insert at position N
-lemming --tasks-file {{tasks_file_path}} edit <id> --description "..." # Rewrite a task
+lemming --tasks-file {{tasks_file_path}} add '<description>'          # Add a new task
+lemming --tasks-file {{tasks_file_path}} add '<description>' --index N # Insert at position N
+lemming --tasks-file {{tasks_file_path}} edit <id> --description '...' # Rewrite a task
 lemming --tasks-file {{tasks_file_path}} delete <id>                   # Remove a task
 lemming --tasks-file {{tasks_file_path}} reset <id>                    # Clear attempts/outcomes for retry
-lemming --tasks-file {{tasks_file_path}} outcome <id> "<finding>"      # Record a finding
+lemming --tasks-file {{tasks_file_path}} outcome <id> '<finding>'      # Record a finding
 lemming --tasks-file {{tasks_file_path}} logs [<id>]                    # Print the runner log for a task (where hook output is appended)
 ```
 

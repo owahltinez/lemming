@@ -138,7 +138,7 @@ def get_loop_pid(tasks_file: pathlib.Path) -> int | None:
         return None
     try:
         return int(lock_path.read_text().strip())
-    except ValueError, OSError:
+    except (ValueError, OSError):
         return None
 
 
@@ -208,6 +208,15 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
     data = load_tasks(tasks_file)
     now = time.time()
 
+    # Deduplicate tasks by ID to prevent UI issues if the file is corrupted.
+    seen_ids = set()
+    unique_tasks = []
+    for t in data.tasks:
+        if t.id not in seen_ids:
+            unique_tasks.append(t)
+            seen_ids.add(t.id)
+    data.tasks = unique_tasks
+
     loop_running = is_loop_running(tasks_file)
     for t in data.tasks:
         # Check which log files exist
@@ -224,13 +233,13 @@ def get_project_data(tasks_file: pathlib.Path) -> ProjectData:
             if not is_stale:
                 loop_running = True
 
-    # Sort tasks: in_progress, then completed (newest first), then pending
+    # Sort tasks: in_progress, then pending, then completed (oldest first)
     in_progress = [t for t in data.tasks if t.status == "in_progress"]
     pending = [t for t in data.tasks if t.status == "pending"]
     completed = [t for t in data.tasks if t.status == "completed"]
-    completed.sort(key=lambda x: x.completed_at or 0, reverse=True)
+    completed.sort(key=lambda x: x.completed_at or 0)
 
-    sorted_tasks = in_progress + completed + pending
+    sorted_tasks = in_progress + pending + completed
 
     return ProjectData(
         context=data.context,

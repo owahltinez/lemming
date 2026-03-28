@@ -14,7 +14,7 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
    - **Self-Contained Descriptions:** Because of this isolation, you MUST write extremely thorough, self-contained descriptions for any new tasks you schedule. Reference specific task IDs, file paths, and exact symbols so the new task knows exactly what to do.
    - **Complex Handoffs:** If you need to pass extensive context (like detailed architectural plans, specific error traces, or large code snippets) to a downstream task, do not rely on the brief outcome messages alone. Instead, create a dedicated file in the workspace to hold this context, and explicitly mention its path in the new task's description. Use this technique judiciously to avoid creating a mess of orphaned files in the project.
 4. **Outcomes:** As you progress through the task, you MUST record relevant outcomes or technical findings as soon as you discover them (one at a time). Do not wait until the end to record everything. Then, at the end of the task, before completing or failing it, you MUST record a final outcome summarizing the work. A task is considered incomplete without at least one recorded outcome. Be thorough and record as many as appropriate:
-   `lemming --tasks-file {{tasks_file_path}} outcome {{task_id}} "<bullet point>"`
+   `lemming --tasks-file {{tasks_file_path}} outcome {{task_id}} '<your discovery here>'`
 5. **Success:** When you have completely finished and verified the task, and recorded ALL relevant outcomes (at least one is required), run:
    `lemming --tasks-file {{tasks_file_path}} complete {{task_id}}`
 6. **Failure/Blocker:** If you hit a technical roadblock, cannot fix a bug, or are unable to complete the task, after recording ALL relevant outcomes (at least one is required), run:

@@ -2,6 +2,7 @@ import os
 import pathlib
 import random
 import time
+import typing
 
 import click
 
@@ -36,8 +37,14 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     ctx.obj["VERBOSE"] = verbose
 
 
-@cli.command(short_help="<description> Add a new task to the queue")
-@click.argument("description")
+@cli.command(short_help="[description] Add a new task to the queue")
+@click.argument("description", required=False)
+@click.option(
+    "--file",
+    "-f",
+    type=click.File("r"),
+    help="Read description from a file (or - for stdin).",
+)
 @click.option(
     "--index",
     default=-1,
@@ -59,7 +66,8 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
 @click.pass_context
 def add(
     ctx: click.Context,
-    description: str,
+    description: str | None,
+    file: typing.Optional[typing.TextIO],
     index: int,
     runner_name: str | None,
     parent: str | None,
@@ -68,7 +76,8 @@ def add(
     """Adds a new task to the roadmap queue.
 
     Args:
-        description: A text description of the task to perform.
+        description: A text description of the task to perform (optional if --file is used).
+        file: An optional file to read the description from.
         index: The position in the roadmap to insert the task.
         runner_name: An optional custom runner to use for this specific task.
         parent: Optional parent task ID.
@@ -76,6 +85,16 @@ def add(
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
+
+    if file:
+        if description:
+            click.echo("Error: Cannot provide both description and --file.")
+            ctx.exit(1)
+        description = file.read().strip()
+
+    if not description:
+        click.echo("Error: Must provide either description or --file.")
+        ctx.exit(1)
 
     new_task = tasks.add_task(
         tasks_file,
@@ -96,6 +115,12 @@ def add(
 @cli.command(short_help="<taskid> Edit an existing task's details")
 @click.argument("task_id")
 @click.option("--description", help="New description for the task.")
+@click.option(
+    "--file",
+    "-f",
+    type=click.File("r"),
+    help="Read new description from a file (or - for stdin).",
+)
 @click.option("--runner", "runner_name", help="New custom runner for the task.")
 @click.option("--index", type=int, help="New index in the task queue.")
 @click.option(
@@ -111,6 +136,7 @@ def edit(
     ctx: click.Context,
     task_id: str,
     description: str | None,
+    file: typing.Optional[typing.TextIO],
     runner_name: str | None,
     index: int | None,
     parent: str | None,
@@ -121,11 +147,18 @@ def edit(
     Args:
         task_id: The ID of the task to update.
         description: The new description (optional).
+        file: An optional file to read the new description from.
         runner_name: The new preferred runner (optional).
         index: The new position in the roadmap (optional).
         parent: The new parent task ID (optional).
         parent_tasks_file: The new parent tasks file path (optional).
     """
+    if file:
+        if description:
+            click.echo("Error: Cannot provide both description and --file.")
+            ctx.exit(1)
+        description = file.read().strip()
+
     if (
         description is None
         and runner_name is None
@@ -442,18 +475,41 @@ def outcome():
     pass
 
 
-@outcome.command(name="add", short_help="<taskid> <text> Add an outcome")
+@outcome.command(name="add", short_help="<taskid> [text] Add an outcome")
 @click.argument("task_id")
-@click.argument("text")
+@click.argument("text", required=False)
+@click.option(
+    "--file",
+    "-f",
+    type=click.File("r"),
+    help="Read outcome text from a file (or - for stdin).",
+)
 @click.pass_context
-def outcome_add(ctx: click.Context, task_id: str, text: str):
+def outcome_add(
+    ctx: click.Context,
+    task_id: str,
+    text: typing.Optional[str],
+    file: typing.Optional[typing.TextIO],
+):
     """Records a technical outcome or finding for a specific task.
 
     Args:
         task_id: The ID of the task.
-        text: The technical detail or outcome to record.
+        text: The technical detail or outcome to record (optional if --file is used).
+        file: An optional file to read the outcome from.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
+
+    if file:
+        if text:
+            click.echo("Error: Cannot provide both outcome text and --file.")
+            ctx.exit(1)
+        text = file.read().strip()
+
+    if not text:
+        click.echo("Error: Must provide either outcome text or --file.")
+        ctx.exit(1)
+
     try:
         target_task = tasks.add_outcome(tasks_file, task_id, text)
         click.echo(f"Outcome added to task {target_task.id}.")
@@ -482,20 +538,44 @@ def outcome_delete(ctx: click.Context, task_id: str, index: int):
         ctx.exit(1)
 
 
-@outcome.command(name="edit", short_help="<taskid> <index> <new_text> Edit an outcome")
+@outcome.command(name="edit", short_help="<taskid> <index> [new_text] Edit an outcome")
 @click.argument("task_id")
 @click.argument("index", type=int)
-@click.argument("text")
+@click.argument("text", required=False)
+@click.option(
+    "--file",
+    "-f",
+    type=click.File("r"),
+    help="Read outcome text from a file (or - for stdin).",
+)
 @click.pass_context
-def outcome_edit(ctx: click.Context, task_id: str, index: int, text: str):
+def outcome_edit(
+    ctx: click.Context,
+    task_id: str,
+    index: int,
+    text: typing.Optional[str],
+    file: typing.Optional[typing.TextIO],
+):
     """Edits an existing outcome for a task by its index (starting from 0).
 
     Args:
         task_id: The ID of the task.
         index: The index of the outcome to edit.
-        text: The new outcome text.
+        text: The new outcome text (optional if --file is used).
+        file: An optional file to read the outcome from.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
+
+    if file:
+        if text:
+            click.echo("Error: Cannot provide both outcome text and --file.")
+            ctx.exit(1)
+        text = file.read().strip()
+
+    if not text:
+        click.echo("Error: Must provide either outcome text or --file.")
+        ctx.exit(1)
+
     try:
         target_task = tasks.edit_outcome(tasks_file, task_id, index, text)
         click.echo(f"Outcome {index} updated for task {target_task.id}.")

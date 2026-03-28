@@ -226,7 +226,7 @@ def sync(verbose: bool) -> None:
 
             logger.info(f"Successfully synced {filename} to {local_path}")
             success_count += 1
-        except Exception as e:
+        except (requests.RequestException, OSError, click.ClickException) as e:
             logger.error(f"Failed to sync {filename}: {e}")
             failure_count += 1
 
@@ -288,7 +288,7 @@ def _run_tool(
                 click.echo(
                     f"--- {tool_name} findings ---\n{result.stdout}\n{result.stderr}"
                 )
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         logger.warning(f"Failed to run {tool_name}: {e}")
 
 

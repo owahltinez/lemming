@@ -36,8 +36,11 @@ def ensure_hooks_symlinked():
         if not target.exists() and not target.is_symlink():
             try:
                 target.symlink_to(f.absolute())
-            except OSError as e:
-                logger.warning("Failed to create symlink for hook %s: %s", target, e)
+            except (OSError, PermissionError) as e:
+                logger.error("Failed to create symlink for hook %s: %s", target, e)
+                # If we hit permission issues, we want to know, not just skip silently
+                if isinstance(e, PermissionError):
+                    raise e
 
 
 def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
@@ -64,7 +67,9 @@ def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
     global_hooks_dir = paths.get_global_hooks_dir()
     global_hook_path = global_hooks_dir / f"{name}.md"
     if global_hook_path.exists():
-        return global_hook_path.read_text(encoding="utf-8")
+        content = global_hook_path.read_text(encoding="utf-8")
+        if content.strip():
+            return content
 
     # 3. Look in built-in prompts directory (fallback)
     base_path = pathlib.Path(__file__).parent / "prompts"

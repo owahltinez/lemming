@@ -79,8 +79,8 @@
         const pending = ts.filter((t) => t.status === "pending");
         const completed = ts
           .filter((t) => t.status === "completed" && !$.hideCompleted)
-          .sort((a, b) => (b.completed_at || 0) - (a.completed_at || 0));
-        return [...inProgress, ...completed, ...pending];
+          .sort((a, b) => (a.completed_at || 0) - (b.completed_at || 0));
+        return [...inProgress, ...pending, ...completed];
       });
 
       // --- Utilities ---
