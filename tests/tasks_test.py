@@ -213,6 +213,17 @@ def test_loop_lock_management(tmp_path):
     assert tasks.is_loop_running(tasks_file) is False
 
 
+def test_is_loop_running_stale_pid(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    lock_path = tasks._get_loop_lock_path(tasks_file)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write a PID that is likely not alive (e.g., 999999)
+    lock_path.write_text("999999")
+    assert tasks.get_loop_pid(tasks_file) == 999999
+    assert tasks.is_loop_running(tasks_file) is False
+
+
 def test_get_loop_pid_corrupted_lock_file(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     lock_path = tasks._get_loop_lock_path(tasks_file)

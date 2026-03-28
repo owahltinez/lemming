@@ -343,6 +343,20 @@ class TestLemming(unittest.TestCase):
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertIn("Outcome from stdin", data.tasks[0].outcomes)
 
+    def test_outcome_edit_stdin(self):
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.tasks[0].outcomes = ["original"]
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        result = self.cli_runner.invoke(
+            main.cli,
+            self.base_args + ["outcome", "edit", "12345678", "0", "-f", "-"],
+            input="Edited from stdin",
+        )
+        self.assertEqual(result.exit_code, 0)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].outcomes[0], "Edited from stdin")
+
     def test_outcome_add_both_error(self):
         with open("outcome.txt", "w") as f:
             f.write("Outcome from file")

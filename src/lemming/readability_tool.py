@@ -1,10 +1,10 @@
 import logging
 import os
-import pathlib as pl
 import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import click
@@ -12,26 +12,21 @@ import requests
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
 
-# Configure logging with structured format
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stderr)],
-)
+# Global logger for the module
 logger = logging.getLogger("readability")
 
 
-def get_guides_dir() -> pl.Path:
+def get_guides_dir() -> Path:
     """
     Get the directory where style guides are cached.
     Defaults to 'guides/' in the same directory as this script,
     but can be overridden by the READABILITY_CACHE environment variable.
     """
-    cache_env = os.getenv("READABILITY_CACHE")
+    cache_env = os.environ.get("READABILITY_CACHE")
     if cache_env:
-        return pl.Path(cache_env)
+        return Path(cache_env)
 
-    return pl.Path(__file__).parent / "guides"
+    return Path(__file__).parent / "guides"
 
 
 # Mapping of languages to their Google Style Guide file paths
@@ -68,7 +63,6 @@ def fetch_guide_content(url: str) -> str:
     """
     logger.info(f"Fetching style guide from {url}")
 
-    # Perform the HTTP GET request with a timeout
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
@@ -102,12 +96,12 @@ def convert_to_markdown(content: str, filename: str) -> str:
     return content
 
 
-def get_local_path(filename: str) -> pl.Path:
+def get_local_path(filename: str) -> Path:
     """
     Get the local path for a given style guide filename.
     """
     # Use the base filename and change extension to .md for uniform storage
-    base_name = os.path.basename(filename).split(".")[0]
+    base_name = Path(filename).stem
     return get_guides_dir() / f"{base_name}.md"
 
 
@@ -115,7 +109,6 @@ def fetch_guide(language: str, remote: bool = False) -> str:
     """
     Orchestrate fetching and converting the style guide for a given language.
     """
-    # Look up the filename in the mapping
     filename = LANGUAGE_MAP.get(language.lower())
     if not filename:
         error_msg = f"Language '{language}' is not supported."
@@ -126,27 +119,37 @@ def fetch_guide(language: str, remote: bool = False) -> str:
 
     local_path = get_local_path(filename)
 
-    # If remote is False, check for local file first
+    # Check for local file first if remote is not forced
     if not remote and local_path.exists():
         logger.info(f"Reading style guide from local file: {local_path}")
         return local_path.read_text(encoding="utf-8")
 
-    # Build the full URL and fetch the raw content
+    # Fetch and convert remote content
     url = f"{BASE_URL}{filename}"
     content = fetch_guide_content(url)
-
-    # Convert the content to Markdown format
     markdown_content = convert_to_markdown(content, filename)
 
-    # Save to local cache for future use
+    # Ensure cache directory exists and save content
     guides_dir = get_guides_dir()
-    if not guides_dir.exists():
-        guides_dir.mkdir(parents=True, exist_ok=True)
-
+    guides_dir.mkdir(parents=True, exist_ok=True)
     local_path.write_text(markdown_content, encoding="utf-8")
     logger.debug(f"Cached style guide locally: {local_path}")
 
     return markdown_content
+
+
+def _setup_logging(verbose: bool = False) -> None:
+    """
+    Configure logging with a consistent format.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)],
+        force=True,  # Override any existing configuration
+    )
+    logger.setLevel(level)
 
 
 @click.group(invoke_without_command=True)
@@ -156,8 +159,7 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     """
     Pulls the latest Google style guide for the selected LANGUAGE in markdown format.
     """
-    if verbose:
-        logger.setLevel(logging.DEBUG)
+    _setup_logging(verbose)
 
 
 @cli.command()
@@ -172,17 +174,15 @@ def fetch(language: str, output: str | None, remote: bool, verbose: bool) -> Non
     Fetch the style guide for a specific LANGUAGE.
     """
     if verbose:
-        logger.setLevel(logging.DEBUG)
+        _setup_logging(True)
 
     logger.info(f"Processing style guide for: {language}")
 
     try:
-        # Fetch and process the style guide
         markdown_content = fetch_guide(language, remote=remote)
 
-        # Handle output: either save to file or print to stdout
         if output:
-            pl.Path(output).write_text(markdown_content, encoding="utf-8")
+            Path(output).write_text(markdown_content, encoding="utf-8")
             logger.info(f"Style guide saved to {output}")
         else:
             click.echo(markdown_content)
@@ -200,17 +200,12 @@ def sync(verbose: bool) -> None:
     Synchronize all supported style guides from the web to local storage.
     """
     if verbose:
-        logger.setLevel(logging.DEBUG)
+        _setup_logging(True)
 
     logger.info("Synchronizing all style guides...")
 
-    guides_dir = get_guides_dir()
-    if not guides_dir.exists():
-        guides_dir.mkdir(parents=True, exist_ok=True)
-
     # Get unique filenames to avoid redundant downloads
     filenames = set(LANGUAGE_MAP.values())
-
     success_count = 0
     failure_count = 0
 
@@ -222,6 +217,7 @@ def sync(verbose: bool) -> None:
             markdown_content = convert_to_markdown(content, filename)
             local_path = get_local_path(filename)
 
+            local_path.parent.mkdir(parents=True, exist_ok=True)
             local_path.write_text(markdown_content, encoding="utf-8")
 
             logger.info(f"Successfully synced {filename} to {local_path}")
@@ -251,13 +247,125 @@ def languages() -> None:
         click.echo(f"  - {', '.join(aliases)}")
 
 
+@cli.command()
+@click.argument("paths", nargs=-1, type=click.Path(exists=True))
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
+def check(paths: Sequence[str], verbose: bool) -> None:
+    """
+    Run relevant formatters and linters for given paths.
+    """
+    if verbose:
+        _setup_logging(True)
+
+    # Resolve project root once for trigger file checking
+    project_root = Path.cwd()
+
+    # Process each provided path independently
+    for path_str in paths:
+        _check_path(Path(path_str), project_root)
+
+
+def _check_path(path: Path, project_root: Path) -> None:
+    """
+    Apply relevant tools to a single path.
+    """
+    logger.info(f"Checking path: {path}")
+
+    # Iterate through all supported tool definitions
+    for tool in _get_tool_definitions(path):
+        if _should_run_tool(tool, path, project_root):
+            _run_tool(tool["name"], tool, logger)
+
+
+def _should_run_tool(tool: dict[str, Any], path: Path, project_root: Path) -> bool:
+    """
+    Determine if a tool should be run on the given path based on triggers and extensions.
+    """
+    # Check if any trigger files (like pyproject.toml) exist in the project root
+    has_trigger = any((project_root / t).exists() for t in tool["trigger"])
+
+    # For files, also check if the extension matches one of the supported ones
+    if path.is_file():
+        return has_trigger and path.suffix in tool["extensions"]
+
+    # For directories, the existence of a trigger file is sufficient
+    return has_trigger
+
+
+def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
+    """
+    Define supported tools and their associated triggers, extensions, and commands.
+    """
+    path_str = str(path)
+
+    return [
+        {
+            "name": "ruff",
+            "check": ["ruff", "check", path_str],
+            "fix": ["ruff", "check", "--fix", path_str],
+            "format": ["ruff", "format", path_str],
+            "trigger": ["pyproject.toml", "ruff.toml", ".ruff.toml"],
+            "extensions": [".py"],
+        },
+        {
+            "name": "biome",
+            "check": ["npx", "biome", "lint", path_str],
+            "fix": ["npx", "biome", "lint", "--apply", path_str],
+            "format": ["npx", "biome", "format", "--write", path_str],
+            "trigger": ["biome.json", "biome.jsonc"],
+            "extensions": [
+                ".js",
+                ".ts",
+                ".jsx",
+                ".tsx",
+                ".json",
+                ".jsonc",
+                ".css",
+                ".html",
+            ],
+        },
+        {
+            "name": "prettier",
+            "format": ["npx", "prettier", "--write", path_str],
+            "trigger": [
+                ".prettierrc",
+                ".prettierrc.json",
+                ".prettierrc.yml",
+                ".prettierrc.yaml",
+                ".prettierrc.js",
+                "prettier.config.js",
+                "prettier.config.cjs",
+            ],
+            "extensions": [
+                ".js",
+                ".ts",
+                ".jsx",
+                ".tsx",
+                ".json",
+                ".css",
+                ".scss",
+                ".html",
+                ".md",
+                ".yml",
+                ".yaml",
+            ],
+        },
+        {
+            "name": "go fmt",
+            "format": ["go", "fmt", path_str],
+            "trigger": ["go.mod"],
+            "extensions": [".go"],
+        },
+    ]
+
+
 def _run_tool(
     tool_name: str, tool_config: dict[str, Any], logger: logging.Logger
 ) -> None:
     """
-    Run a specific formatting or linting tool.
+    Orchestrate the execution of a specific formatting or linting tool.
     """
-    # Check if the primary command exists in the environment
+    # Identify the primary command to check for executable availability
     cmd = (
         tool_config.get("format") or tool_config.get("check") or tool_config.get("fix")
     )
@@ -271,14 +379,15 @@ def _run_tool(
 
     logger.info(f"Running {tool_name}...")
     try:
+        # 1. Run formatters (if available) - these are expected to modify files
         if "format" in tool_config:
-            logger.debug(f"Executing: {' '.join(tool_config['format'])}")
-            subprocess.run(tool_config["format"], capture_output=True, check=False)
+            _execute_tool_command(tool_config["format"], logger)
 
+        # 2. Run fixers (if available) - these apply automatic linting fixes
         if "fix" in tool_config:
-            logger.debug(f"Executing: {' '.join(tool_config['fix'])}")
-            subprocess.run(tool_config["fix"], capture_output=True, check=False)
+            _execute_tool_command(tool_config["fix"], logger)
 
+        # 3. Run checks and report findings - these provide feedback to the user
         if "check" in tool_config:
             logger.debug(f"Executing: {' '.join(tool_config['check'])}")
             result = subprocess.run(
@@ -288,102 +397,26 @@ def _run_tool(
                 click.echo(
                     f"--- {tool_name} findings ---\n{result.stdout}\n{result.stderr}"
                 )
+
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"{tool_name} failed with exit code {e.returncode}")
+        if e.stdout:
+            logger.debug(f"STDOUT: {e.stdout}")
+        if e.stderr:
+            logger.debug(f"STDERR: {e.stderr}")
     except (subprocess.SubprocessError, OSError) as e:
-        logger.warning(f"Failed to run {tool_name}: {e}")
+        logger.warning(f"Unexpected error while running {tool_name}: {e}")
 
 
-@cli.command()
-@click.argument("paths", nargs=-1, type=click.Path(exists=True))
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
-def check(paths: Sequence[str], verbose: bool) -> None:
+def _execute_tool_command(cmd: list[str], logger: logging.Logger) -> None:
     """
-    Run relevant formatters and linters for given paths.
+    Execute a tool command and raise CalledProcessError if it returns a non-zero exit code.
     """
-    if verbose:
-        logger.setLevel(logging.DEBUG)
-
-    for path_str in paths:
-        path = pl.Path(path_str)
-        logger.info(f"Checking path: {path}")
-
-        # Tool definitions with trigger files and commands
-        tools = [
-            {
-                "name": "ruff",
-                "check": ["ruff", "check", str(path)],
-                "fix": ["ruff", "check", "--fix", str(path)],
-                "format": ["ruff", "format", str(path)],
-                "trigger": ["pyproject.toml", "ruff.toml", ".ruff.toml"],
-                "extensions": [".py"],
-            },
-            {
-                "name": "biome",
-                "check": ["npx", "biome", "lint", str(path)],
-                "fix": ["npx", "biome", "lint", "--apply", str(path)],
-                "format": ["npx", "biome", "format", "--write", str(path)],
-                "trigger": ["biome.json", "biome.jsonc"],
-                "extensions": [
-                    ".js",
-                    ".ts",
-                    ".jsx",
-                    ".tsx",
-                    ".json",
-                    ".jsonc",
-                    ".css",
-                    ".html",
-                ],
-            },
-            {
-                "name": "prettier",
-                "format": ["npx", "prettier", "--write", str(path)],
-                "trigger": [
-                    ".prettierrc",
-                    ".prettierrc.json",
-                    ".prettierrc.yml",
-                    ".prettierrc.yaml",
-                    ".prettierrc.js",
-                    "prettier.config.js",
-                    "prettier.config.cjs",
-                ],
-                "extensions": [
-                    ".js",
-                    ".ts",
-                    ".jsx",
-                    ".tsx",
-                    ".json",
-                    ".css",
-                    ".scss",
-                    ".html",
-                    ".md",
-                    ".yml",
-                    ".yaml",
-                ],
-            },
-            {
-                "name": "go fmt",
-                "format": ["go", "fmt", str(path)],
-                "trigger": ["go.mod"],
-                "extensions": [".go"],
-            },
-        ]
-
-        project_root = pl.Path.cwd()
-
-        for tool in tools:
-            # Check if any of the trigger files exist in the project root
-            has_trigger = any((project_root / t).exists() for t in tool["trigger"])
-
-            # Check if the path is a file and matches the tool's extensions
-            # If path is a directory, we assume it's relevant if trigger exists
-            is_relevant = True
-            if path.is_file():
-                is_relevant = path.suffix in tool["extensions"]
-
-            if has_trigger and is_relevant:
-                _run_tool(tool["name"], tool, logger)
+    logger.debug(f"Executing: {' '.join(cmd)}")
+    subprocess.run(cmd, capture_output=True, check=True)
 
 
-# Main entry point for the CLI
+# Main entry point for the CLI script
 def main():
     cli()
 

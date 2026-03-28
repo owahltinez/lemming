@@ -56,8 +56,8 @@ def test_run_tool_success(mock_run, mock_which):
     _run_tool("mytool", tool_config, logger)
 
     assert mock_run.call_count == 3
-    mock_run.assert_any_call(["tool", "format"], capture_output=True, check=False)
-    mock_run.assert_any_call(["tool", "fix"], capture_output=True, check=False)
+    mock_run.assert_any_call(["tool", "format"], capture_output=True, check=True)
+    mock_run.assert_any_call(["tool", "fix"], capture_output=True, check=True)
     mock_run.assert_any_call(
         ["tool", "check"], capture_output=True, text=True, check=False
     )
@@ -284,3 +284,67 @@ def test_readability_check_extension_filtering(tmp_path):
     assert "Running ruff" in result.stderr
     # Biome should NOT run (trigger present but .py not in extensions)
     assert "Running biome" not in result.stderr
+
+
+def test_readability_check_directory(tmp_path):
+    # Create a directory with a python file
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    py_file = src_dir / "test.py"
+    py_file.write_text("print('hello')\n", encoding="utf-8")
+
+    # Create pyproject.toml in the ROOT
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{os.getcwd()}/src:{env.get('PYTHONPATH', '')}"
+
+    # Run check on the directory
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "lemming.readability_tool",
+            "check",
+            "--verbose",
+            str(src_dir),
+        ],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    # Ruff should run on the directory
+    assert "Running ruff" in result.stderr
+    assert f"Checking path: {src_dir}" in result.stderr
+
+
+def test_run_tool_command_failure(tmp_path):
+    # Test that if a formatter fails, it's caught and logged
+    from lemming.readability_tool import _run_tool
+    import subprocess
+
+    logger = MagicMock()
+    tool_config = {
+        "format": ["false"],  # 'false' command returns 1
+        "check": ["echo", "check"],
+    }
+
+    with patch("shutil.which", return_value="/usr/bin/false"):
+        # We need to mock _execute_tool_command because it uses subprocess.run(check=True)
+        # and we want to see if _run_tool catches the CalledProcessError
+        with patch("subprocess.run") as mock_run:
+            # Simulate CalledProcessError for the first call (format)
+            mock_run.side_effect = [
+                subprocess.CalledProcessError(1, ["false"], b"", b"error")
+            ]
+
+            _run_tool("failing_tool", tool_config, logger)
+
+            # Logger should record the failure
+            logger.warning.assert_called_with("failing_tool failed with exit code 1")
+
+            # Subsequent commands (check) should NOT be run if an error occurred in format
+            assert mock_run.call_count == 1
