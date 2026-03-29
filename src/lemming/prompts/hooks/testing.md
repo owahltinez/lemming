@@ -27,11 +27,11 @@ overhead.
     broad refactors. Stick to targeted fixes and high-level orchestration.
 6.  **Fast Exit**: If tests are passings and coverage is sufficient for the
     change, exit immediately.
-7.  **Consolidate Tests**: Maintain a 1:1 mapping between code files in
-    `src/lemming/` and test files in `tests/` (excluding integration tests).
-    Avoid one-off test files. If a test file grows too large, the corresponding
-    code file likely needs refactoring; add a task for that instead of
-    fragmenting the tests.
+7.  **Consolidate Tests**: Maintain a 1:1 mapping between code files and test
+    files in the same directory (excluding integration tests). Avoid one-off
+    test files. If a test file grows too large, the corresponding code file
+    likely needs refactoring; add a task for that instead of fragmenting the
+    tests.
 
 ## Commands
 
