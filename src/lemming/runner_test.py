@@ -149,6 +149,40 @@ def test_shlex_join_pretty():
     assert len(joined_truncated) < 150
 
 
+def test_run_with_heartbeat_truncation_only_affects_log(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "test_task"
+    log_file = paths.get_log_file(tasks_file, task_id)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use a long command that would be truncated in logs
+    long_arg = "a" * 300
+    cmd = ["echo", long_arg]
+
+    mock_process = unittest.mock.MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = None
+    mock_process.poll.return_value = 0
+
+    with unittest.mock.patch(
+        "subprocess.Popen", return_value=mock_process
+    ) as mock_popen:
+        runner.run_with_heartbeat(cmd, tasks_file, task_id, verbose=False)
+
+        # Verify Popen received the original untruncated cmd
+        mock_popen.assert_called_once()
+        called_cmd = mock_popen.call_args[0][0]
+        assert called_cmd == cmd
+        assert len(called_cmd[1]) == 300
+
+    # Verify log file contains the truncated command
+    content = log_file.read_text()
+    assert "Command: echo " in content
+    assert "a" * 200 in content
+    assert "... [truncated]" in content
+    assert "a" * 201 not in content
+
+
 def test_run_with_heartbeat_log_header(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "test_task"

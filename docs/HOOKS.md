@@ -31,8 +31,8 @@ a broad task).
 ### `readability`
 
 A code quality hook that reviews changes for adherence to the Google Style Guide
-and general readability using the `readability` tool. It provides feedback via
-task outcomes or suggests follow-up refactoring tasks.
+and general readability using the bundled `lemming readability` tool. It
+provides feedback via task outcomes or suggests follow-up refactoring tasks.
 
 ## Custom Hooks
 

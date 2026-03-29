@@ -5,5 +5,6 @@ from . import config as _config_cmds  # noqa: F401
 from . import hooks as _hooks_cmds  # noqa: F401
 from . import context as _context_cmds  # noqa: F401
 from . import operations as _ops_cmds  # noqa: F401
+from . import readability as _readability_cmds  # noqa: F401
 
 __all__ = ["cli"]
