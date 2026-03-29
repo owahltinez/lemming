@@ -1,5 +1,3 @@
-import shutil
-import subprocess
 
 from lemming import prompts
 from lemming import tasks
