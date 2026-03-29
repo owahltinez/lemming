@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "npm run vendor",
-    "test": "node --test tests/web/*.test.js && playwright test",
+    "test": "node --test src/lemming/web/*.test.js && playwright test",
     "lint": "biome check .",
     "format": "biome format --write .",
     "check": "mancha check src/lemming/web/*.html",

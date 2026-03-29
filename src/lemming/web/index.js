@@ -81,7 +81,6 @@
         // Sort in frontend to ensure consistent order:
         // 1. Uncompleted tasks (pending, in_progress) first.
         // 2. Completed tasks (completed, failed) at the bottom.
-        // Within each group, newest first (reverse chronological by completion/creation time).
         ts.sort((a, b) => {
           const aDone =
             a.status === 'completed' || a.status === 'failed' ? 1 : 0;
@@ -89,6 +88,17 @@
             b.status === 'completed' || b.status === 'failed' ? 1 : 0;
           if (aDone !== bDone) return aDone - bDone;
 
+          if (!aDone) {
+            // Uncompleted tasks: prioritize in_progress first, then FIFO (index)
+            const aInProgress = a.status === 'in_progress' ? 0 : 1;
+            const bInProgress = b.status === 'in_progress' ? 0 : 1;
+            if (aInProgress !== bInProgress) return aInProgress - bInProgress;
+
+            if (a.index !== b.index) return (a.index || 0) - (b.index || 0);
+            return (a.created_at || 0) - (b.created_at || 0);
+          }
+
+          // Completed tasks: newest first (reverse chronological by completion/creation time).
           const aTime = a.completed_at || a.created_at || 0;
           const bTime = b.completed_at || b.created_at || 0;
           if (aTime !== bTime) return bTime - aTime;

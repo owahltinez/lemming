@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/web',
+  testDir: './src/lemming/web',
   testMatch: /.*\.spec\.js/,
   use: {
     trace: 'on-first-retry',
