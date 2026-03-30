@@ -187,6 +187,38 @@ class TestOrchestrator(unittest.TestCase):
             "Task 1 should start after Task 2 hooks finish",
         )
 
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    @unittest.mock.patch("time.sleep", return_value=None)
+    def test_run_loop_cancelled(self, mock_sleep, mock_run):
+        # Simulate a task being cancelled (exit code -15)
+        mock_run.return_value = (-15, "cancelled", "error")
+
+        # Configure retries to ensure it DOES NOT retry
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.config.retries = 3
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        run_loop(
+            self.test_tasks_file,
+            verbose=True,
+            retry_delay=1,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+        )
+
+        # It should only have 1 attempt
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].attempts, 1)
+
+        # Verify that sleep was NOT called with the retry_delay (1)
+        # It might be called with other values if I didn't mock enough,
+        # but here it should not be called at all after the break.
+        for call in mock_sleep.call_args_list:
+            self.assertNotEqual(
+                call[0][0], 1, "Should not sleep with retry_delay on cancellation"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

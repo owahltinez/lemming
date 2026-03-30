@@ -162,6 +162,36 @@ def test_cancel_task(tmp_path):
     assert updated_data.tasks[0].pid is None
 
 
+def test_cancel_task_kills_loop_pid(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    data = models.Roadmap(
+        tasks=[
+            models.Task(
+                id="1",
+                description="Task 1",
+                status=models.TaskStatus.IN_PROGRESS,
+                pid=123,
+            )
+        ]
+    )
+    persistence.save_tasks(tasks_file, data)
+
+    # Mock get_loop_pid to return a dummy PID
+    with (
+        patch("lemming.persistence.get_loop_pid", return_value=456),
+        patch("os.kill") as mock_kill,
+        patch("os.killpg") as mock_killpg,
+    ):
+        success = lifecycle.cancel_task(tasks_file, "1")
+        assert success is True
+
+        # Verify task PID was killed
+        mock_killpg.assert_called_once()
+        # Verify loop PID was killed
+        # lifecycle.py calls os.kill(loop_pid, signal.SIGTERM)
+        mock_kill.assert_any_call(456, 15)  # 15 is SIGTERM
+
+
 def test_reset_task(tmp_path):
     from lemming import paths
 

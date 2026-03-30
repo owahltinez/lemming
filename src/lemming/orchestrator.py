@@ -130,11 +130,6 @@ def run_loop(
                 cwd=working_dir,
             )
             if returncode != 0:
-                if not verbose:
-                    if stdout:
-                        click.echo(stdout, err=True)
-                    if stderr:
-                        click.echo(stderr, err=True)
                 click.echo(
                     f"\n{runner_name.capitalize()} execution failed with exit code {returncode}"
                 )
@@ -186,6 +181,12 @@ def run_loop(
                     click.echo(stdout)
                 if stderr:
                     click.echo(stderr, err=True)
+
+            if returncode == -15:
+                if verbose:
+                    click.echo("Task was cancelled. Stopping orchestrator loop.")
+                break
+
             if verbose:
                 click.echo(
                     "Runner finished execution but did NOT report completion. Retrying..."
@@ -198,16 +199,11 @@ def run_loop(
                 and retry_delay > 0
                 and post_task.requested_status is None
             ):
-                # If returncode is -15 (SIGTERM), it was probably cancelled.
-                if returncode == -15:
-                    if verbose:
-                        click.echo("Task was cancelled. Skipping retry delay.")
-                else:
-                    if verbose:
-                        click.echo(
-                            f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
-                        )
-                    time.sleep(retry_delay)
+                if verbose:
+                    click.echo(
+                        f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
+                    )
+                time.sleep(retry_delay)
 
 
 def parse_timeout(t_str: str) -> float:

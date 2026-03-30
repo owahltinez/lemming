@@ -236,6 +236,14 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
                         except OSError:
                             pass
 
+                # Also kill the orchestrator loop if it's running
+                loop_pid = persistence.get_loop_pid(tasks_file)
+                if loop_pid:
+                    try:
+                        os.kill(loop_pid, signal.SIGTERM)
+                    except OSError:
+                        pass
+
                 update_run_time(task)
                 task.status = models.TaskStatus.PENDING
                 task.pid = None
