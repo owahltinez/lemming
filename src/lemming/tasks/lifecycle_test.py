@@ -153,7 +153,7 @@ def test_cancel_task(tmp_path):
     )
     persistence.save_tasks(tasks_file, data)
 
-    with patch("os.killpg"):
+    with patch("lemming.tasks.lifecycle.os.killpg"):
         success = lifecycle.cancel_task(tasks_file, "1")
         assert success is True
 
@@ -177,19 +177,21 @@ def test_cancel_task_kills_loop_pid(tmp_path):
     persistence.save_tasks(tasks_file, data)
 
     # Mock get_loop_pid to return a dummy PID
+    import signal
+
     with (
         patch("lemming.persistence.get_loop_pid", return_value=456),
-        patch("os.kill") as mock_kill,
-        patch("os.killpg") as mock_killpg,
+        patch("lemming.tasks.lifecycle.os.getpgid", return_value=123),
+        patch("lemming.tasks.lifecycle.os.kill") as mock_kill,
+        patch("lemming.tasks.lifecycle.os.killpg") as mock_killpg,
     ):
         success = lifecycle.cancel_task(tasks_file, "1")
         assert success is True
 
         # Verify task PID was killed
-        mock_killpg.assert_called_once()
+        mock_killpg.assert_called_once_with(123, signal.SIGTERM)
         # Verify loop PID was killed
-        # lifecycle.py calls os.kill(loop_pid, signal.SIGTERM)
-        mock_kill.assert_any_call(456, 15)  # 15 is SIGTERM
+        mock_kill.assert_any_call(456, signal.SIGTERM)
 
 
 def test_reset_task(tmp_path):
