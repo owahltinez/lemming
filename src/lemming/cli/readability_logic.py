@@ -415,9 +415,29 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
         {
             "name": "biome",
             "check": ["npx", "biome", "lint", "--no-errors-on-unmatched", path_str],
-            "check_format": ["npx", "biome", "format", "--no-errors-on-unmatched", path_str],
-            "fix": ["npx", "biome", "lint", "--write", "--no-errors-on-unmatched", path_str],
-            "format": ["npx", "biome", "format", "--write", "--no-errors-on-unmatched", path_str],
+            "check_format": [
+                "npx",
+                "biome",
+                "format",
+                "--no-errors-on-unmatched",
+                path_str,
+            ],
+            "fix": [
+                "npx",
+                "biome",
+                "lint",
+                "--write",
+                "--no-errors-on-unmatched",
+                path_str,
+            ],
+            "format": [
+                "npx",
+                "biome",
+                "format",
+                "--write",
+                "--no-errors-on-unmatched",
+                path_str,
+            ],
             "trigger": ["biome.json", "biome.jsonc"],
             "extensions": [
                 ".js",
