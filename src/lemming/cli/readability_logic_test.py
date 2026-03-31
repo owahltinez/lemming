@@ -1,7 +1,5 @@
-import os
 from pathlib import Path
 from unittest import mock
-import pytest
 from . import readability_logic
 
 def test_should_run_tool_with_trigger(tmp_path):
