@@ -2,6 +2,7 @@ import os
 import time
 from unittest.mock import patch
 
+from lemming import paths
 from .. import models, persistence
 from . import lifecycle
 
@@ -149,7 +150,7 @@ def test_cancel_task(tmp_path):
                 status=models.TaskStatus.IN_PROGRESS,
                 pid=os.getpid(),
             )
-        ]
+        ],
     )
     persistence.save_tasks(tasks_file, data)
 
@@ -172,7 +173,7 @@ def test_cancel_task_kills_loop_pid(tmp_path):
                 status=models.TaskStatus.IN_PROGRESS,
                 pid=123,
             )
-        ]
+        ],
     )
     persistence.save_tasks(tasks_file, data)
 
@@ -193,10 +194,12 @@ def test_cancel_task_kills_loop_pid(tmp_path):
         # Verify loop PID was killed
         mock_kill.assert_any_call(456, signal.SIGTERM)
 
+        # Verify task is marked as pending
+        updated_data = persistence.load_tasks(tasks_file)
+        assert updated_data.tasks[0].status == models.TaskStatus.PENDING
+
 
 def test_reset_task(tmp_path):
-    from lemming import paths
-
     tasks_file = tmp_path / "tasks.yml"
     task_id = "12345678"
     data = models.Roadmap(
@@ -207,7 +210,7 @@ def test_reset_task(tmp_path):
                 status=models.TaskStatus.COMPLETED,
                 outcomes=["done"],
             )
-        ]
+        ],
     )
     persistence.save_tasks(tasks_file, data)
 

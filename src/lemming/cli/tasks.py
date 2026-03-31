@@ -221,6 +221,16 @@ def status(ctx: click.Context, task_id: str | None):
     project_data = tasks.get_project_data(tasks_file)
 
     if not task_id:
+        if project_data.loop_running:
+            loop_state = "Running"
+            loop_color = "green"
+        else:
+            loop_state = "Idle"
+            loop_color = "cyan"
+
+        click.secho(f"Loop Status: {loop_state}", fg=loop_color, bold=True)
+        click.echo()
+
         if verbose:
             click.secho("=== Project Context ===", fg="cyan", bold=True)
             click.echo(project_data.context or "No context set.")
@@ -266,6 +276,14 @@ def status(ctx: click.Context, task_id: str | None):
         click.echo(f"Error: Task {task_id} not found.")
         return
 
+    if project_data.loop_running:
+        loop_state = "Running"
+        loop_color = "green"
+    else:
+        loop_state = "Idle"
+        loop_color = "cyan"
+
+    click.secho(f"Loop Status:   {loop_state}", fg=loop_color, bold=True)
     click.secho(f"Task ID:       {target.id}", bold=True)
     status_str = str(target.status)
     if target.status == tasks.TaskStatus.IN_PROGRESS and target.requested_status:

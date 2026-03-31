@@ -31,6 +31,9 @@ def test_add_task_captures_parent_project(tmp_path):
 
 def test_add_task(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
+    # Scaffold tasks file
+    persistence.save_tasks(tasks_file, models.Roadmap())
+
     now = time.time()
     task = operations.add_task(tasks_file, "New task")
     assert task.description == "New task"

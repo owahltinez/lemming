@@ -41,6 +41,14 @@ def run_hooks(
         return
 
     for hook_name in active_hooks:
+        # Reload tasks every time to ensure each hook sees outcomes from previous hooks
+        data = tasks.load_tasks(tasks_file)
+        task = next((t for t in data.tasks if t.id == task_id), None)
+        if not task:
+            if verbose:
+                click.echo(f"Task {task_id} not found during hook '{hook_name}' run.")
+            continue
+
         try:
             prompt = prompts.prepare_hook_prompt(hook_name, data, task, tasks_file)
         except FileNotFoundError:

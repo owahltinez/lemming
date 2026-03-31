@@ -283,3 +283,22 @@ def test_hook_override_precedence(tmp_path, monkeypatch):
     (local_hooks_dir / "roadmap.md").unlink()
     content = prompts.load_prompt("roadmap", tasks_file)
     assert content == "global roadmap"
+
+
+def test_list_hooks_roadmap_is_last(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.touch()
+
+    # Create project hooks that would alphabetically come before and after 'roadmap'
+    local_hooks_dir = tmp_path / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    (local_hooks_dir / "z_hook.md").write_text("z", encoding="utf-8")
+    (local_hooks_dir / "a_hook.md").write_text("a", encoding="utf-8")
+
+    hooks = prompts.list_hooks(tasks_file)
+
+    assert "roadmap" in hooks
+    assert "z_hook" in hooks
+    assert "a_hook" in hooks
+    # Even though z_hook is alphabetically last, roadmap should be moved to the end
+    assert hooks[-1] == "roadmap"

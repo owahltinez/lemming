@@ -18,29 +18,27 @@ overhead.
     tests. If new or modified logic lacks testing, you must act.
 2.  **Validate**: Run the relevant test suite for the modified components to
     ensure all tests pass.
-3.  **Repair/Fix**: For minor testing gaps or simple bug fixes in tests, you are
-    encouraged to fix them immediately if they are safe and non-breaking.
-4.  **Delegate**: If significant testing infrastructure is missing or complex
-    refactoring is required to make the code testable, add a new task:
-    `lemming add 'Test: <description>'`.
+3.  **Repair/Fix**: For minor testing gaps or simple bug fixes in tests, you may
+    fix them only if it's strictly necessary for the test suite to pass the
+    current changes.
+4.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify
+    significant testing gaps or architectural issues that require follow-up
+    work, record them as outcomes so the roadmap hook can decide whether to add
+    a new task.
 5.  **No Manual Refactoring**: Do NOT perform complex, manual code changes or
-    broad refactors. Stick to targeted fixes and high-level orchestration.
+    broad refactors. Stick strictly to verification and targeted test fixes.
 6.  **Fast Exit**: If tests are passings and coverage is sufficient for the
     change, exit immediately.
 7.  **Consolidate Tests**: Maintain a 1:1 mapping between code files and test
     files in the same directory (excluding integration tests). Avoid one-off
-    test files. If a test file grows too large, the corresponding code file
-    likely needs refactoring; add a task for that instead of fragmenting the
-    tests.
+    test files.
 
 ## Commands
 
 ```bash
-# Add a new task (e.g. for refactoring or tests)
-lemming --tasks-file {{tasks_file_path}} add 'Test: <desc>'
 # Record outcomes
 lemming --tasks-file {{tasks_file_path}} outcome add {{finished_task_id}} '<finding>'
 ```
 
-Avoid "just-in-case" testing. Focus on the core logic and critical failure
-paths. Do not overthink it.
+Limit your review ONLY to the code changed in the last task. Your goal is
+verification, not a general security or performance audit.

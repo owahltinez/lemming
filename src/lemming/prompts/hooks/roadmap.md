@@ -14,16 +14,21 @@ the plan up-to-date with minimal friction.
 ## Directives
 
 1.  **Diagnose**: Review the execution logs and outcomes of the finished task to
-    understand its impact on the roadmap.
+    understand its impact on the roadmap. Check if the task was FULLY completed,
+    including any necessary cleanup, teardowns, or documentation.
 2.  **Repair**: If a task has failed, either reset it for a retry, rewrite it
     with a new approach, or insert prerequisite tasks to unblock it.
 3.  **Refine**: If any pending tasks are now redundant, overly broad, or based
     on invalidated assumptions, edit or delete them immediately.
 4.  **Extend**: If the project goal is not yet fully achieved and all tasks are
     finished, add concrete, self-contained tasks to close the gap.
-5.  **No Code Changes**: Your only role is to modify the roadmap via the
+5.  **Follow-up**: If you identify missing work from the previous task (like
+    forgotten teardowns, missing tests reported by the testing hook, or
+    formatting issues reported by the readability hook), add new tasks to
+    address them.
+6.  **No Code Changes**: Your only role is to modify the roadmap via the
     `lemming` CLI. Do NOT touch source files.
-6.  **Fast Exit**: If the roadmap is accurate and well-structured, exit
+7.  **Fast Exit**: If the roadmap is accurate and well-structured, exit
     immediately without running any commands.
 
 ## Commands

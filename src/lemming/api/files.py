@@ -28,9 +28,12 @@ def get_files_api(request: fastapi.Request, path: str):
     for item in target_path.iterdir():
         if paths.is_ignored(item):
             continue
+        try:
+            stats = item.stat()
+        except OSError:
+            continue
         rel_path = item.relative_to(base_path)
         is_dir = item.is_dir()
-        stats = item.stat()
         contents.append(
             {
                 "name": item.name + ("/" if is_dir else ""),

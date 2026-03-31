@@ -112,7 +112,13 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
         for f in base_path.glob("*.md"):
             hooks.add(f.stem)
 
-    return sorted(list(hooks))
+    # Ensure 'roadmap' is always last
+    hooks_list = sorted(list(hooks))
+    if "roadmap" in hooks_list:
+        hooks_list.remove("roadmap")
+        hooks_list.append("roadmap")
+
+    return hooks_list
 
 
 def prepare_hook_prompt(

@@ -7,8 +7,9 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 COPY --from=cloudflare/cloudflared:latest /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
-WORKDIR /app
+WORKDIR /opt/lemming
 COPY . .
 RUN uv sync --no-dev --frozen
 
-ENTRYPOINT ["uv", "run", "lemming", "serve", "--host", "0.0.0.0"]
+WORKDIR /workspace
+ENTRYPOINT ["uv", "run", "--project", "/opt/lemming", "lemming", "serve", "--host", "0.0.0.0"]

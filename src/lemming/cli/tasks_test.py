@@ -2,6 +2,7 @@ import pathlib
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 import click.testing
 from lemming import cli
 from lemming import tasks
@@ -71,7 +72,13 @@ class TestCLITasks(unittest.TestCase):
     def test_status_command(self):
         result = self.cli_runner.invoke(cli.cli, self.base_args + ["status"])
         self.assertEqual(result.exit_code, 0)
+        self.assertIn("Loop Status: Idle", result.output)
         self.assertIn("Initial Task", result.output)
+
+        # Verify Running state (mocking is_loop_running)
+        with mock.patch("lemming.tasks.lifecycle.is_loop_running", return_value=True):
+            result = self.cli_runner.invoke(cli.cli, self.base_args + ["status"])
+            self.assertIn("Loop Status: Running", result.output)
 
     def test_logs_command_fail_no_logs(self):
         result = self.cli_runner.invoke(cli.cli, self.base_args + ["logs", "12345678"])

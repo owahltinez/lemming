@@ -26,6 +26,7 @@ def run_loop(
 
         # Reload configuration on each iteration to respond to changes (e.g., from Web UI)
         data = tasks.load_tasks(tasks_file)
+
         retries = data.config.retries
         runner_name = data.config.runner
         active_hooks = data.config.hooks

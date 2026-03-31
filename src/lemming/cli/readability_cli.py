@@ -1,6 +1,6 @@
 import logging
 import click
-import readability
+from . import readability_logic
 
 from .main import cli
 
@@ -20,5 +20,5 @@ def readability_group(ctx: click.Context):
 
 # Merge the commands from the readability package directly into our group.
 # This allows 'lemming readability check ...' instead of 'lemming readability cli check ...'
-for name, command in readability.cli.commands.items():
+for name, command in readability_logic.cli.commands.items():
     readability_group.add_command(command, name=name)

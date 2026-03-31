@@ -44,3 +44,10 @@ def test_readability_verbose_sync():
     # Check that the logger level was actually set in this process
     logger = logging.getLogger("readability")
     assert logger.level == logging.DEBUG
+
+
+def test_readability_check_ignored_file():
+    runner = CliRunner()
+    # src/lemming/web/mancha.js is ignored in biome.json
+    result = runner.invoke(cli, ["readability", "check", "src/lemming/web/mancha.js"])
+    assert result.exit_code == 0

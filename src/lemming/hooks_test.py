@@ -73,6 +73,31 @@ class TestHooks(unittest.TestCase):
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
 
+    @unittest.mock.patch("lemming.hooks.prompts.prepare_hook_prompt")
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    def test_run_hooks_reloads_tasks(self, mock_run, mock_prepare):
+        # Create a real Roadmap object to return
+        real_data = tasks.load_tasks(self.test_tasks_file)
+        mock_run.return_value = (0, "stdout", "")
+        mock_prepare.return_value = "Mock Prompt"
+
+        with unittest.mock.patch(
+            "lemming.hooks.tasks.load_tasks", return_value=real_data
+        ) as mock_load:
+            run_hooks(
+                self.test_tasks_file,
+                "12345678",
+                "gemini",
+                yolo=True,
+                runner_args=(),
+                no_defaults=False,
+                verbose=True,
+                hooks=["h1", "h2"],
+            )
+
+            # 1 initial load + 2 hook loads = 3
+            self.assertEqual(mock_load.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
