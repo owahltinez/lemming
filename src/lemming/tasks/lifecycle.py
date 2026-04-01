@@ -31,6 +31,19 @@ def is_pid_alive(pid: int) -> bool:
         os.kill(pid, 0)
     except OSError:
         return False
+
+    # Check for zombie state on Linux
+    try:
+        status_path = pathlib.Path(f"/proc/{pid}/status")
+        if status_path.exists():
+            for line in status_path.read_text().splitlines():
+                if line.startswith("State:"):
+                    state = line.split()[1]
+                    if state == "Z":
+                        return False
+    except OSError:
+        pass
+
     return True
 
 
