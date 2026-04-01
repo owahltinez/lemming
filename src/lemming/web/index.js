@@ -263,8 +263,16 @@
         // Sync config from server
         if (data.config) {
           $.config = data.config;
-          $.selectedRunner = data.config.runner;
-          $.retries = data.config.retries;
+
+          const runnerElem = document.querySelector('input[aria-label="Runner command"]');
+          if ($.loading || !runnerElem || document.activeElement !== runnerElem) {
+            $.selectedRunner = data.config.runner;
+          }
+
+          const retriesElem = document.querySelector('input[aria-label="Retries"]');
+          if ($.loading || !retriesElem || document.activeElement !== retriesElem) {
+            $.retries = data.config.retries;
+          }
         }
 
         $.updateTitle();
