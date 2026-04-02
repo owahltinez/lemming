@@ -321,7 +321,7 @@ def test_add_task_does_not_restart_if_running(client, test_tasks):
             mock_popen.assert_not_called()
 
 
-def test_update_task_to_pending_auto_starts_loop(client, test_tasks):
+def test_update_task_to_pending_does_not_start_loop(client, test_tasks):
     # Add a completed task
     task = tasks.add_task(test_tasks, "Completed task")
     tasks.add_outcome(test_tasks, task.id, "Done")
@@ -330,25 +330,18 @@ def test_update_task_to_pending_auto_starts_loop(client, test_tasks):
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return False
         with patch("lemming.tasks.is_loop_running", return_value=False):
-            # Set auto-start to True for this test
-            api.app.state.disable_auto_start = False
-            try:
-                # Update to pending
-                response = client.post(
-                    f"/api/tasks/{task.id}/update",
-                    json={"status": tasks.TaskStatus.PENDING},
-                )
-                assert response.status_code == 200
+            # Update to pending
+            response = client.post(
+                f"/api/tasks/{task.id}/update",
+                json={"status": tasks.TaskStatus.PENDING},
+            )
+            assert response.status_code == 200
 
-                # Verify Popen was called
-                mock_popen.assert_called_once()
-                args, kwargs = mock_popen.call_args
-                assert "run" in args[0]
-            finally:
-                api.app.state.disable_auto_start = True
+            # Verify Popen was NOT called
+            mock_popen.assert_not_called()
 
 
-def test_clear_task_auto_starts_loop(client, test_tasks):
+def test_clear_task_does_not_start_loop(client, test_tasks):
     # Add a completed task
     task = tasks.add_task(test_tasks, "Completed task")
     tasks.add_outcome(test_tasks, task.id, "Done")
@@ -357,19 +350,12 @@ def test_clear_task_auto_starts_loop(client, test_tasks):
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return False
         with patch("lemming.tasks.is_loop_running", return_value=False):
-            # Set auto-start to True for this test
-            api.app.state.disable_auto_start = False
-            try:
-                # Clear task
-                response = client.post(f"/api/tasks/{task.id}/clear")
-                assert response.status_code == 200
+            # Clear task
+            response = client.post(f"/api/tasks/{task.id}/clear")
+            assert response.status_code == 200
 
-                # Verify Popen was called
-                mock_popen.assert_called_once()
-                args, kwargs = mock_popen.call_args
-                assert "run" in args[0]
-            finally:
-                api.app.state.disable_auto_start = True
+            # Verify Popen was NOT called
+            mock_popen.assert_not_called()
 
 
 def test_add_task_respects_disable_auto_start(client, test_tasks):
@@ -402,47 +388,6 @@ def test_add_task_starts_loop_with_cwd(test_workspace, client):
         assert str(kwargs["cwd"]) == str(subproject_dir)
 
 
-def test_update_task_starts_loop_with_cwd(test_workspace, client):
-    root_dir, subproject_dir = test_workspace
-
-    # Add an outcome first so update to pending doesn't fail
-    sub_tasks_file = subproject_dir / "tasks.yml"
-    tasks.add_outcome(sub_tasks_file, "sub1", "Did some work")
-
-    with patch("subprocess.Popen") as mock_popen:
-        # Updating a task to pending should trigger auto-start
-        response = client.post(
-            "/api/tasks/sub1/update",
-            json={"status": tasks.TaskStatus.PENDING},
-            params={"project": "my-subproject"},
-        )
-        assert response.status_code == 200
-
-        # Verify Popen was called with the correct cwd
-        _, kwargs = mock_popen.call_args
-        assert str(kwargs["cwd"]) == str(subproject_dir)
-
-
-def test_clear_task_starts_loop_with_cwd(test_workspace, client):
-    root_dir, subproject_dir = test_workspace
-
-    # First, make the task "failed" so it can be cleared
-    sub_tasks_file = subproject_dir / "tasks.yml"
-    data = tasks.load_tasks(sub_tasks_file)
-    data.tasks[0].status = tasks.TaskStatus.FAILED
-    tasks.save_tasks(sub_tasks_file, data)
-
-    with patch("subprocess.Popen") as mock_popen:
-        # Clear task
-        response = client.post(
-            "/api/tasks/sub1/clear",
-            params={"project": "my-subproject"},
-        )
-        assert response.status_code == 200
-
-        # Verify Popen was called with the correct cwd
-        _, kwargs = mock_popen.call_args
-        assert str(kwargs["cwd"]) == str(subproject_dir)
 
 
 def test_cancel_task_endpoint(client, test_tasks):

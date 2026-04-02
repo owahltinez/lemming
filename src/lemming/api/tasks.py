@@ -90,12 +90,6 @@ def update_task(
             require_outcomes=require_outcomes,
             parent=update.get("parent"),
         )
-        if status == tasks.TaskStatus.PENDING:
-            loop.start_loop_if_needed(
-                request.app.state,
-                tasks_file,
-                cwd=context.resolve_project_dir(request.app.state, project),
-            )
         return updated_task
     except ValueError as e:
         if "not found" in str(e):
@@ -137,11 +131,6 @@ def clear_task_endpoint(
     try:
         tasks_file = context.resolve_tasks_file(request.app.state, project)
         tasks.reset_task(tasks_file, task_id)
-        loop.start_loop_if_needed(
-            request.app.state,
-            tasks_file,
-            cwd=context.resolve_project_dir(request.app.state, project),
-        )
         return {"status": "ok"}
     except ValueError as e:
         raise fastapi.HTTPException(404, str(e))
