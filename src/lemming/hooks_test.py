@@ -75,6 +75,28 @@ class TestHooks(unittest.TestCase):
 
     @unittest.mock.patch("lemming.hooks.prompts.prepare_hook_prompt")
     @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    def test_run_hooks_failure_filters_hooks(self, mock_run, mock_prepare):
+        mock_run.return_value = (0, "stdout", "")
+        mock_prepare.return_value = "Mock Prompt"
+
+        run_hooks(
+            self.test_tasks_file,
+            "12345678",
+            "gemini",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=True,
+            hooks=["readability", "roadmap", "testing"],
+            final_status=tasks.TaskStatus.FAILED,
+        )
+
+        # It should only run 'roadmap' hook
+        self.assertEqual(mock_prepare.call_count, 1)
+        self.assertEqual(mock_prepare.call_args[0][0], "roadmap")
+
+    @unittest.mock.patch("lemming.hooks.prompts.prepare_hook_prompt")
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
     def test_run_hooks_reloads_tasks(self, mock_run, mock_prepare):
         # Create a real Roadmap object to return
         real_data = tasks.load_tasks(self.test_tasks_file)

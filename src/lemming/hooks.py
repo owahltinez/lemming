@@ -35,6 +35,12 @@ def run_hooks(
     if active_hooks is None:
         active_hooks = prompts.list_hooks(tasks_file)
 
+    if final_status == tasks.TaskStatus.FAILED:
+        if "roadmap" in active_hooks:
+            active_hooks = ["roadmap"]
+        else:
+            active_hooks = []
+
     if not active_hooks:
         if final_status:
             tasks.update_task(tasks_file, task_id, status=final_status, force=True)
