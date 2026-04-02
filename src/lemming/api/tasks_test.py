@@ -388,8 +388,6 @@ def test_add_task_starts_loop_with_cwd(test_workspace, client):
         assert str(kwargs["cwd"]) == str(subproject_dir)
 
 
-
-
 def test_cancel_task_endpoint(client, test_tasks):
     with patch("lemming.tasks.cancel_task", return_value=True):
         response = client.post("/api/tasks/task3/cancel")
