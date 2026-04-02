@@ -128,6 +128,7 @@ def run_loop(
                 task_id,
                 verbose,
                 echo_fn=lambda line: click.echo(line, nl=False),
+                header="Task Runner",
                 cwd=working_dir,
             )
             if returncode != 0:

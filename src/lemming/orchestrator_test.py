@@ -188,6 +188,30 @@ class TestOrchestrator(unittest.TestCase):
         )
 
     @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    def test_run_loop_calls_runner_with_header(self, mock_run):
+        # Setup runner mock
+        mock_run.return_value = (0, "output", "")
+
+        # Mock finish_task_attempt to return a completed task to end loop
+        mock_task = self.initial_data.tasks[0]
+        mock_task.status = tasks.TaskStatus.COMPLETED
+        with unittest.mock.patch(
+            "lemming.tasks.finish_task_attempt", return_value=mock_task
+        ):
+            run_loop(
+                self.test_tasks_file,
+                verbose=False,
+                retry_delay=0,
+                yolo=True,
+                no_defaults=False,
+                runner_args=(),
+            )
+
+        # Verify run_with_heartbeat was called with header="Task Runner"
+        args, kwargs = mock_run.call_args
+        self.assertEqual(kwargs.get("header"), "Task Runner")
+
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
     @unittest.mock.patch("time.sleep", return_value=None)
     def test_run_loop_cancelled(self, mock_sleep, mock_run):
         # Simulate a task being cancelled (exit code -15)

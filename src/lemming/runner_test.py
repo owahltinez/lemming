@@ -192,15 +192,25 @@ def test_run_with_heartbeat_log_header(tmp_path):
     # Use a command that exits quickly
     cmd = ["true"]
 
-    # Run with a header
+    # 1. Run with a header
     runner.run_with_heartbeat(
         cmd, tasks_file, task_id, verbose=False, header="Hook: roadmap"
     )
 
     content = log_file.read_text()
+    assert "--- Attempt started at" in content
     assert "HOOK: ROADMAP started at" in content
-    assert "HOOK: HOOK: ROADMAP" not in content
     assert "=" * 80 in content
+
+    # 2. Run without a header (it should still have the attempt marker)
+    task_id_2 = "test_task_2"
+    log_file_2 = paths.get_log_file(tasks_file, task_id_2)
+    runner.run_with_heartbeat(cmd, tasks_file, task_id_2, verbose=False, header=None)
+
+    content_2 = log_file_2.read_text()
+    assert "--- Attempt started at" in content_2
+    assert "started at" not in content_2.replace("Attempt started at", "")
+    assert "=" * 80 not in content_2
 
 
 def test_run_with_heartbeat_interruption_cleanup(tmp_path):

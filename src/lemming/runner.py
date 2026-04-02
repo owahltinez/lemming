@@ -185,12 +185,11 @@ def run_with_heartbeat(
 
     with open(log_file, "a", encoding="utf-8") as f:
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"\n--- Attempt started at {timestamp} ---\n")
         if header:
-            f.write(f"\n{'=' * 80}\n")
+            f.write(f"{'=' * 80}\n")
             f.write(f"{header.upper()} started at {timestamp}\n")
             f.write(f"{'=' * 80}\n")
-        else:
-            f.write(f"\n--- Attempt started at {timestamp} ---\n")
         f.write(f"Command: {log_command_str}\n")
         f.flush()
 
