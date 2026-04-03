@@ -50,12 +50,48 @@ def test_tool_definitions_contain_suppression_flags():
     assert "--force-exclude" in ruff["fix"]
 
     biome = next(t for t in tools if t["name"] == "biome")
+    assert "-y" in biome["check"]
+    assert "npx" == biome["check"][0]
     assert "--no-errors-on-unmatched" in biome["check"]
     assert "--no-errors-on-unmatched" in biome["fix"]
 
     prettier = next(t for t in tools if t["name"] == "prettier")
+    assert "-y" in prettier["check_format"]
+    assert "npx" == prettier["check_format"][0]
     assert "--no-error-on-unmatched-pattern" in prettier["check_format"]
     assert "--no-error-on-unmatched-pattern" in prettier["format"]
+
+
+def test_subprocess_run_uses_timeout():
+    with mock.patch("subprocess.run") as mock_run:
+        mock_run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+        
+        # Test _execute_tool_command
+        readability_logic._execute_tool_command(["test", "cmd"])
+        mock_run.assert_called_with(
+            ["test", "cmd"],
+            capture_output=True,
+            check=True,
+            timeout=readability_logic.DEFAULT_TIMEOUT
+        )
+        
+        # Test _run_tool (one branch)
+        mock_run.reset_mock()
+        with mock.patch("shutil.which", return_value="/usr/bin/ruff"):
+            tool_config = {
+                "name": "ruff",
+                "check": ["ruff", "check", "."],
+                "trigger": ["pyproject.toml"],
+                "extensions": [".py"],
+            }
+            readability_logic._run_tool("ruff", tool_config, fix=False)
+            mock_run.assert_any_call(
+                ["ruff", "check", "."],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=readability_logic.DEFAULT_TIMEOUT
+            )
 
 
 def test_convert_to_markdown_html():

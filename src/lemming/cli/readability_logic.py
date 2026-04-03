@@ -64,6 +64,10 @@ LANGUAGE_MAP = {
 BASE_URL = "https://google.github.io/styleguide/"
 
 
+# Default timeout for subprocess calls in seconds
+DEFAULT_TIMEOUT = 60
+
+
 def get_guide_content(url: str) -> str:
     """Fetch raw content from the specified URL.
 
@@ -414,9 +418,17 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
         },
         {
             "name": "biome",
-            "check": ["npx", "biome", "lint", "--no-errors-on-unmatched", path_str],
+            "check": [
+                "npx",
+                "-y",
+                "biome",
+                "lint",
+                "--no-errors-on-unmatched",
+                path_str,
+            ],
             "check_format": [
                 "npx",
+                "-y",
                 "biome",
                 "format",
                 "--no-errors-on-unmatched",
@@ -424,6 +436,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
             ],
             "fix": [
                 "npx",
+                "-y",
                 "biome",
                 "lint",
                 "--write",
@@ -432,6 +445,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
             ],
             "format": [
                 "npx",
+                "-y",
                 "biome",
                 "format",
                 "--write",
@@ -454,6 +468,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
             "name": "prettier",
             "check_format": [
                 "npx",
+                "-y",
                 "prettier",
                 "--check",
                 "--no-error-on-unmatched-pattern",
@@ -461,6 +476,7 @@ def _get_tool_definitions(path: Path) -> list[dict[str, Any]]:
             ],
             "format": [
                 "npx",
+                "-y",
                 "prettier",
                 "--write",
                 "--no-error-on-unmatched-pattern",
@@ -545,6 +561,7 @@ def _run_tool(
                     capture_output=True,
                     text=True,
                     check=False,
+                    timeout=DEFAULT_TIMEOUT,
                 )
                 if result.returncode != 0 or (
                     tool_name == "go fmt" and result.stdout.strip()
@@ -557,7 +574,11 @@ def _run_tool(
         if "check" in tool_config:
             logger.debug("Executing: %s", " ".join(tool_config["check"]))
             result = subprocess.run(
-                tool_config["check"], capture_output=True, text=True, check=False
+                tool_config["check"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=DEFAULT_TIMEOUT,
             )
             if result.returncode != 0:
                 click.echo(
@@ -584,4 +605,4 @@ def _execute_tool_command(cmd: list[str]) -> None:
         subprocess.CalledProcessError: If the command returns a non-zero exit code.
     """
     logger.debug("Executing: %s", " ".join(cmd))
-    subprocess.run(cmd, capture_output=True, check=True)
+    subprocess.run(cmd, capture_output=True, check=True, timeout=DEFAULT_TIMEOUT)
