@@ -72,7 +72,10 @@
       $.completedCount = $.$computed(
         ($) =>
           $.tasks.filter(
-            (t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled',
+            (t) =>
+              t.status === 'completed' ||
+              t.status === 'failed' ||
+              t.status === 'cancelled',
           ).length,
       );
 
@@ -83,9 +86,17 @@
         // 2. Completed tasks (completed, failed) at the bottom.
         ts.sort((a, b) => {
           const aDone =
-            a.status === 'completed' || a.status === 'failed' || a.status === 'cancelled' ? 1 : 0;
+            a.status === 'completed' ||
+            a.status === 'failed' ||
+            a.status === 'cancelled'
+              ? 1
+              : 0;
           const bDone =
-            b.status === 'completed' || b.status === 'failed' || b.status === 'cancelled' ? 1 : 0;
+            b.status === 'completed' ||
+            b.status === 'failed' ||
+            b.status === 'cancelled'
+              ? 1
+              : 0;
           if (aDone !== bDone) return aDone - bDone;
 
           if (!aDone) {
@@ -107,7 +118,9 @@
         });
         return ts.filter(
           (t) =>
-            (t.status !== 'completed' && t.status !== 'failed' && t.status !== 'cancelled') ||
+            (t.status !== 'completed' &&
+              t.status !== 'failed' &&
+              t.status !== 'cancelled') ||
             !$.hideCompleted,
         );
       });
@@ -229,7 +242,9 @@
       $.updateFaviconStatus = () => {
         if (!window.updateFavicon) return;
         const hasError = $.tasks.some(
-          (t) => (t.status === 'pending' && t.attempts > 0) || t.status === 'cancelled',
+          (t) =>
+            (t.status === 'pending' && t.attempts > 0) ||
+            t.status === 'cancelled',
         );
         const allCompleted =
           $.tasks.length > 0 && $.tasks.every((t) => t.status === 'completed');

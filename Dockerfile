@@ -24,5 +24,8 @@ RUN uv sync --no-dev --frozen
 # Install frontend dependencies and Playwright browsers
 RUN npm install && npx playwright install --with-deps
 
+# Pre-create the lemming home directory so users can bind-mount a .env file into it
+RUN mkdir -p /root/.local/lemming
+
 WORKDIR /workspace
 ENTRYPOINT ["uv", "run", "--project", "/opt/lemming", "lemming", "serve", "--host", "0.0.0.0"]
