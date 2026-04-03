@@ -446,7 +446,7 @@
                 </button>
                 <div class="overflow-hidden flex-grow min-w-0">
                   <p
-                    :attr:class="'text-sm font-medium truncate ' + (task.status === 'completed' ? 'text-gray-400 line-through' : (task.status === 'in_progress' ? 'text-blue-600' : (task.attempts > 0 ? 'text-red-600' : '')))"
+                    :attr:class="'text-sm font-medium truncate ' + (task.status === 'completed' ? 'text-gray-400 line-through' : (task.status === 'cancelled' ? 'text-orange-600 line-through' : (task.status === 'in_progress' ? 'text-blue-600' : (task.attempts > 0 ? 'text-red-600' : ''))))"
                     :attr:title="task.description"
                   >
                     {{ task.description }}
@@ -455,15 +455,16 @@
                     <span
                       role="status"
                       class="px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 text-center min-w-20 inline-block"
-                      :class="task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'failed' ? 'bg-red-100 text-red-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500')))"
-                      :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'failed' ? 'Failed' : (task.status === 'in_progress' ? (task.completion_requested ? 'Finalizing' : 'Running') : (task.attempts > 0 ? 'Failed' : 'Pending')))"
-                      :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'failed' ? 'Status: Failed' : (task.status === 'in_progress' ? (task.completion_requested ? 'Status: Finalizing (hooks running)' : 'Status: Running') : (task.attempts > 0 ? 'Status: Failed' : 'Status: Pending')))"
+                      :class="task.status === 'completed' ? 'bg-green-100 text-green-700' : (task.status === 'failed' ? 'bg-red-100 text-red-700' : (task.status === 'cancelled' ? 'bg-orange-100 text-orange-700' : (task.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (task.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'))))"
+                      :attr:aria-label="task.status === 'completed' ? 'Completed' : (task.status === 'failed' ? 'Failed' : (task.status === 'cancelled' ? 'Cancelled' : (task.status === 'in_progress' ? (task.completion_requested ? 'Finalizing' : 'Running') : (task.attempts > 0 ? 'Failed' : 'Pending'))))"
+                      :attr:title="task.status === 'completed' ? 'Status: Completed' : (task.status === 'failed' ? 'Status: Failed' : (task.status === 'cancelled' ? 'Status: Cancelled' : (task.status === 'in_progress' ? (task.completion_requested ? 'Status: Finalizing (hooks running)' : 'Status: Running') : (task.attempts > 0 ? 'Status: Failed' : 'Status: Pending'))))"
                     >
                       {{ task.status === 'completed' ? 'Completed' :
                       (task.status === 'failed' ? 'Failed' : (task.status ===
+                      'cancelled' ? 'Cancelled' : (task.status ===
                       'in_progress' ? (task.completion_requested ? 'Finalizing'
                       : 'Running') : (task.attempts > 0 ? 'Failed' :
-                      'Pending'))) }}
+                      'Pending')))) }}
                     </span>
                     <p
                       class="text-gray-400 font-mono uppercase text-10px flex items-center flex-wrap gap-1 whitespace-nowrap"
@@ -511,38 +512,6 @@
                 <button
                   type="button"
                   role="button"
-                  :show="task.status === 'in_progress'"
-                  :on:click="cancelTask(task.id)"
-                  class="p-1 text-gray-600 dark:text-gray-400 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
-                  title="Cancel Task Execution"
-                  aria-label="Cancel Task Execution"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    aria-hidden="true"
-                    role="img"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H10a1 1 0 01-1-1v-4z"
-                    />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  role="button"
                   :show="task.status === 'pending'"
                   :on:click="editTask(task)"
                   class="p-1 text-gray-600 dark:text-gray-400 hover:text-indigo-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
@@ -569,7 +538,7 @@
                 <button
                   type="button"
                   role="button"
-                  :show="task.status === 'completed' || task.status === 'failed'"
+                  :show="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
                   :on:click="uncompleteTask(task.id)"
                   class="p-1 text-gray-600 dark:text-gray-400 hover:text-indigo-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
                   title="Mark as Pending"
@@ -621,11 +590,10 @@
                 <button
                   type="button"
                   role="button"
-                  :show="task.status !== 'in_progress'"
-                  :on:click="deleteTask(task.id)"
+                  :on:click="openTaskActionModal(task.id)"
                   class="p-1 text-gray-600 dark:text-gray-400 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition duration-200 rounded-md inline-flex items-center justify-center bg-transparent border-none cursor-pointer"
-                  title="Delete Task"
-                  aria-label="Delete Task"
+                  title="Task Actions"
+                  aria-label="Task Actions"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -640,7 +608,7 @@
                       stroke-linecap="round"
                       stroke-linejoin="round"
                       stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      d="M6 18L18 6M6 6l12 12"
                     />
                   </svg>
                 </button>
@@ -725,7 +693,7 @@
                 >
                 <div class="flex items-center gap-2">
                   <span
-                    :attr:class="'font-mono px-2 py-0.5 rounded text-10px font-medium ' + (getParent(task.parent)?.status === 'completed' ? 'bg-green-100 text-green-700' : (getParent(task.parent)?.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (getParent(task.parent)?.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500')))"
+                    :attr:class="'font-mono px-2 py-0.5 rounded text-10px font-medium ' + (getParent(task.parent)?.status === 'completed' ? 'bg-green-100 text-green-700' : (getParent(task.parent)?.status === 'cancelled' ? 'bg-orange-100 text-orange-700' : (getParent(task.parent)?.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' : (getParent(task.parent)?.attempts > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'))))"
                     >{{ task.parent }}</span
                   >
                   <span
@@ -793,6 +761,40 @@
         </button>
       </div>
     </div>
+    <dialog
+      id="task-action-modal"
+      class="p-6 rounded-xl shadow-2xl backdrop:bg-black/50 backdrop:backdrop-blur-sm border border-gray-100 dark:border-gray-700 w-full max-w-sm bg-white dark:bg-gray-900 dark:text-gray-100"
+    >
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        Task Action
+      </h3>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        Choose an action for this task.
+      </p>
+      <div class="flex flex-col gap-3">
+        <button
+          type="button"
+          :on:click="confirmDeleteTask()"
+          class="w-full px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200 cursor-pointer"
+        >
+          Delete Task
+        </button>
+        <button
+          type="button"
+          :on:click="confirmCancelTask()"
+          class="w-full px-4 py-2 text-sm font-medium text-white bg-orange-500 border border-transparent rounded-md shadow-sm hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition duration-200 cursor-pointer"
+        >
+          Cancel Task
+        </button>
+        <button
+          type="button"
+          :on:click="closeTaskActionModal()"
+          class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 cursor-pointer"
+        >
+          Dismiss
+        </button>
+      </div>
+    </dialog>
     <dialog
       id="edit-modal"
       class="p-6 rounded-xl shadow-2xl backdrop:bg-black/50 backdrop:backdrop-blur-sm border border-gray-100 dark:border-gray-700 w-full max-w-lg bg-white dark:bg-gray-900 dark:text-gray-100"

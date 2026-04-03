@@ -11,6 +11,7 @@ class TaskStatus(enum.StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Task(pydantic.BaseModel):

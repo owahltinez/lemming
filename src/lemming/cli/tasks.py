@@ -242,7 +242,7 @@ def status(ctx: click.Context, task_id: str | None):
             return
 
         for t in project_data.tasks:
-            if not verbose and t.status == tasks.TaskStatus.COMPLETED:
+            if not verbose and t.status in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.CANCELLED):
                 continue
 
             if t.status == tasks.TaskStatus.COMPLETED:
@@ -251,6 +251,9 @@ def status(ctx: click.Context, task_id: str | None):
             elif t.status == tasks.TaskStatus.IN_PROGRESS:
                 marker = "[*]"
                 status_color = "cyan"
+            elif t.status == tasks.TaskStatus.CANCELLED:
+                marker = "[-]"
+                status_color = "red"
             else:
                 marker = "[ ]"
                 status_color = "yellow"
@@ -264,10 +267,10 @@ def status(ctx: click.Context, task_id: str | None):
 
         if not verbose:
             completed_count = sum(
-                1 for t in project_data.tasks if t.status == tasks.TaskStatus.COMPLETED
+                1 for t in project_data.tasks if t.status in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.CANCELLED)
             )
             if completed_count > 0:
-                click.echo(f"({completed_count} completed tasks hidden)")
+                click.echo(f"({completed_count} completed/cancelled tasks hidden)")
         return
 
     target = next((t for t in project_data.tasks if t.id.startswith(task_id)), None)
@@ -448,7 +451,7 @@ def fail(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def cancel(ctx: click.Context, task_id: str):
-    """Kills the runner process for an in-progress task and resets it to pending.
+    """Kills the runner process for an in-progress task and marks it as cancelled.
 
     Args:
         task_id: The ID of the task to cancel.

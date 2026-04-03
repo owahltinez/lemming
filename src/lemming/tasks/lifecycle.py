@@ -99,7 +99,7 @@ def _mark_task_in_progress(
                 if task.started_at is None:
                     task.started_at = now
                 task.last_started_at = now
-                if pid:
+                if pid is not None:
                     task.pid = pid
                 return True
             return False
@@ -222,7 +222,7 @@ def reset_task_logs(tasks_file: pathlib.Path, task_id: str) -> None:
 
 
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
-    """Kill the process associated with the task AND the orchestrator loop, then mark it as pending.
+    """Kill the process associated with the task AND the orchestrator loop, then mark it as cancelled.
 
     Args:
         tasks_file: Path to the tasks YAML file.
@@ -258,7 +258,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
                         pass
 
                 update_run_time(task)
-                task.status = models.TaskStatus.PENDING
+                task.status = models.TaskStatus.CANCELLED
                 task.pid = None
                 task.last_heartbeat = None
                 task.requested_status = None

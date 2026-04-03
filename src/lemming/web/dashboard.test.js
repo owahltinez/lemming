@@ -362,14 +362,13 @@ describe('Lemming Web Dashboard', () => {
     const taskItem = fragment.querySelector('[role="listitem"]');
 
     const expandButton = taskItem.querySelector('[aria-label="Show details"]');
-    const cancelButton = taskItem.querySelector(
-      '[aria-label="Cancel Task Execution"]',
+    const taskActionsButton = taskItem.querySelector(
+      '[aria-label="Task Actions"]',
     );
     const editButton = taskItem.querySelector('[aria-label="Edit Task"]');
     const uncompleteButton = taskItem.querySelector(
       '[aria-label="Mark as Pending"]',
     );
-    const deleteButton = taskItem.querySelector('[aria-label="Delete Task"]');
 
     assert.ok(expandButton, 'Expand button should be present');
     assert.strictEqual(
@@ -378,11 +377,11 @@ describe('Lemming Web Dashboard', () => {
       'Expand button should be visible',
     );
 
-    assert.ok(cancelButton, 'Cancel button should be present');
+    assert.ok(taskActionsButton, 'Task Actions button should be present');
     assert.strictEqual(
-      cancelButton.style.display,
+      taskActionsButton.style.display,
       '',
-      'Cancel button should be visible',
+      'Task Actions button should be visible',
     );
 
     assert.ok(editButton, 'Edit button should be present');
@@ -397,13 +396,6 @@ describe('Lemming Web Dashboard', () => {
       uncompleteButton.style.display,
       'none',
       'Uncomplete button should be hidden',
-    );
-
-    assert.ok(deleteButton, 'Delete button should be present');
-    assert.strictEqual(
-      deleteButton.style.display,
-      'none',
-      'Delete button should be hidden',
     );
   });
 

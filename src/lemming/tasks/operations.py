@@ -88,7 +88,7 @@ def delete_tasks(
             completed_tasks = [
                 t
                 for t in data.tasks
-                if t.status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED)
+                if t.status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED, models.TaskStatus.CANCELLED)
             ]
             for t in completed_tasks:
                 lifecycle.reset_task_logs(tasks_file, t.id)
@@ -96,7 +96,7 @@ def delete_tasks(
                 t
                 for t in data.tasks
                 if t.status
-                not in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED)
+                not in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED, models.TaskStatus.CANCELLED)
             ]
         elif task_id:
             tasks_to_delete = [t for t in data.tasks if t.id.startswith(task_id)]
@@ -186,7 +186,7 @@ def update_task(
             if (
                 not force
                 and target.status == models.TaskStatus.IN_PROGRESS
-                and status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED)
+                and status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED, models.TaskStatus.CANCELLED)
             ):
                 lifecycle.update_run_time(target)
                 target.requested_status = models.TaskStatus(status)
@@ -196,7 +196,7 @@ def update_task(
                     lifecycle.update_run_time(target)
 
                 target.status = models.TaskStatus(status)
-                if status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED):
+                if status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED, models.TaskStatus.CANCELLED):
                     target.completed_at = time.time()
                     target.pid = None
                     target.last_heartbeat = None

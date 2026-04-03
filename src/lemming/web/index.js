@@ -72,7 +72,7 @@
       $.completedCount = $.$computed(
         ($) =>
           $.tasks.filter(
-            (t) => t.status === 'completed' || t.status === 'failed',
+            (t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled',
           ).length,
       );
 
@@ -83,9 +83,9 @@
         // 2. Completed tasks (completed, failed) at the bottom.
         ts.sort((a, b) => {
           const aDone =
-            a.status === 'completed' || a.status === 'failed' ? 1 : 0;
+            a.status === 'completed' || a.status === 'failed' || a.status === 'cancelled' ? 1 : 0;
           const bDone =
-            b.status === 'completed' || b.status === 'failed' ? 1 : 0;
+            b.status === 'completed' || b.status === 'failed' || b.status === 'cancelled' ? 1 : 0;
           if (aDone !== bDone) return aDone - bDone;
 
           if (!aDone) {
@@ -107,7 +107,7 @@
         });
         return ts.filter(
           (t) =>
-            (t.status !== 'completed' && t.status !== 'failed') ||
+            (t.status !== 'completed' && t.status !== 'failed' && t.status !== 'cancelled') ||
             !$.hideCompleted,
         );
       });
@@ -184,6 +184,14 @@
               'error',
             );
           } else if (
+            oldTask.status !== 'cancelled' &&
+            newTask.status === 'cancelled'
+          ) {
+            $.addToast(
+              `Task cancelled: ${$.trim(newTask.description, 60)}`,
+              'info',
+            );
+          } else if (
             oldTask.status === 'in_progress' &&
             newTask.status === 'pending'
           ) {
@@ -221,7 +229,7 @@
       $.updateFaviconStatus = () => {
         if (!window.updateFavicon) return;
         const hasError = $.tasks.some(
-          (t) => t.status === 'pending' && t.attempts > 0,
+          (t) => (t.status === 'pending' && t.attempts > 0) || t.status === 'cancelled',
         );
         const allCompleted =
           $.tasks.length > 0 && $.tasks.every((t) => t.status === 'completed');
@@ -393,13 +401,44 @@
         }
       };
 
+      $.taskActionTarget = null;
+
+      $.openTaskActionModal = (id) => {
+        $.taskActionTarget = id;
+        const modal = document.getElementById('task-action-modal');
+        if (modal) modal.showModal();
+      };
+
+      $.closeTaskActionModal = () => {
+        const modal = document.getElementById('task-action-modal');
+        if (modal) modal.close();
+        $.taskActionTarget = null;
+      };
+
       $.deleteTask = async (id) => {
-        if (confirm('Delete this task?')) {
-          const res = await fetch(apiUrl(`/api/tasks/${id}/delete`), {
-            method: 'POST',
-          });
-          if (res.ok) await $.fetchData();
+        const res = await fetch(apiUrl(`/api/tasks/${id}/delete`), {
+          method: 'POST',
+        });
+        if (res.ok) await $.fetchData();
+      };
+
+      $.confirmDeleteTask = async () => {
+        if (!$.taskActionTarget) return;
+        await $.deleteTask($.taskActionTarget);
+        $.closeTaskActionModal();
+      };
+
+      $.confirmCancelTask = async () => {
+        if (!$.taskActionTarget) return;
+        const id = $.taskActionTarget;
+        const res = await fetch(apiUrl(`/api/tasks/${id}/cancel`), {
+          method: 'POST',
+        });
+        if (res.ok) {
+          $.addToast('Execution cancelled', 'info');
+          await $.fetchData();
         }
+        $.closeTaskActionModal();
       };
 
       $.deleteCompletedTasks = async () => {
@@ -415,15 +454,7 @@
       };
 
       $.cancelTask = async (id) => {
-        if (confirm('Cancel execution? Process will be killed.')) {
-          const res = await fetch(apiUrl(`/api/tasks/${id}/cancel`), {
-            method: 'POST',
-          });
-          if (res.ok) {
-            $.addToast('Execution cancelled', 'info');
-            await $.fetchData();
-          }
-        }
+        $.openTaskActionModal(id);
       };
 
       $.editTask = (task) => {

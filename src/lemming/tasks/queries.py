@@ -49,7 +49,7 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
     # - Uncompleted: in_progress tasks first, then by index (YAML order), then by created_at.
     # - Completed: newer tasks appear first (reverse chronological).
     def sort_key(t):
-        is_done = t.status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED)
+        is_done = t.status in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED, models.TaskStatus.CANCELLED)
         is_in_progress = t.status == models.TaskStatus.IN_PROGRESS
         if not is_done:
             # For pending/in_progress, prioritize in_progress and then YAML order (index)

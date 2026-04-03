@@ -159,7 +159,7 @@ def test_cancel_task(tmp_path):
         assert success is True
 
     updated_data = persistence.load_tasks(tasks_file)
-    assert updated_data.tasks[0].status == models.TaskStatus.PENDING
+    assert updated_data.tasks[0].status == models.TaskStatus.CANCELLED
     assert updated_data.tasks[0].pid is None
 
 
@@ -194,9 +194,9 @@ def test_cancel_task_kills_loop_pid(tmp_path):
         # Verify loop PID was killed
         mock_kill.assert_any_call(456, signal.SIGTERM)
 
-        # Verify task is marked as pending
+        # Verify task is marked as cancelled
         updated_data = persistence.load_tasks(tasks_file)
-        assert updated_data.tasks[0].status == models.TaskStatus.PENDING
+        assert updated_data.tasks[0].status == models.TaskStatus.CANCELLED
 
 
 def test_reset_task(tmp_path):
