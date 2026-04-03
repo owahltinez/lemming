@@ -1,5 +1,7 @@
 import os
 import pathlib
+import stat
+from unittest import mock
 from lemming import paths
 
 
@@ -79,3 +81,94 @@ def test_in_git_repo_and_is_ignored(tmp_path):
 
     finally:
         os.chdir(orig_cwd)
+
+
+class TestParseDotenv:
+    def test_basic_key_value(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("FOO=bar\nBAZ=qux\n")
+        assert paths._parse_dotenv(env_file) == {"FOO": "bar", "BAZ": "qux"}
+
+    def test_comments_and_blank_lines(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("# comment\n\nFOO=bar\n  # another\n")
+        assert paths._parse_dotenv(env_file) == {"FOO": "bar"}
+
+    def test_quoted_values(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("SINGLE='hello world'\nDOUBLE=\"hello world\"\n")
+        result = paths._parse_dotenv(env_file)
+        assert result == {"SINGLE": "hello world", "DOUBLE": "hello world"}
+
+    def test_export_prefix(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("export FOO=bar\n")
+        assert paths._parse_dotenv(env_file) == {"FOO": "bar"}
+
+    def test_value_with_equals(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("URL=https://example.com?a=1&b=2\n")
+        assert paths._parse_dotenv(env_file) == {"URL": "https://example.com?a=1&b=2"}
+
+    def test_missing_file(self, tmp_path):
+        assert paths._parse_dotenv(tmp_path / "nope") == {}
+
+    def test_malformed_line_skipped(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("GOOD=yes\nBADLINE\nALSO_GOOD=yes\n")
+        result = paths._parse_dotenv(env_file)
+        assert result == {"GOOD": "yes", "ALSO_GOOD": "yes"}
+
+
+class TestLoadDotenv:
+    def test_global_env_loaded(self, tmp_path):
+        global_env = tmp_path / ".env"
+        global_env.write_text("LEMMING_TEST_GLOBAL=from_global\n")
+        with mock.patch.object(paths, "get_lemming_home", return_value=tmp_path):
+            with mock.patch.dict(os.environ, {}, clear=True):
+                os.environ["PATH"] = "/usr/bin:/bin"
+                paths.load_dotenv()
+                assert os.environ["LEMMING_TEST_GLOBAL"] == "from_global"
+
+    def test_project_env_overrides_global(self, tmp_path):
+        home_dir = tmp_path / "home"
+        home_dir.mkdir()
+        proj_dir = tmp_path / "project"
+        proj_dir.mkdir()
+
+        (home_dir / ".env").write_text("MY_VAR=global\nONLY_GLOBAL=yes\n")
+        (proj_dir / ".env").write_text("MY_VAR=project\n")
+
+        with mock.patch.object(paths, "get_lemming_home", return_value=home_dir):
+            with mock.patch.dict(os.environ, {}, clear=True):
+                os.environ["PATH"] = "/usr/bin:/bin"
+                paths.load_dotenv(project_dir=proj_dir)
+                assert os.environ["MY_VAR"] == "project"
+                assert os.environ["ONLY_GLOBAL"] == "yes"
+
+    def test_real_env_wins(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("EXISTING=from_file\n")
+        with mock.patch.object(paths, "get_lemming_home", return_value=tmp_path):
+            with mock.patch.dict(os.environ, {"EXISTING": "from_shell"}, clear=True):
+                os.environ["PATH"] = "/usr/bin:/bin"
+                paths.load_dotenv()
+                assert os.environ["EXISTING"] == "from_shell"
+
+    def test_no_env_files_is_noop(self, tmp_path):
+        with mock.patch.object(paths, "get_lemming_home", return_value=tmp_path):
+            with mock.patch.dict(os.environ, {}, clear=True):
+                os.environ["PATH"] = "/usr/bin:/bin"
+                paths.load_dotenv()  # should not raise
+
+
+class TestCheckPermissions:
+    def test_warns_on_world_readable(self, tmp_path, caplog):
+        env_file = tmp_path / ".env"
+        env_file.write_text("X=1\n")
+        env_file.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IROTH)
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            paths._check_permissions(env_file)
+        assert "permissive" in caplog.text

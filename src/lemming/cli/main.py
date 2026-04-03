@@ -25,5 +25,10 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     ctx.ensure_object(dict)
     if tasks_file is None:
         tasks_file = paths.get_default_tasks_file()
-    ctx.obj["TASKS_FILE"] = tasks_file.resolve()
+    tasks_file = tasks_file.resolve()
+
+    # Load .env files (global, then project-level); real env vars always win.
+    paths.load_dotenv(project_dir=paths.get_working_dir(tasks_file))
+
+    ctx.obj["TASKS_FILE"] = tasks_file
     ctx.obj["VERBOSE"] = verbose

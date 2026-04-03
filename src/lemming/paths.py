@@ -1,7 +1,85 @@
 import hashlib
+import logging
 import os
 import pathlib
+import stat
 import subprocess
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_dotenv(path: pathlib.Path) -> dict[str, str]:
+    """Parse a .env file into a dict, skipping comments and blank lines."""
+    result: dict[str, str] = {}
+    try:
+        for lineno, raw_line in enumerate(path.read_text().splitlines(), 1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Optional "export " prefix
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if "=" not in line:
+                logger.warning("%s:%d: skipping malformed line (no '=')", path, lineno)
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            # Strip surrounding quotes from value
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            result[key] = value
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        logger.warning("Failed to read %s: %s", path, exc)
+    return result
+
+
+def _check_permissions(path: pathlib.Path) -> None:
+    """Warn if the .env file is readable by group or others."""
+    try:
+        mode = path.stat().st_mode
+        if mode & (stat.S_IRGRP | stat.S_IROTH):
+            logger.warning(
+                "%s has overly permissive permissions (%o). "
+                "Consider restricting to 600.",
+                path,
+                stat.S_IMODE(mode),
+            )
+    except OSError:
+        pass
+
+
+def load_dotenv(project_dir: pathlib.Path | None = None) -> None:
+    """Load environment variables from .env files.
+
+    Precedence (later wins, but real env vars always take priority):
+      1. ~/.local/lemming/.env  (global defaults)
+      2. <project_dir>/.env     (project overrides)
+
+    Existing environment variables are never overwritten.
+    """
+    env_files: list[pathlib.Path] = []
+
+    global_env = get_lemming_home() / ".env"
+    if global_env.is_file():
+        env_files.append(global_env)
+
+    if project_dir is not None:
+        project_env = project_dir / ".env"
+        if project_env.is_file() and project_env != global_env:
+            env_files.append(project_env)
+
+    merged: dict[str, str] = {}
+    for env_file in env_files:
+        _check_permissions(env_file)
+        merged.update(_parse_dotenv(env_file))
+
+    # Only set vars that aren't already in the environment
+    for key, value in merged.items():
+        if key not in os.environ:
+            os.environ[key] = value
 
 
 def get_lemming_home() -> pathlib.Path:
