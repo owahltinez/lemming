@@ -65,16 +65,16 @@ def test_tool_definitions_contain_suppression_flags():
 def test_subprocess_run_uses_timeout():
     with mock.patch("subprocess.run") as mock_run:
         mock_run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
-        
+
         # Test _execute_tool_command
         readability_logic._execute_tool_command(["test", "cmd"])
         mock_run.assert_called_with(
             ["test", "cmd"],
             capture_output=True,
             check=True,
-            timeout=readability_logic.DEFAULT_TIMEOUT
+            timeout=readability_logic.DEFAULT_TIMEOUT,
         )
-        
+
         # Test _run_tool (one branch)
         mock_run.reset_mock()
         with mock.patch("shutil.which", return_value="/usr/bin/ruff"):
@@ -90,7 +90,7 @@ def test_subprocess_run_uses_timeout():
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=readability_logic.DEFAULT_TIMEOUT
+                timeout=readability_logic.DEFAULT_TIMEOUT,
             )
 
 
