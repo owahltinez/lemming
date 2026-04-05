@@ -305,7 +305,7 @@ def status(ctx: click.Context, task_id: str | None):
     click.echo(f"Attempts:      {target.attempts}")
     if target.created_at:
         created_time = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(target.created_at)
+            "%Y-%m-%d %H:%M:%S %Z", time.localtime(target.created_at)
         )
         click.echo(f"Created At:    {created_time}")
 
@@ -316,7 +316,7 @@ def status(ctx: click.Context, task_id: str | None):
 
     if target.completed_at:
         comp_time = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(target.completed_at)
+            "%Y-%m-%d %H:%M:%S %Z", time.localtime(target.completed_at)
         )
         click.echo(f"Completed At:  {comp_time}")
     run_time = target.run_time
