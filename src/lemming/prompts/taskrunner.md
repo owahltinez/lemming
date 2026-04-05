@@ -13,7 +13,11 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
 ## Critical Directives
 
 1. **Execute:** Write the code to fulfill the current task. Run any necessary
-   tests.
+   tests. **Your operations should be idempotent** — your process may be killed
+   at any time (e.g. due to a timeout) and the task retried from scratch. Design
+   your work so that re-running it on a partially modified workspace produces the
+   correct result: check whether changes already exist before applying them,
+   use create-or-update patterns, and avoid operations that fail if run twice.
 2. **DO NOT edit `{{tasks_file_name}}` directly.** You must use the Lemming CLI
    API.
 3. **Task Management:** You may manipulate the task list to add or insert new
