@@ -166,12 +166,30 @@
                 class="block text-xs font-semibold text-gray-400 uppercase mb-1"
                 >Task Summary</label
               >
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-300 space-x-2">
-                <span :show="tasks.length === 0" class="text-gray-400">No tasks</span>
-                <span :show="runningCount > 0" class="text-blue-600 dark:text-blue-400">{{ runningCount }} running</span>
-                <span :show="pendingCount > 0" class="text-gray-500">{{ pendingCount }} pending</span>
-                <span :show="completedCount > 0" class="text-green-600 dark:text-green-400">{{ completedCount }} done</span>
-                <span :show="failedCount > 0" class="text-red-600 dark:text-red-400">{{ failedCount }} failed</span>
+              <div
+                class="text-sm font-medium text-gray-700 dark:text-gray-300 space-x-2"
+              >
+                <span :show="tasks.length === 0" class="text-gray-400"
+                  >No tasks</span
+                >
+                <span
+                  :show="runningCount > 0"
+                  class="text-blue-600 dark:text-blue-400"
+                  >{{ runningCount }} running</span
+                >
+                <span :show="pendingCount > 0" class="text-gray-500"
+                  >{{ pendingCount }} pending</span
+                >
+                <span
+                  :show="completedCount > 0"
+                  class="text-green-600 dark:text-green-400"
+                  >{{ completedCount }} done</span
+                >
+                <span
+                  :show="failedCount > 0"
+                  class="text-red-600 dark:text-red-400"
+                  >{{ failedCount }} failed</span
+                >
               </div>
             </div>
             <!-- Runner Command -->
@@ -486,10 +504,9 @@
                     >
                       {{ task.status === 'completed' ? 'Completed' :
                       (task.status === 'failed' ? 'Failed' : (task.status ===
-                      'cancelled' ? 'Cancelled' : (task.status ===
-                      'in_progress' ? (task.completion_requested ? 'Finalizing'
-                      : 'Running') : (task.attempts > 0 ? 'Failed' :
-                      'Pending')))) }}
+                      'cancelled' ? 'Cancelled' : (task.status === 'in_progress'
+                      ? (task.completion_requested ? 'Finalizing' : 'Running') :
+                      (task.attempts > 0 ? 'Failed' : 'Pending')))) }}
                     </span>
                     <p
                       class="text-gray-400 font-mono uppercase text-10px flex items-center flex-wrap gap-1 whitespace-nowrap"
@@ -799,22 +816,31 @@
       <div class="flex flex-col gap-3">
         <button
           type="button"
-          :on:click="confirmDeleteTask()"
-          class="w-full px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200 cursor-pointer"
+          :on:click="confirmReopenTask()"
+          :show="taskActionTargetStatus() === 'completed' || taskActionTargetStatus() === 'failed' || taskActionTargetStatus() === 'cancelled'"
+          class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
-          Delete Task
+          Re-open Task
         </button>
         <button
           type="button"
           :on:click="confirmCancelTask()"
-          class="w-full px-4 py-2 text-sm font-medium text-white bg-orange-500 border border-transparent rounded-md shadow-sm hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition duration-200 cursor-pointer"
+          :show="taskActionTargetStatus() === 'pending' || taskActionTargetStatus() === 'in_progress'"
+          class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Cancel Task
         </button>
         <button
           type="button"
+          :on:click="confirmDeleteTask()"
+          class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
+        >
+          Delete Task
+        </button>
+        <button
+          type="button"
           :on:click="closeTaskActionModal()"
-          class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 cursor-pointer"
+          class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Dismiss
         </button>

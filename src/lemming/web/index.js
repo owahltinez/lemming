@@ -445,6 +445,12 @@
 
       $.taskActionTarget = null;
 
+      $.taskActionTargetStatus = () => {
+        if (!$.taskActionTarget) return null;
+        const task = $.tasks.find((t) => t.id === $.taskActionTarget);
+        return task ? task.status : null;
+      };
+
       $.openTaskActionModal = (id) => {
         $.taskActionTarget = id;
         const modal = document.getElementById('task-action-modal');
@@ -478,6 +484,21 @@
         });
         if (res.ok) {
           $.addToast('Execution cancelled', 'info');
+          await $.fetchData();
+        }
+        $.closeTaskActionModal();
+      };
+
+      $.confirmReopenTask = async () => {
+        if (!$.taskActionTarget) return;
+        const id = $.taskActionTarget;
+        const res = await fetch(apiUrl(`/api/tasks/${id}/update`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'pending' }),
+        });
+        if (res.ok) {
+          $.addToast('Task re-opened', 'info');
           await $.fetchData();
         }
         $.closeTaskActionModal();
