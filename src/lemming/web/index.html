@@ -817,7 +817,7 @@
         <button
           type="button"
           :on:click="confirmReopenTask()"
-          :show="taskActionTargetStatus() === 'completed' || taskActionTargetStatus() === 'failed' || taskActionTargetStatus() === 'cancelled'"
+          :show="taskActionTargetStatus === 'completed' || taskActionTargetStatus === 'failed' || taskActionTargetStatus === 'cancelled'"
           class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Re-open Task
@@ -825,7 +825,7 @@
         <button
           type="button"
           :on:click="confirmCancelTask()"
-          :show="taskActionTargetStatus() === 'pending' || taskActionTargetStatus() === 'in_progress'"
+          :show="taskActionTargetStatus === 'pending' || taskActionTargetStatus === 'in_progress'"
           class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Cancel Task
@@ -833,6 +833,7 @@
         <button
           type="button"
           :on:click="confirmDeleteTask()"
+          :show="taskActionTargetStatus !== 'in_progress'"
           class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Delete Task

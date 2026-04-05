@@ -444,15 +444,12 @@
       };
 
       $.taskActionTarget = null;
-
-      $.taskActionTargetStatus = () => {
-        if (!$.taskActionTarget) return null;
-        const task = $.tasks.find((t) => t.id === $.taskActionTarget);
-        return task ? task.status : null;
-      };
+      $.taskActionTargetStatus = null;
 
       $.openTaskActionModal = (id) => {
         $.taskActionTarget = id;
+        const task = $.tasks.find((t) => t.id === id);
+        $.taskActionTargetStatus = task ? task.status : null;
         const modal = document.getElementById('task-action-modal');
         if (modal) modal.showModal();
       };
@@ -461,6 +458,7 @@
         const modal = document.getElementById('task-action-modal');
         if (modal) modal.close();
         $.taskActionTarget = null;
+        $.taskActionTargetStatus = null;
       };
 
       $.deleteTask = async (id) => {
