@@ -153,6 +153,23 @@ def test_uncomplete_task_via_api(client, test_tasks):
     assert task1.attempts == 0
 
 
+def test_reopen_cancelled_task_via_api(client, test_tasks):
+    # First cancel task2 (pending), then reopen it
+    response = client.post(
+        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.CANCELLED}
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == tasks.TaskStatus.CANCELLED
+
+    # Now reopen the cancelled task back to pending
+    response = client.post(
+        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.PENDING}
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == tasks.TaskStatus.PENDING
+    assert response.json()["attempts"] == 0
+
+
 def test_has_log_population(client, test_tasks):
     # Initially no logs
     response = client.get("/api/data")

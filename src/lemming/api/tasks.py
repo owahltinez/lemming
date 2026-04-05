@@ -76,6 +76,7 @@ def update_task(
         if target and target.status not in (
             tasks.TaskStatus.COMPLETED,
             tasks.TaskStatus.FAILED,
+            tasks.TaskStatus.CANCELLED,
         ):
             require_outcomes = True
 

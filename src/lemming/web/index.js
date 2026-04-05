@@ -445,11 +445,13 @@
 
       $.taskActionTarget = null;
       $.taskActionTargetStatus = null;
+      $.taskActionTargetHasAttempts = false;
 
       $.openTaskActionModal = (id) => {
         $.taskActionTarget = id;
         const task = $.tasks.find((t) => t.id === id);
         $.taskActionTargetStatus = task ? task.status : null;
+        $.taskActionTargetHasAttempts = task ? task.attempts > 0 : false;
         const modal = document.getElementById('task-action-modal');
         if (modal) modal.showModal();
       };
@@ -459,6 +461,19 @@
         if (modal) modal.close();
         $.taskActionTarget = null;
         $.taskActionTargetStatus = null;
+        $.taskActionTargetHasAttempts = false;
+      };
+
+      $.editTaskFromModal = () => {
+        const task = $.tasks.find((t) => t.id === $.taskActionTarget);
+        $.closeTaskActionModal();
+        if (task) $.editTask(task);
+      };
+
+      $.clearTaskFromModal = () => {
+        const id = $.taskActionTarget;
+        $.closeTaskActionModal();
+        if (id) $.clearTask(id);
       };
 
       $.deleteTask = async (id) => {
