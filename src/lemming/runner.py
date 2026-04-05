@@ -13,6 +13,9 @@ from . import tasks
 
 logger = logging.getLogger(__name__)
 
+# Sentinel return codes for non-standard process termination.
+RETURNCODE_TIMEOUT = -14
+
 
 def _pretty_quote(s: str) -> str:
     """Quotes a string for shell execution, preferring readable double quotes if it contains single quotes.
@@ -151,6 +154,24 @@ def build_runner_command(
     return cmd
 
 
+def _kill_process_tree(process: subprocess.Popen) -> None:
+    """Kills a process and its entire process group.
+
+    Tries SIGTERM on the process group first, falls back to killing the
+    process directly if the group signal fails.
+
+    Args:
+        process: The subprocess to kill.
+    """
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+    except OSError:
+        try:
+            process.kill()
+        except OSError:
+            pass
+
+
 def run_with_heartbeat(
     cmd: list[str],
     tasks_file: pathlib.Path,
@@ -159,6 +180,7 @@ def run_with_heartbeat(
     echo_fn: Callable[[str], None] = print,
     cwd: pathlib.Path | None = None,
     header: str | None = None,
+    time_limit: int = 0,
 ) -> tuple[int, str, str]:
     """Runs the runner process and updates the task heartbeat periodically.
 
@@ -170,6 +192,7 @@ def run_with_heartbeat(
         echo_fn: Function to use for echoing output (defaults to print).
         cwd: Optional working directory for the subprocess.
         header: Optional header to write to the log (e.g. "Orchestrator Hook: roadmap").
+        time_limit: Maximum execution time in minutes. 0 means no limit.
 
     Returns:
         A tuple of (returncode, stdout_log, stderr_log). Note: stderr is currently
@@ -215,23 +238,35 @@ def run_with_heartbeat(
 
     full_log: list[str] = []
 
+    timed_out = False
+
     try:
         # Heartbeat and cancellation management
         is_claimed = tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
+        start_time = time.monotonic()
 
         def heartbeat_loop():
             """Updates the task heartbeat while the process is running."""
+            nonlocal timed_out
             while process.poll() is None:
                 if not tasks.update_heartbeat(tasks_file, task_id):
-                    # Task was cancelled or finished — kill the runner subprocess tree
-                    try:
-                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                    except OSError:
-                        try:
-                            process.kill()
-                        except OSError:
-                            pass
+                    # Task was cancelled or finished.
+                    _kill_process_tree(process)
                     return
+
+                # Check time limit
+                if time_limit > 0:
+                    elapsed = time.monotonic() - start_time
+                    if elapsed >= time_limit * 60:
+                        timed_out = True
+                        tasks.add_outcome(
+                            tasks_file,
+                            task_id,
+                            f"Task killed: time limit of {time_limit} minutes reached.",
+                        )
+                        _kill_process_tree(process)
+                        return
+
                 time.sleep(tasks.STALE_THRESHOLD // 2)
 
         if is_claimed:
@@ -251,17 +286,13 @@ def run_with_heartbeat(
 
             process.wait()
         except BaseException:
-            # Kill the runner subprocess tree if we are interrupted
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            except OSError:
-                try:
-                    process.kill()
-                except OSError:
-                    pass
+            _kill_process_tree(process)
             raise
 
-        return process.returncode, "".join(full_log), ""
+        returncode = process.returncode
+        if timed_out:
+            returncode = RETURNCODE_TIMEOUT
+        return returncode, "".join(full_log), ""
     finally:
         if process.stdout and hasattr(process.stdout, "close"):
             process.stdout.close()

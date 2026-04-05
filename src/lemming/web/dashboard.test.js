@@ -28,7 +28,8 @@ const createInitialState = (overrides = {}) => {
     folderPickerDirs: [],
     hideCompleted,
     toasts: [],
-    expanded: {},
+    expanded: [],
+    timeLimit: '3600',
     trim: (s, l = 60) =>
       s && s.length > l ? `${s.substring(0, l - 3)}...` : s,
     formatDate: (ts) => (ts ? new Date(ts * 1000).toLocaleString() : ''),
@@ -477,7 +478,10 @@ describe('Lemming Web Dashboard', () => {
       createInitialState({
         tasks: tasksNoCompleted,
         loading: false,
+        runningCount: 0,
+        pendingCount: 1,
         completedCount: 0,
+        failedCount: 0,
         filteredTasks: tasksNoCompleted,
       }),
     );
@@ -519,7 +523,10 @@ describe('Lemming Web Dashboard', () => {
       createInitialState({
         tasks: tasksWithCompleted,
         loading: false,
+        runningCount: 0,
+        pendingCount: 1,
         completedCount: 1,
+        failedCount: 0,
         filteredTasks: tasksWithCompleted,
       }),
     );

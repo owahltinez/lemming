@@ -6,7 +6,8 @@ import unittest
 import unittest.mock
 
 from lemming import tasks
-from lemming.orchestrator import run_loop, parse_timeout
+from lemming.orchestrator import format_duration, run_loop, parse_timeout
+from lemming.runner import RETURNCODE_TIMEOUT
 
 
 class TestOrchestrator(unittest.TestCase):
@@ -40,6 +41,14 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(parse_timeout("30m"), 30 * 60.0)
         self.assertEqual(parse_timeout("90s"), 90.0)
         self.assertEqual(parse_timeout("invalid"), 0.0)
+
+    def test_format_duration(self):
+        self.assertEqual(format_duration(0), "none")
+        self.assertEqual(format_duration(-1), "none")
+        self.assertEqual(format_duration(30), "30m")
+        self.assertEqual(format_duration(60), "1h")
+        self.assertEqual(format_duration(90), "90m")
+        self.assertEqual(format_duration(120), "2h")
 
     @unittest.mock.patch("subprocess.Popen")
     def test_run_loop_success(self, mock_popen):
@@ -132,7 +141,7 @@ class TestOrchestrator(unittest.TestCase):
         hook_ends = {}
 
         def mocked_run_with_heartbeat(
-            cmd, t_file, t_id, verbose, echo_fn, header=None, cwd=None
+            cmd, t_file, t_id, verbose, echo_fn, header=None, cwd=None, time_limit=0
         ):
             if header and header.startswith("Hook:"):
                 time.sleep(0.1)
@@ -242,6 +251,58 @@ class TestOrchestrator(unittest.TestCase):
             self.assertNotEqual(
                 call[0][0], 1, "Should not sleep with retry_delay on cancellation"
             )
+
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    @unittest.mock.patch("time.sleep", return_value=None)
+    def test_run_loop_timeout_retries(self, mock_sleep, mock_run):
+        """Verifies that a timed-out task is retried without running hooks."""
+        # First call: timeout. Second call: timeout again. Exhausts retries.
+        mock_run.return_value = (RETURNCODE_TIMEOUT, "output", "")
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.config.retries = 2
+        data.config.time_limit = 60
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        run_loop(
+            self.test_tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+        )
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].attempts, 2)
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.FAILED)
+
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    @unittest.mock.patch("time.sleep", return_value=None)
+    def test_run_loop_passes_time_limit(self, mock_sleep, mock_run):
+        """Verifies that time_limit from config is passed to the runner."""
+        mock_run.return_value = (0, "output", "")
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        data.config.time_limit = 30
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        mock_task = self.initial_data.tasks[0]
+        mock_task.status = tasks.TaskStatus.COMPLETED
+        with unittest.mock.patch(
+            "lemming.tasks.finish_task_attempt", return_value=mock_task
+        ):
+            run_loop(
+                self.test_tasks_file,
+                verbose=False,
+                retry_delay=0,
+                yolo=True,
+                no_defaults=False,
+                runner_args=(),
+            )
+
+        _, kwargs = mock_run.call_args
+        self.assertEqual(kwargs.get("time_limit"), 30)
 
 
 if __name__ == "__main__":

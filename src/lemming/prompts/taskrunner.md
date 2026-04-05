@@ -60,3 +60,4 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
    `lemming --tasks-file {{tasks_file_path}} fail {{task_id}}`
 
 7. Stop and exit after running either the complete or fail command.
+{{time_limit_section}}

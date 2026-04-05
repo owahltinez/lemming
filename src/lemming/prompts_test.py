@@ -285,6 +285,38 @@ def test_hook_override_precedence(tmp_path, monkeypatch):
     assert content == "global roadmap"
 
 
+def test_prepare_prompt_time_limit_section(tmp_path):
+    """Verifies the time limit section is injected when time_limit > 0."""
+    tasks_file = tmp_path / "tasks.yml"
+    data = tasks.Roadmap(
+        tasks=[tasks.Task(id="1", description="T1")],
+    )
+    task = data.tasks[0]
+
+    # With time limit (60 minutes)
+    prompt = prompts.prepare_prompt(data, task, tasks_file, time_limit=60)
+    assert "## Time Limit" in prompt
+    assert "60 minutes" in prompt
+    assert "Record outcomes early" in prompt
+    assert "subagents" in prompt
+
+    # Without time limit
+    prompt_no_limit = prompts.prepare_prompt(data, task, tasks_file, time_limit=0)
+    assert "## Time Limit" not in prompt_no_limit
+
+
+def test_prepare_prompt_time_limit_custom(tmp_path):
+    """Verifies the time limit section uses the correct minute value."""
+    tasks_file = tmp_path / "tasks.yml"
+    data = tasks.Roadmap(
+        tasks=[tasks.Task(id="1", description="T1")],
+    )
+    task = data.tasks[0]
+
+    prompt = prompts.prepare_prompt(data, task, tasks_file, time_limit=30)
+    assert "30 minutes" in prompt
+
+
 def test_list_hooks_roadmap_is_last(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     tasks_file.touch()

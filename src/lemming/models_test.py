@@ -42,3 +42,12 @@ def test_roadmap_config_defaults():
     assert config.retries == 3
     assert config.runner == "gemini"
     assert config.hooks is None
+    assert config.time_limit == 60
+
+
+def test_roadmap_config_custom_time_limit():
+    config = models.RoadmapConfig(time_limit=30)
+    assert config.time_limit == 30
+
+    config_disabled = models.RoadmapConfig(time_limit=0)
+    assert config_disabled.time_limit == 0

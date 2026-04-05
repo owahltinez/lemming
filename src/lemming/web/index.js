@@ -50,6 +50,7 @@
       $.availableHooks = [];
       $.selectedRunner = 'gemini';
       $.retries = 3;
+      $.timeLimit = '60';
       $.envOverrides = []; // Will hydrate below
       $.hideCompleted = Storage.get('hide_completed', false);
       $.toasts = [];
@@ -69,13 +70,19 @@
       $.newFolderName = '';
 
       // --- Computed Properties ---
+      $.runningCount = $.$computed(
+        ($) => $.tasks.filter((t) => t.status === 'in_progress').length,
+      );
+      $.pendingCount = $.$computed(
+        ($) => $.tasks.filter((t) => t.status === 'pending').length,
+      );
       $.completedCount = $.$computed(
+        ($) => $.tasks.filter((t) => t.status === 'completed').length,
+      );
+      $.failedCount = $.$computed(
         ($) =>
           $.tasks.filter(
-            (t) =>
-              t.status === 'completed' ||
-              t.status === 'failed' ||
-              t.status === 'cancelled',
+            (t) => t.status === 'failed' || t.status === 'cancelled',
           ).length,
       );
 
@@ -308,6 +315,17 @@
           ) {
             $.retries = data.config.retries;
           }
+
+          const timeLimitElem = document.querySelector(
+            'select[aria-label="Time limit"]',
+          );
+          if (
+            $.loading ||
+            !timeLimitElem ||
+            document.activeElement !== timeLimitElem
+          ) {
+            $.timeLimit = String(data.config.time_limit || 0);
+          }
         }
 
         $.updateTitle();
@@ -342,6 +360,7 @@
           retries: Number.parseInt($.retries, 10) || 3,
           runner: $.selectedRunner,
           hooks: $.config.hooks,
+          time_limit: Number.parseInt($.timeLimit, 10) || 0,
         };
         await fetch(apiUrl('/api/config'), {
           method: 'POST',
@@ -354,6 +373,9 @@
         $.saveConfigToServer();
       };
       $.saveRetriesPreference = () => {
+        $.saveConfigToServer();
+      };
+      $.saveTimeLimitPreference = () => {
         $.saveConfigToServer();
       };
       $.saveHideCompletedPreference = () => {

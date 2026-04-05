@@ -103,7 +103,8 @@ def run_loop(
                 f"[{task_id}] Attempt {current_task.attempts}/{retries}: {current_task.description}"
             )
 
-        prompt = prompts.prepare_prompt(data, current_task, tasks_file)
+        time_limit = data.config.time_limit
+        prompt = prompts.prepare_prompt(data, current_task, tasks_file, time_limit)
 
         if verbose:
             click.secho("\n=== Runner Prompt ===", fg="blue", bold=True)
@@ -130,8 +131,13 @@ def run_loop(
                 echo_fn=lambda line: click.echo(line, nl=False),
                 header="Task Runner",
                 cwd=working_dir,
+                time_limit=time_limit,
             )
-            if returncode != 0:
+            if returncode == runner.RETURNCODE_TIMEOUT:
+                click.echo(
+                    f"\nTask {task_id} killed: time limit of {time_limit}m reached."
+                )
+            elif returncode != 0:
                 click.echo(
                     f"\n{runner_name.capitalize()} execution failed with exit code {returncode}"
                 )
@@ -206,6 +212,22 @@ def run_loop(
                         f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
                     )
                 time.sleep(retry_delay)
+
+
+def format_duration(minutes: int) -> str:
+    """Formats a duration in minutes as a human-readable string.
+
+    Args:
+        minutes: Duration in minutes.
+
+    Returns:
+        A human-readable duration string (e.g., '60m', '2h').
+    """
+    if minutes <= 0:
+        return "none"
+    if minutes >= 60 and minutes % 60 == 0:
+        return f"{minutes // 60}h"
+    return f"{minutes}m"
 
 
 def parse_timeout(t_str: str) -> float:

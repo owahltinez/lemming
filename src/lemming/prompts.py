@@ -197,7 +197,10 @@ def prepare_hook_prompt(
 
 
 def prepare_prompt(
-    data: tasks.Roadmap, task: tasks.Task, tasks_file: pathlib.Path
+    data: tasks.Roadmap,
+    task: tasks.Task,
+    tasks_file: pathlib.Path,
+    time_limit: int = 0,
 ) -> str:
     """Prepares the runner prompt based on the current roadmap state.
 
@@ -205,6 +208,7 @@ def prepare_prompt(
         data: The current Roadmap.
         task: The Task being executed.
         tasks_file: Path to the tasks YAML file.
+        time_limit: Maximum execution time in minutes. 0 means no limit.
 
     Returns:
         The fully rendered prompt string.
@@ -263,6 +267,21 @@ def prepare_prompt(
             outcomes_str += f"- {outcome_item}\n"
         outcomes_str += "\n"
 
+    time_limit_section = ""
+    if time_limit > 0:
+        time_limit_section = (
+            f"\n## Time Limit\n\n"
+            f"You have a hard time limit of **{time_limit} minutes**. If you exceed it, your\n"
+            f"process will be killed and any unrecorded progress will be lost.\n\n"
+            f"- **Record outcomes early and often.** Don't wait until the end. If you\n"
+            f"  are killed, your recorded outcomes will be passed to the next attempt.\n"
+            f"- **If the work is too large** for {time_limit} minutes, break it into smaller\n"
+            f"  sub-tasks using `lemming` and complete what you can.\n"
+            f"- **Leverage background tasks and subagents** if your runner supports\n"
+            f"  them. Long-running operations (builds, test suites, large refactors)\n"
+            f"  are good candidates for parallel execution."
+        )
+
     tasks_file_str = runner._pretty_quote(str(tasks_file))
     prompt_template = load_prompt("taskrunner", tasks_file)
     return (
@@ -272,4 +291,5 @@ def prepare_prompt(
         .replace("{{tasks_file_name}}", tasks_file.name)
         .replace("{{tasks_file_path}}", tasks_file_str)
         .replace("{{task_id}}", task.id)
+        .replace("{{time_limit_section}}", time_limit_section)
     )

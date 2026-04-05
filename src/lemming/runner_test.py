@@ -1,4 +1,6 @@
 import signal
+import subprocess
+import time
 import unittest.mock
 
 from lemming import runner
@@ -245,3 +247,95 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
 
         # 4. Verify cleanup was attempted
         mock_killpg.assert_called_once_with(54321, signal.SIGTERM)
+
+
+def test_returncode_timeout_constant():
+    assert runner.RETURNCODE_TIMEOUT == -14
+
+
+def test_kill_process_tree_killpg():
+    """Verifies _kill_process_tree uses killpg first."""
+    process = unittest.mock.MagicMock(spec=subprocess.Popen)
+    process.pid = 12345
+
+    with (
+        unittest.mock.patch("os.killpg") as mock_killpg,
+        unittest.mock.patch("os.getpgid", return_value=54321),
+    ):
+        runner._kill_process_tree(process)
+        mock_killpg.assert_called_once_with(54321, signal.SIGTERM)
+        process.kill.assert_not_called()
+
+
+def test_kill_process_tree_fallback():
+    """Verifies _kill_process_tree falls back to process.kill on OSError."""
+    process = unittest.mock.MagicMock(spec=subprocess.Popen)
+    process.pid = 12345
+
+    with (
+        unittest.mock.patch("os.killpg", side_effect=OSError),
+        unittest.mock.patch("os.getpgid", return_value=54321),
+    ):
+        runner._kill_process_tree(process)
+        process.kill.assert_called_once()
+
+
+def test_run_with_heartbeat_timeout(tmp_path):
+    """Verifies that run_with_heartbeat kills the process and records an outcome on timeout."""
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "timeout_task"
+
+    # Setup a task so heartbeat updates work
+    roadmap = tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test timeout")])
+    tasks.save_tasks(tasks_file, roadmap)
+    tasks.mark_task_in_progress(tasks_file, task_id)
+
+    # Use a 1-minute time limit. Mock time.monotonic to simulate elapsed time so the
+    # heartbeat loop detects the timeout immediately without waiting 60 real seconds.
+    real_monotonic = time.monotonic
+    call_count = 0
+
+    def fast_monotonic():
+        nonlocal call_count
+        call_count += 1
+        # After the first call (start_time), jump 2 minutes ahead
+        if call_count > 1:
+            return real_monotonic() + 120
+        return real_monotonic()
+
+    with unittest.mock.patch("time.monotonic", side_effect=fast_monotonic):
+        returncode, stdout, stderr = runner.run_with_heartbeat(
+            ["sleep", "60"],
+            tasks_file,
+            task_id,
+            verbose=False,
+            time_limit=1,
+        )
+
+    assert returncode == runner.RETURNCODE_TIMEOUT
+
+    # Verify the timeout outcome was recorded
+    data = tasks.load_tasks(tasks_file)
+    task = next(t for t in data.tasks if t.id == task_id)
+    assert any("time limit" in o for o in task.outcomes)
+
+
+def test_run_with_heartbeat_no_timeout(tmp_path):
+    """Verifies that time_limit=0 does not enforce any timeout."""
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "no_timeout"
+
+    roadmap = tasks.Roadmap(
+        tasks=[tasks.Task(id=task_id, description="test no timeout")]
+    )
+    tasks.save_tasks(tasks_file, roadmap)
+
+    returncode, _, _ = runner.run_with_heartbeat(
+        ["true"],
+        tasks_file,
+        task_id,
+        verbose=False,
+        time_limit=0,
+    )
+
+    assert returncode == 0

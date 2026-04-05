@@ -1,6 +1,7 @@
 import click
 from .main import cli
 from .. import tasks
+from ..orchestrator import format_duration, parse_timeout
 
 
 @cli.group(name="config", short_help="Manage project configuration")
@@ -20,6 +21,7 @@ def config_list(ctx: click.Context):
     click.secho(f"Configuration for {tasks_file}:", bold=True)
     click.echo(f"  Runner:        {c.runner}")
     click.echo(f"  Retries:       {c.retries}")
+    click.echo(f"  Time limit:    {format_duration(c.time_limit)}")
     click.echo(
         f"  Hooks:         {', '.join(c.hooks) if c.hooks is not None else '(all)'}"
     )
@@ -28,7 +30,7 @@ def config_list(ctx: click.Context):
 @config_group.command(name="set")
 @click.argument(
     "key",
-    type=click.Choice(["runner", "retries"]),
+    type=click.Choice(["runner", "retries", "time_limit"]),
 )
 @click.argument("value")
 @click.pass_context
@@ -38,6 +40,7 @@ def config_set(ctx: click.Context, key: str, value: str):
     Examples:
       lemming config set runner aider
       lemming config set retries 5
+      lemming config set time_limit 30m
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     data = tasks.load_tasks(tasks_file)
@@ -49,6 +52,12 @@ def config_set(ctx: click.Context, key: str, value: str):
             data.config.retries = int(value)
         except ValueError:
             raise click.UsageError(f"Value for {key} must be an integer.")
+    elif key == "time_limit":
+        if value.lower() == "none":
+            data.config.time_limit = 0
+        else:
+            seconds = parse_timeout(value)
+            data.config.time_limit = int(seconds // 60)
 
     tasks.save_tasks(tasks_file, data)
     click.echo(f"Updated {key} to {value}")
