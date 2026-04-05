@@ -39,6 +39,7 @@ get_loop_pid = persistence.get_loop_pid
 LOOP_LOCK_FILENAME = persistence.LOOP_LOCK_FILENAME
 
 # Re-export models for compatibility
+TaskNotFoundError = models.TaskNotFoundError
 Task = models.Task
 TaskStatus = models.TaskStatus
 ProjectData = models.ProjectData

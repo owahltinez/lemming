@@ -282,7 +282,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
         data = persistence.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
         if not target:
-            raise ValueError(f"Task {task_id} not found")
+            raise models.TaskNotFoundError(f"Task {task_id} not found")
 
         target.status = models.TaskStatus.PENDING
         target.attempts = 0

@@ -1,6 +1,6 @@
 import pathlib
 
-from .. import persistence
+from .. import models, persistence
 
 
 def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str):
@@ -18,7 +18,7 @@ def add_outcome(tasks_file: pathlib.Path, task_id: str, text: str):
         data = persistence.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
         if not target:
-            raise ValueError(f"Task {task_id} not found")
+            raise models.TaskNotFoundError(f"Task {task_id} not found")
 
         if text not in target.outcomes:
             target.outcomes.append(text)
@@ -41,7 +41,7 @@ def delete_outcome(tasks_file: pathlib.Path, task_id: str, index: int):
         data = persistence.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
         if not target:
-            raise ValueError(f"Task {task_id} not found")
+            raise models.TaskNotFoundError(f"Task {task_id} not found")
 
         if index < 0 or index >= len(target.outcomes):
             raise ValueError(
@@ -69,7 +69,7 @@ def edit_outcome(tasks_file: pathlib.Path, task_id: str, index: int, new_text: s
         data = persistence.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
         if not target:
-            raise ValueError(f"Task {task_id} not found")
+            raise models.TaskNotFoundError(f"Task {task_id} not found")
 
         if index < 0 or index >= len(target.outcomes):
             raise ValueError(

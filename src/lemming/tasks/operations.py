@@ -162,7 +162,7 @@ def update_task(
                 break
 
         if not target:
-            raise ValueError(f"Task {task_id} not found")
+            raise models.TaskNotFoundError(f"Task {task_id} not found")
 
         if target.status == models.TaskStatus.COMPLETED and description:
             raise ValueError("Cannot edit description of a completed task")

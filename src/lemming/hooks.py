@@ -97,6 +97,15 @@ def run_hooks(
     if final_status:
         try:
             tasks.update_task(tasks_file, task_id, status=final_status, force=True)
+        except tasks.TaskNotFoundError:
+            # Task may have been deleted by the orchestrator (e.g. after
+            # a failure it decided to take a different approach).  This
+            # is expected and not an error worth a traceback.
+            click.echo(
+                f"Task {task_id} was removed before it could be "
+                "finalized — the orchestrator likely restructured "
+                "the plan."
+            )
         except Exception as e:
             import traceback
 

@@ -4,6 +4,10 @@ import time
 import pydantic
 
 
+class TaskNotFoundError(ValueError):
+    """Raised when a task ID cannot be found in the roadmap."""
+
+
 class TaskStatus(enum.StrEnum):
     """Enumeration of possible task statuses."""
 
