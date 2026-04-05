@@ -48,16 +48,27 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
         )
 
     lock_path = tasks_file.with_suffix(".lock")
-    with open(lock_path, "w") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_SH)
-        try:
-            with open(tasks_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-                if not data:
-                    data = {}
-                return models.Roadmap.model_validate(data)
-        finally:
+    lock_file = None
+    try:
+        lock_file = open(lock_path, "w")
+        fcntl.flock(lock_file, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        # Already inside lock_tasks (same process holds LOCK_EX on
+        # a different fd) — safe to read without our own lock.
+        if lock_file:
+            lock_file.close()
+            lock_file = None
+
+    try:
+        with open(tasks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            if not data:
+                data = {}
+            return models.Roadmap.model_validate(data)
+    finally:
+        if lock_file:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
+            lock_file.close()
 
 
 class _BlockStyleDumper(yaml.SafeDumper):
