@@ -283,6 +283,11 @@
         const data = await response.json();
         const newTasks = data.tasks || [];
 
+        // Guard against transient empty responses from the server
+        // (e.g. reading the YAML file mid-write). Skip the update entirely
+        // so the UI doesn't flash empty and fire rogue notifications.
+        if (!newTasks.length && $.tasks.length) return;
+
         $.notifyChanges($.tasks, newTasks);
 
         // Update core state

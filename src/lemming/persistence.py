@@ -47,11 +47,17 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
             tasks=[],
         )
 
-    with open(tasks_file, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-        if not data:
-            data = {}
-        return models.Roadmap.model_validate(data)
+    lock_path = tasks_file.with_suffix(".lock")
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_SH)
+        try:
+            with open(tasks_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                if not data:
+                    data = {}
+                return models.Roadmap.model_validate(data)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 class _BlockStyleDumper(yaml.SafeDumper):
