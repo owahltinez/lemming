@@ -14,7 +14,8 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
     Returns:
         A ProjectData containing the enriched project state.
     """
-    data = persistence.load_tasks(tasks_file)
+    with persistence.read_lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
     now = time.time()
 
     # Deduplicate tasks by ID and enrich metadata.

@@ -32,6 +32,30 @@ def lock_tasks(tasks_file: pathlib.Path):
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+@contextlib.contextmanager
+def read_lock_tasks(tasks_file: pathlib.Path):
+    """Context manager that acquires a shared (read) lock on the tasks file.
+
+    Use this around load_tasks() in read-only paths (e.g. API polling) to
+    prevent reading a partially-written file. Do NOT nest inside lock_tasks()
+    as that will deadlock on Linux.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+    """
+    tasks_file.parent.mkdir(parents=True, exist_ok=True)
+    if not tasks_file.exists():
+        tasks_file.write_text("{}", encoding="utf-8")
+
+    lock_path = tasks_file.with_suffix(".lock")
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_SH)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
 def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
     """Loads tasks from a YAML file.
 
@@ -47,28 +71,11 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
             tasks=[],
         )
 
-    lock_path = tasks_file.with_suffix(".lock")
-    lock_file = None
-    try:
-        lock_file = open(lock_path, "w")
-        fcntl.flock(lock_file, fcntl.LOCK_SH | fcntl.LOCK_NB)
-    except (OSError, BlockingIOError):
-        # Already inside lock_tasks (same process holds LOCK_EX on
-        # a different fd) — safe to read without our own lock.
-        if lock_file:
-            lock_file.close()
-            lock_file = None
-
-    try:
-        with open(tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            if not data:
-                data = {}
-            return models.Roadmap.model_validate(data)
-    finally:
-        if lock_file:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
-            lock_file.close()
+    with open(tasks_file, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+        if not data:
+            data = {}
+        return models.Roadmap.model_validate(data)
 
 
 class _BlockStyleDumper(yaml.SafeDumper):
