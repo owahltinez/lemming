@@ -366,10 +366,6 @@ describe('Lemming Web Dashboard', () => {
     const taskActionsButton = taskItem.querySelector(
       '[aria-label="Task Actions"]',
     );
-    const editButton = taskItem.querySelector('[aria-label="Edit Task"]');
-    const uncompleteButton = taskItem.querySelector(
-      '[aria-label="Mark as Pending"]',
-    );
 
     assert.ok(expandButton, 'Expand button should be present');
     assert.strictEqual(
@@ -385,19 +381,14 @@ describe('Lemming Web Dashboard', () => {
       'Task Actions button should be visible',
     );
 
-    assert.ok(editButton, 'Edit button should be present');
-    assert.strictEqual(
-      editButton.style.display,
-      'none',
-      'Edit button should be hidden',
-    );
+    // Inline edit and uncomplete buttons were consolidated into the task action modal
+    const editButton = taskItem.querySelector('[aria-label="Edit Task"]');
+    assert.ok(!editButton, 'Inline Edit button should not exist');
 
-    assert.ok(uncompleteButton, 'Uncomplete button should be present');
-    assert.strictEqual(
-      uncompleteButton.style.display,
-      'none',
-      'Uncomplete button should be hidden',
+    const uncompleteButton = taskItem.querySelector(
+      '[aria-label="Mark as Pending"]',
     );
+    assert.ok(!uncompleteButton, 'Inline Uncomplete button should not exist');
   });
 
   test('shows long descriptions in queue and full in details', async () => {
@@ -719,7 +710,7 @@ describe('Lemming Web Dashboard', () => {
     }
   });
 
-  test('hides edit button for completed tasks', async () => {
+  test('no inline edit button for completed tasks', async () => {
     const tasks = [
       {
         id: '123',
@@ -748,14 +739,15 @@ describe('Lemming Web Dashboard', () => {
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
+    // Edit button was consolidated into the task action modal
     const editButton = taskItem.querySelector('[aria-label="Edit Task"]');
+    assert.ok(!editButton, 'Inline Edit button should not exist');
 
-    assert.ok(editButton, 'Edit button should be present');
-    assert.strictEqual(
-      editButton.style.display,
-      'none',
-      'Edit button should be hidden for completed tasks',
+    // Task Actions button should still be present
+    const taskActionsButton = taskItem.querySelector(
+      '[aria-label="Task Actions"]',
     );
+    assert.ok(taskActionsButton, 'Task Actions button should be present');
   });
 
   test('project context textarea attributes', async () => {
@@ -853,45 +845,17 @@ describe('Lemming Web Dashboard', () => {
     assert.strictEqual(failedChip.textContent.trim(), 'Failed');
     assert.ok(failedChip.classList.contains('bg-red-100'));
     assert.ok(failedChip.classList.contains('text-red-700'));
-    const failedUncompleteBtn = taskItems[2].querySelector(
-      '[aria-label="Mark as Pending"]',
-    );
-    assert.ok(
-      failedUncompleteBtn,
-      'Uncomplete button should be present for failed task',
-    );
-    assert.strictEqual(
-      failedUncompleteBtn.style.display,
-      '',
-      'Uncomplete button should be visible for failed task',
-    );
 
     // 4. Retriable Failed Task (pending with attempts)
     const retriableChip = taskItems[3].querySelector('[role="status"]');
     assert.strictEqual(retriableChip.textContent.trim(), 'Failed');
     assert.ok(retriableChip.classList.contains('bg-red-100'));
-    const retriableUncompleteBtn = taskItems[3].querySelector(
-      '[aria-label="Mark as Pending"]',
-    );
-    assert.strictEqual(
-      retriableUncompleteBtn.style.display,
-      'none',
-      'Uncomplete button should be hidden for retriable failed task',
-    );
 
     // 5. Completed Task
     const completedChip = taskItems[4].querySelector('[role="status"]');
     assert.strictEqual(completedChip.textContent.trim(), 'Completed');
     assert.ok(completedChip.classList.contains('bg-green-100'));
     assert.ok(completedChip.classList.contains('text-green-700'));
-    const completedUncompleteBtn = taskItems[4].querySelector(
-      '[aria-label="Mark as Pending"]',
-    );
-    assert.strictEqual(
-      completedUncompleteBtn.style.display,
-      '',
-      'Uncomplete button should be visible for completed task',
-    );
   });
 
   test('displays real-time run time for in-progress tasks', async () => {
