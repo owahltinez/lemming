@@ -25,7 +25,7 @@ class Task(pydantic.BaseModel):
     description: str
     status: TaskStatus = TaskStatus.PENDING
     attempts: int = 0
-    outcomes: list[str] = pydantic.Field(default_factory=list)
+    progress: list[str] = pydantic.Field(default_factory=list)
     runner: str | None = None
     completed_at: float | None = None
     started_at: float | None = None

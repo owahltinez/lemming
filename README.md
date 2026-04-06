@@ -12,17 +12,17 @@ human-readable `tasks.yml` file.
 - **Zero Context Drift**: By breaking projects into discrete tasks, Lemming
   ensures agents stay focused. They only see the project context, relevant
   history, and the specific task at hand.
-- **Transparency & Control**: Every decision, technical finding, and outcome is
+- **Transparency & Control**: Every decision, technical finding, and progress update is
   recorded in a human-readable `tasks.yml` file. You can step in, adjust the
   roadmap, or swap agents at any time.
 - **Tool Agnostic**: Lemming doesn't care which agent you use. It works
   out-of-the-box with `gemini`, `aider`, `claude`, `codex`, or even your own
   custom scripts.
 - **Resilient Execution**: With built-in heartbeat monitoring, automatic
-  retries, and outcome tracking, Lemming handles process crashes and rate limits
+  retries, and progress tracking, Lemming handles process crashes and rate limits
   gracefully.
 - **Human-Agent Collaboration**: Use the CLI or the Web UI to collaborate with
-  your agents in real-time. Mark tasks, edit descriptions, and review outcomes
+  your agents in real-time. Mark tasks, edit descriptions, and review progress
   as they happen.
 
 ---
@@ -99,21 +99,21 @@ lemming serve --tunnel cloudflare
 ## How it Works
 
 Lemming maintains a human-readable `tasks.yml` file containing your project
-context, a queue of tasks, and recorded outcomes. When you run `lemming run`, it
+context, a queue of tasks, and recorded progress. When you run `lemming run`, it
 loops through each pending task:
 
 1.  **Build a scoped prompt**: Lemming assembles a prompt containing only the
-    project context, a summary of completed tasks and their outcomes, and the
+    project context, a summary of completed tasks and their progress, and the
     current task description.
 2.  **Invoke the agent**: It launches your chosen agent CLI with that prompt,
     monitors it with heartbeats, and streams output to a log file.
 3.  **Collect results**: The agent reports back via the Lemming CLI — recording
-    findings with `lemming outcome`, then marking the task with
+    findings with `lemming progress`, then marking the task with
     `lemming complete` or `lemming fail`. Agents can also schedule new tasks
     with `lemming add`, breaking down complex work into smaller steps that
     Lemming will pick up automatically.
 4.  **Retry or advance**: On failure, Lemming retries the task (up to
-    `--retries`) with accumulated outcomes as context, so the agent learns from
+    `--retries`) with accumulated progress as context, so the agent learns from
     previous attempts. On success, it moves to the next task.
 5.  **Orchestration**: After each task, Lemming can run one or more
     **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the
@@ -155,7 +155,7 @@ Lemming comes with several built-in hooks to help manage your project:
   tasks, or breaking down a broad task).
 - **`readability`**: A code quality hook that reviews changes for adherence to
   the Google Style Guide and general readability using the bundled
-  `lemming readability` tool. It can record findings as task outcomes or suggest
+  `lemming readability` tool. It can record findings as task progress or suggest
   follow-up refactoring tasks.
 
 ### Custom and Global Hooks
@@ -205,12 +205,12 @@ lemming hooks set roadmap lint
 - **`edit <id>`**: Modify a task's description, runner, or position.
 - **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk
   operations.
-- **`outcome`**: Manage technical outcomes or findings for specific tasks.
+- **`progress`**: Manage progress entries and findings for specific tasks.
   Supports shorthand `<id> <finding>` syntax for quick additions.
-  - `list <id>`: List all outcomes for a task.
+  - `list <id>`: List all progress for a task.
   - `add <id> <finding>`: Record a new technical detail.
-  - `edit <id> <index> <text>`: Modify an existing outcome.
-  - `delete <id> <index>`: Remove an outcome.
+  - `edit <id> <index> <text>`: Modify an existing progress entry.
+  - `delete <id> <index>`: Remove a progress entry.
 - **`config`**: Manage project configuration (runner, retries).
   - `list`: View current configuration.
   - `set <key> <value>`: Update a setting.
@@ -232,7 +232,7 @@ lemming hooks set roadmap lint
 - **`complete <id>`**: Mark a task as successful.
 - **`fail <id>`**: Mark a task as a terminal failure (will not be retried).
 - **`cancel <id>`**: Stop an in-progress task (kills the runner process).
-- **`reset <id>`**: Clear attempts and outcomes to start a task fresh.
+- **`reset <id>`**: Clear attempts and progress to start a task fresh.
 - **`logs [<id>]`**: Print a task's execution log to stdout. If no ID is
   provided, it defaults to the active or most recent task. Orchestrator hook
   output is automatically appended.

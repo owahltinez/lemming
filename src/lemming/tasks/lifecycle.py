@@ -269,7 +269,7 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
 
 
 def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
-    """Resets a task's attempts and outcomes.
+    """Resets a task's attempts and progress.
 
     Args:
         tasks_file: Path to the tasks YAML file.
@@ -286,7 +286,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
 
         target.status = models.TaskStatus.PENDING
         target.attempts = 0
-        target.outcomes = []
+        target.progress = []
         target.run_time = 0.0
         target.completed_at = None
         target.started_at = None

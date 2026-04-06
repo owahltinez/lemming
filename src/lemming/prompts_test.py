@@ -18,7 +18,7 @@ def test_prepare_prompt(tmp_path):
                 id="1",
                 description="T1",
                 status=tasks.TaskStatus.COMPLETED,
-                outcomes=["O1"],
+                progress=["O1"],
             ),
             tasks.Task(id="2", description="T2", status=tasks.TaskStatus.PENDING),
         ],
@@ -40,7 +40,7 @@ def test_prepare_prompt_with_parent_context(tmp_path):
     parent_task = tasks.Task(
         id="parent123",
         description="Parent Task Description",
-        outcomes=["Parent Outcome 1"],
+        progress=["Parent Outcome 1"],
     )
     root_data = tasks.Roadmap(tasks=[parent_task])
     tasks.save_tasks(root_tasks_file, root_data)
@@ -108,7 +108,7 @@ def test_prepare_hook_prompt_substitution(tmp_path, monkeypatch):
                 id="task1",
                 description="Task 1",
                 status=tasks.TaskStatus.COMPLETED,
-                outcomes=["Done"],
+                progress=["Done"],
             ),
             tasks.Task(
                 id="task2", description="Task 2", status=tasks.TaskStatus.IN_PROGRESS
@@ -146,7 +146,7 @@ File Path: {{tasks_file_path}}
     assert "Finished Task: Task ID: task1" in prompt
     assert "Description: Task 1" in prompt
     assert "Result: completed" in prompt
-    assert "Outcomes:\n- Done" in prompt
+    assert "Progress:\n- Done" in prompt
 
     # Verify log inclusion
     assert "Execution log of THIS task" in prompt
@@ -297,7 +297,7 @@ def test_prepare_prompt_time_limit_section(tmp_path):
     prompt = prompts.prepare_prompt(data, task, tasks_file, time_limit=60)
     assert "## Time Limit" in prompt
     assert "60 minutes" in prompt
-    assert "Record outcomes early" in prompt
+    assert "Record progress early" in prompt
     assert "subagents" in prompt
 
     # Without time limit

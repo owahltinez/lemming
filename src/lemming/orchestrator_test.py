@@ -24,7 +24,7 @@ class TestOrchestrator(unittest.TestCase):
                     description="Task 1",
                     status=tasks.TaskStatus.PENDING,
                     attempts=0,
-                    outcomes=[],
+                    progress=[],
                 )
             ],
             config=tasks.RoadmapConfig(retries=3, runner="gemini"),

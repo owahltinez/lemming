@@ -23,7 +23,7 @@ const mockTasks = [
     completed_at: 1711324800,
     run_time: 142.3,
     started_at: null,
-    outcomes: [
+    progress: [
       'Created .github/workflows/ci.yml with build, test, and deploy stages',
       'Added caching for node_modules to speed up builds',
     ],
@@ -41,7 +41,7 @@ const mockTasks = [
     completed_at: 1711328400,
     run_time: 287.6,
     started_at: null,
-    outcomes: [
+    progress: [
       'Added /auth/login and /auth/refresh endpoints',
       'Tokens expire after 15 minutes, refresh tokens after 7 days',
     ],
@@ -58,7 +58,7 @@ const mockTasks = [
     completed_at: null,
     run_time: 45.2,
     started_at: Date.now() / 1000 - 63,
-    outcomes: [],
+    progress: [],
   },
   {
     id: 'j0k1l2',
@@ -73,7 +73,7 @@ const mockTasks = [
     completed_at: null,
     run_time: null,
     started_at: null,
-    outcomes: [],
+    progress: [],
   },
   {
     id: 'm3n4o5',
@@ -87,7 +87,7 @@ const mockTasks = [
     completed_at: null,
     run_time: 98.1,
     started_at: null,
-    outcomes: [
+    progress: [
       'Stripe webhook signature verification failing in test environment',
     ],
   },
@@ -104,7 +104,7 @@ const mockTasks = [
     completed_at: null,
     run_time: null,
     started_at: null,
-    outcomes: [],
+    progress: [],
   },
 ];
 

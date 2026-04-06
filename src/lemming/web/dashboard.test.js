@@ -89,35 +89,35 @@ describe('Lemming Web Dashboard', () => {
         description: 'Oldest Completed',
         status: 'completed',
         completed_at: 1000,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'p1',
         description: 'Pending 1',
         status: 'pending',
         created_at: 500,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'r1',
         description: 'Running',
         status: 'in_progress',
         created_at: 1500,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'c2',
         description: 'Newest Completed',
         status: 'completed',
         completed_at: 2000,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'p2',
         description: 'Pending 2',
         status: 'pending',
         created_at: 3000,
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -161,7 +161,7 @@ describe('Lemming Web Dashboard', () => {
         status: 'pending',
         created_at: 1000,
         index: 0,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'b',
@@ -169,7 +169,7 @@ describe('Lemming Web Dashboard', () => {
         status: 'pending',
         created_at: 1000,
         index: 1,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'c',
@@ -177,7 +177,7 @@ describe('Lemming Web Dashboard', () => {
         status: 'pending',
         created_at: 1000,
         index: 2,
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -249,14 +249,14 @@ describe('Lemming Web Dashboard', () => {
         description: 'Test Task 1',
         status: 'pending',
         attempts: 0,
-        outcomes: [],
+        progress: [],
       },
       {
         id: '456',
         description: 'Test Task 2',
         status: 'completed',
         attempts: 1,
-        outcomes: ['Success'],
+        progress: ['Success'],
       },
     ];
 
@@ -297,14 +297,14 @@ describe('Lemming Web Dashboard', () => {
         description: 'Pending Task',
         status: 'pending',
         attempts: 0,
-        outcomes: [],
+        progress: [],
       },
       {
         id: '456',
         description: 'Completed Task',
         status: 'completed',
         attempts: 1,
-        outcomes: ['Success'],
+        progress: ['Success'],
       },
     ];
 
@@ -339,7 +339,7 @@ describe('Lemming Web Dashboard', () => {
         description: 'Running Task',
         status: 'in_progress',
         attempts: 1,
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -400,7 +400,7 @@ describe('Lemming Web Dashboard', () => {
         description: longDescription,
         status: 'pending',
         attempts: 0,
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -462,7 +462,7 @@ describe('Lemming Web Dashboard', () => {
         description: 'Pending',
         status: 'pending',
         attempts: 0,
-        outcomes: [],
+        progress: [],
       },
     ];
     let renderer = new Renderer(
@@ -500,14 +500,14 @@ describe('Lemming Web Dashboard', () => {
         description: 'Pending',
         status: 'pending',
         attempts: 0,
-        outcomes: [],
+        progress: [],
       },
       {
         id: '2',
         description: 'Completed',
         status: 'completed',
         attempts: 1,
-        outcomes: [],
+        progress: [],
       },
     ];
     renderer = new Renderer(
@@ -596,14 +596,14 @@ describe('Lemming Web Dashboard', () => {
     );
   });
 
-  test('renders outcomes with whitespace-pre-wrap class', async () => {
+  test('renders progress with whitespace-pre-wrap class', async () => {
     const initialState = createInitialState({
       tasks: [
         {
           id: '123',
-          description: 'Task with outcomes',
+          description: 'Task with progress',
           status: 'completed',
-          outcomes: ['Outcome 1', 'Outcome 2'],
+          progress: ['Progress 1', 'Progress 2'],
         },
       ],
     });
@@ -619,27 +619,27 @@ describe('Lemming Web Dashboard', () => {
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
-    const outcomesList = taskItem.querySelector('ul');
-    const outcomeItems = outcomesList.querySelectorAll('li');
-    assert.strictEqual(outcomeItems.length, 2);
+    const progressList = taskItem.querySelector('ul');
+    const progressItems = progressList.querySelectorAll('li');
+    assert.strictEqual(progressItems.length, 2);
     assert.ok(
-      outcomeItems[0].classList.contains('whitespace-pre-wrap'),
-      'First outcome should have whitespace-pre-wrap class',
+      progressItems[0].classList.contains('whitespace-pre-wrap'),
+      'First progress entry should have whitespace-pre-wrap class',
     );
     assert.ok(
-      outcomeItems[1].classList.contains('whitespace-pre-wrap'),
-      'Second outcome should have whitespace-pre-wrap class',
+      progressItems[1].classList.contains('whitespace-pre-wrap'),
+      'Second progress entry should have whitespace-pre-wrap class',
     );
   });
 
-  test('renders outcomes but no add outcome form', async () => {
+  test('renders progress entries in expanded details', async () => {
     const tasks = [
       {
         id: '123',
-        description: 'Task with outcomes',
+        description: 'Task with progress',
         status: 'pending',
         attempts: 1,
-        outcomes: ['Outcome 1', 'Outcome 2'],
+        progress: ['Step 1 done', 'Step 2 done'],
       },
     ];
 
@@ -658,27 +658,22 @@ describe('Lemming Web Dashboard', () => {
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
-    const outcomesList = taskItem.querySelector('ul');
-    assert.ok(outcomesList, 'Outcomes list should be present');
-    const outcomeItems = outcomesList.querySelectorAll('li');
-    assert.strictEqual(outcomeItems.length, 2);
-    assert.strictEqual(outcomeItems[0].textContent.trim(), 'Outcome 1');
-    assert.strictEqual(outcomeItems[1].textContent.trim(), 'Outcome 2');
-
-    const addOutcomeForm = taskItem.querySelector(
-      'form[aria-label="Add outcome to task 123"]',
-    );
-    assert.ok(!addOutcomeForm, 'Add outcome form should NOT be present');
+    const progressList = taskItem.querySelector('ul');
+    assert.ok(progressList, 'Progress list should be present');
+    const progressItems = progressList.querySelectorAll('li');
+    assert.strictEqual(progressItems.length, 2);
+    assert.strictEqual(progressItems[0].textContent.trim(), 'Step 1 done');
+    assert.strictEqual(progressItems[1].textContent.trim(), 'Step 2 done');
   });
 
-  test('hides outcomes section when no outcomes are present', async () => {
+  test('hides progress section when no progress is present', async () => {
     const tasks = [
       {
         id: '123',
-        description: 'Task with no outcomes',
+        description: 'Task with no progress',
         status: 'pending',
         attempts: 0,
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -697,15 +692,15 @@ describe('Lemming Web Dashboard', () => {
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
-    const outcomesHeader = Array.from(taskItem.querySelectorAll('span')).find(
-      (s) => s.textContent.trim() === 'Outcomes:',
+    const progressHeader = Array.from(taskItem.querySelectorAll('span')).find(
+      (s) => s.textContent.trim() === 'Progress:',
     );
-    if (outcomesHeader) {
-      const outcomesDiv = outcomesHeader.parentElement;
+    if (progressHeader) {
+      const progressDiv = progressHeader.parentElement;
       assert.strictEqual(
-        outcomesDiv.style.display,
+        progressDiv.style.display,
         'none',
-        'Outcomes section should be hidden',
+        'Progress section should be hidden',
       );
     }
   });
@@ -717,7 +712,7 @@ describe('Lemming Web Dashboard', () => {
         description: 'Completed Task',
         status: 'completed',
         attempts: 1,
-        outcomes: ['Success'],
+        progress: ['Success'],
       },
     ];
 
@@ -780,35 +775,35 @@ describe('Lemming Web Dashboard', () => {
         description: 'Running Task',
         status: 'in_progress',
         attempts: 1,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'p1',
         description: 'Pending Task',
         status: 'pending',
         attempts: 0,
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'f1',
         description: 'Terminal Failed Task',
         status: 'failed',
         attempts: 1,
-        outcomes: ['Fatal error'],
+        progress: ['Fatal error'],
       },
       {
         id: 'f2',
         description: 'Retriable Failed Task',
         status: 'pending',
         attempts: 1,
-        outcomes: ['Temporary error'],
+        progress: ['Temporary error'],
       },
       {
         id: 'c1',
         description: 'Completed Task',
         status: 'completed',
         attempts: 1,
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -868,7 +863,7 @@ describe('Lemming Web Dashboard', () => {
         attempts: 1,
         run_time: 50.0,
         last_started_at: now - 20, // Started 20 seconds ago
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -904,14 +899,14 @@ describe('Lemming Web Dashboard', () => {
         status: 'in_progress',
         attempts: 1,
         started_at: now - 3600, // Started 1 hour ago
-        outcomes: [],
+        progress: [],
       },
       {
         id: 'c1',
         description: 'Completed Task',
         status: 'completed',
         completed_at: now - 1800, // Completed 30 mins ago
-        outcomes: [],
+        progress: [],
       },
     ];
 
@@ -986,7 +981,7 @@ describe('Lemming Web Dashboard', () => {
 
   test('renders copy task id button', async () => {
     const tasks = [
-      { id: '123', description: 'Test', status: 'pending', outcomes: [] },
+      { id: '123', description: 'Test', status: 'pending', progress: [] },
     ];
     const renderer = new Renderer(
       createInitialState({

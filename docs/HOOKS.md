@@ -32,7 +32,7 @@ a broad task).
 
 A code quality hook that reviews changes for adherence to the Google Style Guide
 and general readability using the bundled `lemming readability` tool. It
-provides feedback via task outcomes or suggests follow-up refactoring tasks.
+provides feedback via task progress or suggests follow-up refactoring tasks.
 
 ## Custom Hooks
 
@@ -125,7 +125,7 @@ Your hook template can use the following placeholders:
 - `{{roadmap}}`: A structured summary of the entire project context and all
   tasks.
 - `{{finished_task}}`: Details about the task that just finished (ID,
-  description, outcomes, and the last 100 lines of its execution log).
+  description, progress, and the last 100 lines of its execution log).
 - `{{finished_task_id}}`: The ID of the task that just finished.
 - `{{tasks_file_name}}`: The filename of the tasks YAML file.
 - `{{tasks_file_path}}`: The full path to the tasks YAML file.

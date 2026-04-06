@@ -259,7 +259,7 @@ def run_with_heartbeat(
                     elapsed = time.monotonic() - start_time
                     if elapsed >= time_limit * 60:
                         timed_out = True
-                        tasks.add_outcome(
+                        tasks.add_progress(
                             tasks_file,
                             task_id,
                             f"Task killed: time limit of {time_limit} minutes reached.",

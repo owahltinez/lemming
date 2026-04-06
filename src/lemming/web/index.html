@@ -668,17 +668,17 @@
                   >
                 </div>
               </div>
-              <div :show="task.outcomes?.length > 0" class="mt-3">
+              <div :show="task.progress?.length > 0" class="mt-3">
                 <span
                   class="font-semibold uppercase text-gray-400 block mb-1 text-9px"
-                  >Outcomes:</span
+                  >Progress:</span
                 >
                 <ul class="list-disc ml-4 space-y-1 mb-2">
                   <li
-                    :for="outcome in task.outcomes"
+                    :for="entry in task.progress"
                     :key="task.id + '-' + $index"
                     class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap"
-                    :text="outcome"
+                    :text="entry"
                   ></li>
                 </ul>
               </div>

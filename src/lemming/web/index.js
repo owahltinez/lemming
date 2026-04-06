@@ -220,10 +220,10 @@
               'error',
             );
           } else if (
-            (newTask.outcomes?.length || 0) > (oldTask.outcomes?.length || 0)
+            (newTask.progress?.length || 0) > (oldTask.progress?.length || 0)
           ) {
             $.addToast(
-              `Outcome recorded: ${$.trim(newTask.outcomes[newTask.outcomes.length - 1], 60)}`,
+              `Progress recorded: ${$.trim(newTask.progress[newTask.progress.length - 1], 60)}`,
               'info',
             );
           } else if (newTask.attempts > oldTask.attempts) {
@@ -584,7 +584,7 @@
       };
 
       $.clearTask = async (id) => {
-        if (confirm('Clear task attempts and outcomes?')) {
+        if (confirm('Clear task attempts and progress?')) {
           const res = await fetch(apiUrl(`/api/tasks/${id}/clear`), {
             method: 'POST',
           });

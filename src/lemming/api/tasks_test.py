@@ -61,7 +61,7 @@ def test_delete_completed_tasks_includes_failed(client, test_tasks):
                 description="Failed Task",
                 status=tasks.TaskStatus.FAILED,
                 attempts=1,
-                outcomes=["Error"],
+                progress=["Error"],
                 completed_at=123456789.0,
             )
         )
@@ -112,19 +112,19 @@ def test_update_completed_task_description_fails(client, test_tasks):
 
 
 def test_mark_task_failed_via_api(client, test_tasks):
-    # task2 is pending with no outcomes
-    # 1. Try to fail without outcomes -> should fail
+    # task2 is pending with no progress
+    # 1. Try to fail without progress -> should fail
     response = client.post(
         "/api/tasks/task2/update", json={"status": tasks.TaskStatus.FAILED}
     )
     assert response.status_code == 400
-    assert "has no recorded outcomes" in response.json()["detail"]
+    assert "has no recorded progress" in response.json()["detail"]
 
-    # 2. Add outcome and try again
+    # 2. Add progress and try again
     with tasks.lock_tasks(test_tasks):
         data = tasks.load_tasks(test_tasks)
         task2 = next(t for t in data.tasks if t.id == "task2")
-        task2.outcomes = ["Failed attempt"]
+        task2.progress = ["Failed attempt"]
         tasks.save_tasks(test_tasks, data)
 
     response = client.post(
@@ -232,7 +232,7 @@ def test_api_delete_log_cleanup(client, test_tasks):
             description="api delete test",
             status=tasks.TaskStatus.PENDING,
             attempts=0,
-            outcomes=[],
+            progress=[],
         )
     )
     tasks.save_tasks(test_tasks_file, data)
@@ -289,12 +289,12 @@ def test_project_delete_completed_isolation(client, test_tasks):
     )
     assert res.status_code == 200
     task_id = res.json()["id"]
-    # Mark it completed (requires outcomes, so use update_task directly)
+    # Mark it completed (requires progress, so use update_task directly)
     tasks.update_task(
         paths.get_tasks_file_for_dir(subdir),
         task_id,
         status=tasks.TaskStatus.COMPLETED,
-        require_outcomes=False,
+        require_progress=False,
     )
 
     # Delete completed in ROOT
@@ -341,7 +341,7 @@ def test_add_task_does_not_restart_if_running(client, test_tasks):
 def test_update_task_to_pending_does_not_start_loop(client, test_tasks):
     # Add a completed task
     task = tasks.add_task(test_tasks, "Completed task")
-    tasks.add_outcome(test_tasks, task.id, "Done")
+    tasks.add_progress(test_tasks, task.id, "Done")
     tasks.update_task(test_tasks, task.id, status=tasks.TaskStatus.COMPLETED)
 
     with patch("subprocess.Popen") as mock_popen:
@@ -361,7 +361,7 @@ def test_update_task_to_pending_does_not_start_loop(client, test_tasks):
 def test_clear_task_does_not_start_loop(client, test_tasks):
     # Add a completed task
     task = tasks.add_task(test_tasks, "Completed task")
-    tasks.add_outcome(test_tasks, task.id, "Done")
+    tasks.add_progress(test_tasks, task.id, "Done")
     tasks.update_task(test_tasks, task.id, status=tasks.TaskStatus.COMPLETED)
 
     with patch("subprocess.Popen") as mock_popen:

@@ -281,7 +281,7 @@ def test_kill_process_tree_fallback():
 
 
 def test_run_with_heartbeat_timeout(tmp_path):
-    """Verifies that run_with_heartbeat kills the process and records an outcome on timeout."""
+    """Verifies that run_with_heartbeat kills the process and records progress on timeout."""
     tasks_file = tmp_path / "tasks.yml"
     task_id = "timeout_task"
 
@@ -314,10 +314,10 @@ def test_run_with_heartbeat_timeout(tmp_path):
 
     assert returncode == runner.RETURNCODE_TIMEOUT
 
-    # Verify the timeout outcome was recorded
+    # Verify the timeout progress was recorded
     data = tasks.load_tasks(tasks_file)
     task = next(t for t in data.tasks if t.id == task_id)
-    assert any("time limit" in o for o in task.outcomes)
+    assert any("time limit" in o for o in task.progress)
 
 
 def test_run_with_heartbeat_no_timeout(tmp_path):

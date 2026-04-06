@@ -63,9 +63,9 @@ def update_task(
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     status = update.get("status")
 
-    # Validation: require outcomes if completing or failing from the UI,
+    # Validation: require progress if completing or failing from the UI,
     # but not if we are just marking a finished task as pending (uncomplete).
-    require_outcomes = False
+    require_progress = False
     if status in (
         tasks.TaskStatus.COMPLETED,
         tasks.TaskStatus.FAILED,
@@ -78,7 +78,7 @@ def update_task(
             tasks.TaskStatus.FAILED,
             tasks.TaskStatus.CANCELLED,
         ):
-            require_outcomes = True
+            require_progress = True
 
     try:
         updated_task = tasks.update_task(
@@ -88,7 +88,7 @@ def update_task(
             runner=update.get("runner"),
             index=update.get("index"),
             status=status,
-            require_outcomes=require_outcomes,
+            require_progress=require_progress,
             parent=update.get("parent"),
         )
         return updated_task

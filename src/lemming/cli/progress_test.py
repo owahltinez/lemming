@@ -7,7 +7,7 @@ from lemming import cli
 from lemming import tasks
 
 
-class TestCLIOutcomes(unittest.TestCase):
+class TestCLIProgress(unittest.TestCase):
     def setUp(self):
         self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
@@ -23,7 +23,7 @@ class TestCLIOutcomes(unittest.TestCase):
                     description="Initial Task",
                     status=tasks.TaskStatus.PENDING,
                     attempts=0,
-                    outcomes=[],
+                    progress=[],
                 )
             ],
         )
@@ -32,43 +32,43 @@ class TestCLIOutcomes(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir)
 
-    def test_outcome_add(self):
+    def test_progress_add(self):
         result = self.cli_runner.invoke(
-            cli.cli, self.base_args + ["outcome", "12345678", "Observed behavior X"]
+            cli.cli, self.base_args + ["progress", "12345678", "Observed behavior X"]
         )
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Outcome added to task", result.output)
+        self.assertIn("Progress added to task", result.output)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertIn("Observed behavior X", data.tasks[0].outcomes)
+        self.assertIn("Observed behavior X", data.tasks[0].progress)
 
-    def test_outcome_list(self):
-        self.cli_runner.invoke(cli.cli, self.base_args + ["outcome", "12345678", "O1"])
+    def test_progress_list(self):
+        self.cli_runner.invoke(cli.cli, self.base_args + ["progress", "12345678", "O1"])
         result = self.cli_runner.invoke(
-            cli.cli, self.base_args + ["outcome", "list", "12345678"]
+            cli.cli, self.base_args + ["progress", "list", "12345678"]
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("[0] O1", result.output)
 
-    def test_outcome_edit(self):
-        self.cli_runner.invoke(cli.cli, self.base_args + ["outcome", "12345678", "O1"])
+    def test_progress_edit(self):
+        self.cli_runner.invoke(cli.cli, self.base_args + ["progress", "12345678", "O1"])
         result = self.cli_runner.invoke(
-            cli.cli, self.base_args + ["outcome", "edit", "12345678", "0", "New O1"]
+            cli.cli, self.base_args + ["progress", "edit", "12345678", "0", "New O1"]
         )
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Outcome 0 updated", result.output)
+        self.assertIn("Progress 0 updated", result.output)
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].outcomes[0], "New O1")
+        self.assertEqual(data.tasks[0].progress[0], "New O1")
 
-    def test_outcome_delete(self):
-        self.cli_runner.invoke(cli.cli, self.base_args + ["outcome", "12345678", "O1"])
+    def test_progress_delete(self):
+        self.cli_runner.invoke(cli.cli, self.base_args + ["progress", "12345678", "O1"])
         result = self.cli_runner.invoke(
-            cli.cli, self.base_args + ["outcome", "delete", "12345678", "0"]
+            cli.cli, self.base_args + ["progress", "delete", "12345678", "0"]
         )
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Outcome 0 deleted", result.output)
+        self.assertIn("Progress 0 deleted", result.output)
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(len(data.tasks[0].outcomes), 0)
+        self.assertEqual(len(data.tasks[0].progress), 0)
 
 
 if __name__ == "__main__":

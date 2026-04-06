@@ -13,7 +13,7 @@ the plan up-to-date with minimal friction.
 
 ## Directives
 
-1.  **Diagnose**: Review the execution logs and outcomes of the finished task to
+1.  **Diagnose**: Review the execution logs and progress of the finished task to
     understand its impact on the roadmap. Check if the task was FULLY completed,
     including any necessary cleanup, teardowns, or documentation.
 2.  **Repair**: If a task has failed, you MUST intervene — do not leave a failed
@@ -44,7 +44,7 @@ lemming --tasks-file {{tasks_file_path}} edit <id> --description '<desc>'
 # Reset/Delete/Status
 lemming --tasks-file {{tasks_file_path}} reset <id>
 lemming --tasks-file {{tasks_file_path}} delete <id>
-lemming --tasks-file {{tasks_file_path}} outcome <id> '<finding>'
+lemming --tasks-file {{tasks_file_path}} progress <id> '<finding>'
 ```
 
 Avoid "be thorough" mindset — favor speed and clarity. Only act if the roadmap

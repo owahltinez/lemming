@@ -22,7 +22,7 @@ class TestIntegration(unittest.TestCase):
                     description="Task 1",
                     status=models.TaskStatus.PENDING,
                     attempts=0,
-                    outcomes=[],
+                    progress=[],
                 )
             ],
             config=models.RoadmapConfig(retries=3, runner="true"),

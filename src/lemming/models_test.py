@@ -15,7 +15,7 @@ def test_task_model_defaults():
     task = models.Task(id="123", description="Test")
     assert task.status == models.TaskStatus.PENDING
     assert task.attempts == 0
-    assert task.outcomes == []
+    assert task.progress == []
     assert task.run_time == 0.0
     assert task.created_at > 0
 

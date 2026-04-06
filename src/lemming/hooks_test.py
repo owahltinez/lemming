@@ -22,7 +22,7 @@ class TestHooks(unittest.TestCase):
                     description="Initial Task",
                     status=tasks.TaskStatus.PENDING,
                     attempts=0,
-                    outcomes=[],
+                    progress=[],
                 )
             ],
             config=tasks.RoadmapConfig(retries=3, runner="gemini", hooks=["roadmap"]),

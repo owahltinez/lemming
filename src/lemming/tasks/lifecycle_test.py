@@ -208,7 +208,7 @@ def test_reset_task(tmp_path):
                 id=task_id,
                 description="Task 1",
                 status=models.TaskStatus.COMPLETED,
-                outcomes=["done"],
+                progress=["done"],
             )
         ],
     )
@@ -221,5 +221,5 @@ def test_reset_task(tmp_path):
 
     reset_task = lifecycle.reset_task(tasks_file, task_id)
     assert reset_task.status == models.TaskStatus.PENDING
-    assert reset_task.outcomes == []
+    assert reset_task.progress == []
     assert not log_file.exists()

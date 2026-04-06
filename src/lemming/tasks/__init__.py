@@ -19,10 +19,10 @@ from .operations import (
     update_context as update_context,
     update_task as update_task,
 )
-from .outcomes import (
-    add_outcome as add_outcome,
-    delete_outcome as delete_outcome,
-    edit_outcome as edit_outcome,
+from .progress import (
+    add_progress as add_progress,
+    delete_progress as delete_progress,
+    edit_progress as edit_progress,
 )
 from .queries import (
     get_pending_task as get_pending_task,

@@ -75,6 +75,10 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
         data = yaml.safe_load(f)
         if not data:
             data = {}
+        # TODO(compat): Remove once all clients write "progress" instead of "outcomes".
+        for task_data in data.get("tasks", []):
+            if "outcomes" in task_data:
+                task_data["progress"] = task_data.pop("outcomes")
         return models.Roadmap.model_validate(data)
 
 

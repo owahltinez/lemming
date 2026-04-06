@@ -24,7 +24,7 @@ class TestCLITasks(unittest.TestCase):
                     description="Initial Task",
                     status=tasks.TaskStatus.PENDING,
                     attempts=0,
-                    outcomes=[],
+                    progress=[],
                 )
             ],
         )
@@ -87,7 +87,7 @@ class TestCLITasks(unittest.TestCase):
 
     def test_task_complete(self):
         self.cli_runner.invoke(
-            cli.cli, self.base_args + ["outcome", "12345678", "Done"]
+            cli.cli, self.base_args + ["progress", "12345678", "Done"]
         )
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["complete", "12345678"]
@@ -100,7 +100,7 @@ class TestCLITasks(unittest.TestCase):
     def test_task_uncomplete(self):
         # First complete it
         self.cli_runner.invoke(
-            cli.cli, self.base_args + ["outcome", "12345678", "Done"]
+            cli.cli, self.base_args + ["progress", "12345678", "Done"]
         )
         self.cli_runner.invoke(cli.cli, self.base_args + ["complete", "12345678"])
 
@@ -114,7 +114,7 @@ class TestCLITasks(unittest.TestCase):
 
     def test_task_fail(self):
         self.cli_runner.invoke(
-            cli.cli, self.base_args + ["outcome", "12345678", "Failed reason"]
+            cli.cli, self.base_args + ["progress", "12345678", "Failed reason"]
         )
         result = self.cli_runner.invoke(cli.cli, self.base_args + ["fail", "12345678"])
         self.assertEqual(result.exit_code, 0)
@@ -137,7 +137,7 @@ class TestCLITasks(unittest.TestCase):
     def test_reset_command(self):
         result = self.cli_runner.invoke(cli.cli, self.base_args + ["reset", "12345678"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("attempts, outcomes, and logs cleared", result.output)
+        self.assertIn("attempts, progress, and logs cleared", result.output)
 
 
 if __name__ == "__main__":

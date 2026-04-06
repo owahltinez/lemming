@@ -154,17 +154,17 @@ def prepare_hook_prompt(
             marker = "[PENDING]"
 
         roadmap_str += f"- {marker} ({t.id}) {t.description}\n"
-        if t.outcomes:
-            for o in t.outcomes:
+        if t.progress:
+            for o in t.progress:
                 roadmap_str += f"  - {o}\n"
 
     finished_str = f"Task ID: {finished_task.id}\n"
     finished_str += f"Description: {finished_task.description}\n"
     finished_str += f"Result: {finished_task.status}\n"
     finished_str += f"Attempts: {finished_task.attempts}\n"
-    if finished_task.outcomes:
-        finished_str += "Outcomes:\n"
-        for o in finished_task.outcomes:
+    if finished_task.progress:
+        finished_str += "Progress:\n"
+        for o in finished_task.progress:
             finished_str += f"- {o}\n"
 
     # Include the last 100 lines of the runner log for the finished task.
@@ -236,9 +236,9 @@ def prepare_prompt(
                 if parent_task:
                     roadmap_str += "## Parent Task Context (From root project)\n"
                     roadmap_str += f"- [ ] {parent_task.description}\n"
-                    if parent_task.outcomes:
-                        for outcome_item in parent_task.outcomes:
-                            roadmap_str += f"  - {outcome_item}\n"
+                    if parent_task.progress:
+                        for progress_item in parent_task.progress:
+                            roadmap_str += f"  - {progress_item}\n"
                     roadmap_str += "\n"
         except Exception:
             pass
@@ -247,11 +247,11 @@ def prepare_prompt(
         roadmap_str += "## Completed Tasks (Historical context)\n"
         for i, t in enumerate(completed_tasks):
             roadmap_str += f"- [x] {t.description}\n"
-            if t.outcomes:
-                # Only show outcomes for the last 5 completed tasks to keep the prompt concise
+            if t.progress:
+                # Only show progress for the last 5 completed tasks to keep the prompt concise
                 if len(completed_tasks) - i <= 5:
-                    for outcome_item in t.outcomes:
-                        roadmap_str += f"  - {outcome_item}\n"
+                    for progress_item in t.progress:
+                        roadmap_str += f"  - {progress_item}\n"
         roadmap_str += "\n"
 
     if future_tasks:
@@ -260,12 +260,12 @@ def prepare_prompt(
             roadmap_str += f"- [ ] {t.description}\n"
         roadmap_str += "\n"
 
-    outcomes_str = ""
-    if task.outcomes:
-        outcomes_str = "### Outcomes from Previous Attempts on THIS Task\n"
-        for outcome_item in task.outcomes:
-            outcomes_str += f"- {outcome_item}\n"
-        outcomes_str += "\n"
+    progress_str = ""
+    if task.progress:
+        progress_str = "### Progress from Previous Attempts on THIS Task\n"
+        for progress_item in task.progress:
+            progress_str += f"- {progress_item}\n"
+        progress_str += "\n"
 
     time_limit_section = ""
     if time_limit > 0:
@@ -273,8 +273,8 @@ def prepare_prompt(
             f"\n## Time Limit\n\n"
             f"You have a hard time limit of **{time_limit} minutes**. If you exceed it, your\n"
             f"process will be killed and any unrecorded progress will be lost.\n\n"
-            f"- **Record outcomes early and often.** Don't wait until the end. If you\n"
-            f"  are killed, your recorded outcomes will be passed to the next attempt.\n"
+            f"- **Record progress early and often.** Don't wait until the end. If you\n"
+            f"  are killed, your recorded progress will be passed to the next attempt.\n"
             f"- **If the work is too large** for {time_limit} minutes, break it into smaller\n"
             f"  sub-tasks using `lemming` and complete what you can.\n"
             f"- **Leverage background tasks and subagents** if your runner supports\n"
@@ -286,7 +286,7 @@ def prepare_prompt(
     prompt_template = load_prompt("taskrunner", tasks_file)
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)
-        .replace("{{outcomes}}", outcomes_str)
+        .replace("{{progress}}", progress_str)
         .replace("{{description}}", task.description)
         .replace("{{tasks_file_name}}", tasks_file.name)
         .replace("{{tasks_file_path}}", tasks_file_str)

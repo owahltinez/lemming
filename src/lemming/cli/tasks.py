@@ -197,7 +197,7 @@ def delete_task(
     )
 
     if delete_all:
-        click.echo("Deleted all tasks, outcomes, and logs, and cleared context.")
+        click.echo("Deleted all tasks, progress, and logs, and cleared context.")
     elif completed:
         click.echo(f"Deleted {removed} completed task(s) and their logs.")
     elif task_id:
@@ -330,10 +330,10 @@ def status(ctx: click.Context, task_id: str | None):
             rt_str = f"{int(run_time // 60)}m {int(run_time % 60)}s"
         click.echo(f"Run Time:      {rt_str}")
 
-    if target.outcomes:
-        click.secho("\n--- Outcomes ---", fg="magenta", bold=True)
-        for i, outcome in enumerate(target.outcomes):
-            click.echo(f"[{i}] {outcome}")
+    if target.progress:
+        click.secho("\n--- Progress ---", fg="magenta", bold=True)
+        for i, entry in enumerate(target.progress):
+            click.echo(f"[{i}] {entry}")
 
 
 @cli.command(short_help="[<taskid>] Print a task's log to stdout")
@@ -392,7 +392,7 @@ def logs(ctx: click.Context, task_id: str | None):
 @click.argument("task_id")
 @click.pass_context
 def complete(ctx: click.Context, task_id: str):
-    """Marks a task as completed (requires at least one recorded outcome).
+    """Marks a task as completed (requires at least one recorded progress entry).
 
     Args:
         task_id: The ID of the task to mark as completed.
@@ -404,7 +404,7 @@ def complete(ctx: click.Context, task_id: str):
             tasks_file,
             task_id,
             status=tasks.TaskStatus.COMPLETED,
-            require_outcomes=True,
+            require_progress=True,
         )
         click.echo(f"Task {target_task.id} marked as completed.")
     except ValueError as e:
@@ -436,7 +436,7 @@ def uncomplete(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def fail(ctx: click.Context, task_id: str):
-    """Marks a task as failed (requires at least one recorded outcome).
+    """Marks a task as failed (requires at least one recorded progress entry).
 
     Args:
         task_id: The ID of the task to mark as failed.
@@ -444,7 +444,7 @@ def fail(ctx: click.Context, task_id: str):
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(
-            tasks_file, task_id, status=tasks.TaskStatus.FAILED, require_outcomes=True
+            tasks_file, task_id, status=tasks.TaskStatus.FAILED, require_progress=True
         )
         click.echo(f"Task {target_task.id} marked as failed.")
     except ValueError as e:
@@ -469,11 +469,11 @@ def cancel(ctx: click.Context, task_id: str):
         ctx.exit(1)
 
 
-@cli.command(short_help="<taskid> Clear a task's attempts and outcomes")
+@cli.command(short_help="<taskid> Clear a task's attempts and progress")
 @click.argument("task_id")
 @click.pass_context
 def reset(ctx: click.Context, task_id: str):
-    """Clears all history (attempts, outcomes, and logs) for a specific task.
+    """Clears all history (attempts, progress, and logs) for a specific task.
 
     Args:
         task_id: The ID of the task to reset.
@@ -481,7 +481,7 @@ def reset(ctx: click.Context, task_id: str):
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.reset_task(tasks_file, task_id)
-        click.echo(f"Task {target_task.id} attempts, outcomes, and logs cleared.")
+        click.echo(f"Task {target_task.id} attempts, progress, and logs cleared.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)

@@ -124,7 +124,7 @@ def update_task(
     runner: str | None = None,
     index: int | None = None,
     status: str | None = None,
-    require_outcomes: bool = False,
+    require_progress: bool = False,
     parent: str | None = None,
     parent_tasks_file: str | None = None,
     force: bool = False,
@@ -138,7 +138,7 @@ def update_task(
         runner: New preferred runner.
         index: New position in the task list.
         status: New status.
-        require_outcomes: If True, raises ValueError if the task has no outcomes.
+        require_progress: If True, raises ValueError if the task has no progress.
         parent: New parent task ID.
         parent_tasks_file: New parent tasks file path.
         force: If True, force status transition even if task is in progress.
@@ -167,10 +167,10 @@ def update_task(
         if target.status == models.TaskStatus.COMPLETED and description:
             raise ValueError("Cannot edit description of a completed task")
 
-        if require_outcomes and not target.outcomes:
+        if require_progress and not target.progress:
             raise ValueError(
-                f"Task {target.id} has no recorded outcomes. "
-                "Record at least one outcome before completing or failing."
+                f"Task {target.id} has no recorded progress. "
+                "Record at least one progress entry before completing or failing."
             )
 
         if description is not None:

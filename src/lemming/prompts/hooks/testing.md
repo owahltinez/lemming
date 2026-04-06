@@ -23,7 +23,7 @@ overhead.
     current changes.
 4.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify
     significant testing gaps or architectural issues that require follow-up
-    work, record them as outcomes so the roadmap hook can decide whether to add
+    work, record them as progress so the roadmap hook can decide whether to add
     a new task.
 5.  **No Manual Refactoring**: Do NOT perform complex, manual code changes or
     broad refactors. Stick strictly to verification and targeted test fixes.
@@ -36,8 +36,8 @@ overhead.
 ## Commands
 
 ```bash
-# Record outcomes
-lemming --tasks-file {{tasks_file_path}} outcome add {{finished_task_id}} '<finding>'
+# Record progress
+lemming --tasks-file {{tasks_file_path}} progress add {{finished_task_id}} '<finding>'
 ```
 
 Limit your review ONLY to the code changed in the last task. Your goal is

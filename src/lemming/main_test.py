@@ -25,7 +25,7 @@ class TestMain(unittest.TestCase):
                     description="Initial Task",
                     status=tasks.TaskStatus.PENDING,
                     attempts=0,
-                    outcomes=[],
+                    progress=[],
                 )
             ],
         )
