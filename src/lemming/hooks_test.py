@@ -40,6 +40,11 @@ class TestHooks(unittest.TestCase):
         mock_prepare.return_value = "Hook Prompt"
         mock_run.return_value = (0, "stdout", "")
 
+        # Task must be IN_PROGRESS for finalization to apply
+        tasks.update_task(
+            self.test_tasks_file, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+        )
+
         run_hooks(
             self.test_tasks_file,
             "12345678",
@@ -79,6 +84,11 @@ class TestHooks(unittest.TestCase):
         mock_run.return_value = (0, "stdout", "")
         mock_prepare.return_value = "Mock Prompt"
 
+        # Task must be IN_PROGRESS for finalization to apply
+        tasks.update_task(
+            self.test_tasks_file, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+        )
+
         run_hooks(
             self.test_tasks_file,
             "12345678",
@@ -94,6 +104,41 @@ class TestHooks(unittest.TestCase):
         # It should only run 'roadmap' hook
         self.assertEqual(mock_prepare.call_count, 1)
         self.assertEqual(mock_prepare.call_args[0][0], "roadmap")
+
+    @unittest.mock.patch("lemming.hooks.prompts.prepare_hook_prompt")
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    def test_run_hooks_skips_finalization_when_healed(self, mock_run, mock_prepare):
+        """If a hook resets the task (heals it), finalization should be skipped."""
+        mock_prepare.return_value = "Mock Prompt"
+
+        # Task must be IN_PROGRESS for hooks to run
+        tasks.update_task(
+            self.test_tasks_file, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+        )
+
+        # Simulate the hook resetting the task during execution
+        def hook_resets_task(*args, **kwargs):
+            tasks.reset_task(self.test_tasks_file, "12345678")
+            return (0, "stdout", "")
+
+        mock_run.side_effect = hook_resets_task
+
+        run_hooks(
+            self.test_tasks_file,
+            "12345678",
+            "gemini",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=True,
+            hooks=["roadmap"],
+            final_status=tasks.TaskStatus.FAILED,
+        )
+
+        # Task should remain PENDING (healed), not FAILED
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.PENDING)
+        self.assertEqual(data.tasks[0].attempts, 0)
 
     @unittest.mock.patch("lemming.hooks.prompts.prepare_hook_prompt")
     @unittest.mock.patch("lemming.runner.run_with_heartbeat")

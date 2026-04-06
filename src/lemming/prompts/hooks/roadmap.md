@@ -16,8 +16,11 @@ the plan up-to-date with minimal friction.
 1.  **Diagnose**: Review the execution logs and outcomes of the finished task to
     understand its impact on the roadmap. Check if the task was FULLY completed,
     including any necessary cleanup, teardowns, or documentation.
-2.  **Repair**: If a task has failed, either reset it for a retry, rewrite it
-    with a new approach, or insert prerequisite tasks to unblock it.
+2.  **Repair**: If a task has failed, you MUST intervene — do not leave a failed
+    task as-is. Either rewrite its description with a different approach and
+    then reset it, or delete it and insert smaller prerequisite tasks to
+    unblock the goal. Simply resetting a task without changing the approach
+    will lead to the same failure.
 3.  **Refine**: If any pending tasks are now redundant, overly broad, or based
     on invalidated assumptions, edit or delete them immediately.
 4.  **Extend**: If the project goal is not yet fully achieved and all tasks are

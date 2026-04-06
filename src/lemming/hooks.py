@@ -93,9 +93,17 @@ def run_hooks(
         except Exception as e:
             click.echo(f"Hook '{hook_name}' error: {e}")
 
-    # Finally mark the task as completed or failed if requested
+    # Finally mark the task as completed or failed if requested.
+    # But first check whether a hook already changed the task (e.g. the
+    # roadmap hook reset a failed task for a new approach).  If the task
+    # is no longer IN_PROGRESS, a hook already intervened — skip
+    # finalization so we don't overwrite the recovery.
     if final_status:
         try:
+            data = tasks.load_tasks(tasks_file)
+            current = next((t for t in data.tasks if t.id == task_id), None)
+            if current and current.status != tasks.TaskStatus.IN_PROGRESS:
+                return
             tasks.update_task(tasks_file, task_id, status=final_status, force=True)
         except tasks.TaskNotFoundError:
             # Task may have been deleted by the orchestrator (e.g. after
