@@ -138,7 +138,7 @@ File Path: {{tasks_file_path}}
 
     # Verify roadmap substitution
     assert "Roadmap: ## Project Context" in prompt
-    assert "- [COMPLETED] (task1) Task 1" in prompt
+    assert "**[COMPLETED] (task1) Task 1**" in prompt
     assert "  - Done" in prompt
     assert "- [IN PROGRESS] (task2) Task 2" in prompt
 
@@ -146,7 +146,7 @@ File Path: {{tasks_file_path}}
     assert "Finished Task: Task ID: task1" in prompt
     assert "Description: Task 1" in prompt
     assert "Result: completed" in prompt
-    assert "Progress:\n- Done" in prompt
+    assert "Progress recorded during this attempt:\n- Done" in prompt
 
     # Verify log inclusion
     assert "Execution log of THIS task" in prompt
@@ -353,7 +353,7 @@ def test_prepare_hook_prompt_shows_failed_for_exhausted_task(tmp_path, monkeypat
     # The finished task section must show "failed", not "in_progress"
     assert "Result: failed" in prompt
     # The roadmap overview must show [FAILED], not [IN PROGRESS]
-    assert "[FAILED - 3 attempt(s)]" in prompt
+    assert "[FAILED - 3/3 attempt(s)]" in prompt
     assert "[PENDING]" in prompt
 
 

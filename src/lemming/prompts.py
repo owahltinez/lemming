@@ -121,6 +121,54 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
     return hooks_list
 
 
+def _format_roadmap(data: tasks.Roadmap, current_task_id: str | None = None) -> str:
+    """Formats the roadmap for inclusion in prompts.
+
+    Args:
+        data: The current Roadmap.
+        current_task_id: ID of the task currently being executed, if any.
+
+    Returns:
+        A formatted roadmap string.
+    """
+    roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
+    roadmap_str += "## Roadmap\n"
+
+    completed_tasks = [t for t in data.tasks if t.status == tasks.TaskStatus.COMPLETED]
+
+    for i, t in enumerate(data.tasks):
+        effective_status = t.requested_status or t.status
+        if effective_status == tasks.TaskStatus.COMPLETED:
+            marker = "[COMPLETED]"
+        elif effective_status == tasks.TaskStatus.FAILED:
+            marker = f"[FAILED - {t.attempts}/{data.config.retries} attempt(s)]"
+        elif t.status == tasks.TaskStatus.IN_PROGRESS or t.id == current_task_id:
+            marker = "[IN PROGRESS]"
+        elif t.attempts > 0:
+            marker = f"[PENDING - {t.attempts}/{data.config.retries} attempt(s) so far]"
+        else:
+            marker = "[PENDING]"
+
+        # Bold the current task to make it stand out
+        if t.id == current_task_id:
+            roadmap_str += f"- **{marker} ({t.id}) {t.description}**\n"
+        else:
+            roadmap_str += f"- {marker} ({t.id}) {t.description}\n"
+
+        if t.progress:
+            # For completed tasks, only show progress for the last 5 to keep the prompt concise
+            if effective_status == tasks.TaskStatus.COMPLETED:
+                completed_index = completed_tasks.index(t)
+                if len(completed_tasks) - completed_index <= 5:
+                    for o in t.progress:
+                        roadmap_str += f"  - {o}\n"
+            else:
+                for o in t.progress:
+                    roadmap_str += f"  - {o}\n"
+
+    return roadmap_str
+
+
 def prepare_hook_prompt(
     hook_name: str,
     data: tasks.Roadmap,
@@ -140,26 +188,7 @@ def prepare_hook_prompt(
     """
     from . import runner
 
-    roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
-
-    roadmap_str += "## All Tasks\n"
-    for t in data.tasks:
-        effective_status = t.requested_status or t.status
-        if effective_status == tasks.TaskStatus.COMPLETED:
-            marker = "[COMPLETED]"
-        elif effective_status == tasks.TaskStatus.FAILED:
-            marker = f"[FAILED - {t.attempts} attempt(s)]"
-        elif t.status == tasks.TaskStatus.IN_PROGRESS:
-            marker = "[IN PROGRESS]"
-        elif t.attempts > 0:
-            marker = f"[PENDING - {t.attempts} attempt(s) so far]"
-        else:
-            marker = "[PENDING]"
-
-        roadmap_str += f"- {marker} ({t.id}) {t.description}\n"
-        if t.progress:
-            for o in t.progress:
-                roadmap_str += f"  - {o}\n"
+    roadmap_str = _format_roadmap(data, current_task_id=finished_task.id)
 
     # Use requested_status when available — it reflects the actual outcome
     # (e.g. FAILED) while status may still be IN_PROGRESS during hook execution.
@@ -168,9 +197,26 @@ def prepare_hook_prompt(
     finished_str = f"Task ID: {finished_task.id}\n"
     finished_str += f"Description: {finished_task.description}\n"
     finished_str += f"Result: {result_status}\n"
-    finished_str += f"Attempts: {finished_task.attempts}\n"
+    finished_str += f"Attempts: {finished_task.attempts}/{data.config.retries}\n"
+
+    if (
+        finished_task.attempts >= data.config.retries
+        and result_status == tasks.TaskStatus.FAILED
+    ):
+        finished_str += "\n!!! WARNING: FINAL ATTEMPT FAILED !!!\n"
+        finished_str += (
+            f"This task has reached the maximum of {data.config.retries} attempts.\n"
+        )
+        finished_str += (
+            "Unless you intervene NOW (by resetting it with a new approach,\n"
+        )
+        finished_str += (
+            "editing it, or replacing it), the entire orchestrator loop will\n"
+        )
+        finished_str += "ABORT and the project will fail.\n"
+
     if finished_task.progress:
-        finished_str += "Progress:\n"
+        finished_str += "Progress recorded during this attempt:\n"
         for o in finished_task.progress:
             finished_str += f"- {o}\n"
 
@@ -222,14 +268,7 @@ def prepare_prompt(
     """
     from . import runner
 
-    completed_tasks = [t for t in data.tasks if t.status == tasks.TaskStatus.COMPLETED]
-    future_tasks = [
-        t
-        for t in data.tasks
-        if t.status == tasks.TaskStatus.PENDING and t.id != task.id
-    ]
-
-    roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
+    roadmap_str = _format_roadmap(data, current_task_id=task.id)
 
     # Add parent task context if it's from another project
     if task.parent and task.parent_tasks_file:
@@ -241,31 +280,13 @@ def prepare_prompt(
                     (t for t in parent_roadmap.tasks if t.id == task.parent), None
                 )
                 if parent_task:
-                    roadmap_str += "## Parent Task Context (From root project)\n"
+                    roadmap_str += "\n## Parent Task Context (From root project)\n"
                     roadmap_str += f"- [ ] {parent_task.description}\n"
                     if parent_task.progress:
                         for progress_item in parent_task.progress:
                             roadmap_str += f"  - {progress_item}\n"
-                    roadmap_str += "\n"
         except Exception:
             pass
-
-    if completed_tasks:
-        roadmap_str += "## Completed Tasks (Historical context)\n"
-        for i, t in enumerate(completed_tasks):
-            roadmap_str += f"- [x] {t.description}\n"
-            if t.progress:
-                # Only show progress for the last 5 completed tasks to keep the prompt concise
-                if len(completed_tasks) - i <= 5:
-                    for progress_item in t.progress:
-                        roadmap_str += f"  - {progress_item}\n"
-        roadmap_str += "\n"
-
-    if future_tasks:
-        roadmap_str += "## Future Tasks (For architectural foresight only)\n"
-        for t in future_tasks:
-            roadmap_str += f"- [ ] {t.description}\n"
-        roadmap_str += "\n"
 
     progress_str = ""
     if task.progress:
