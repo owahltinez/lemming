@@ -127,7 +127,7 @@ test.describe('Dashboard E2E', () => {
     await page.waitForTimeout(600);
 
     const localStorageData = await page.evaluate(() =>
-      localStorage.getItem('lemming_env_overrides'),
+      localStorage.getItem('lemming[]_env_overrides'),
     );
     expect(localStorageData).toContain('MY_MOCK_KEY');
     expect(localStorageData).toContain('MY_MOCK_VALUE');
@@ -140,6 +140,59 @@ test.describe('Dashboard E2E', () => {
     expect(runRequestPayload.env).toEqual({
       MY_MOCK_KEY: 'MY_MOCK_VALUE',
     });
+  });
+
+  test('different projects store different environment overrides', async ({
+    page,
+  }) => {
+    // Project A
+    await page.goto('http://localhost:8000/?project=ProjectA');
+    await page.evaluate(async () => {
+      while (!window.ManchaApp) await new Promise((r) => setTimeout(r, 50));
+      await window.ManchaApp;
+    });
+    await page.waitForLoadState('networkidle');
+
+    await page.getByRole('button', { name: 'Add override' }).click();
+    await page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)').fill('KEY_A');
+    await page.getByPlaceholder('VALUE').fill('VAL_A');
+    await page.waitForTimeout(600); // debounce
+
+    // Project B
+    await page.goto('http://localhost:8000/?project=ProjectB');
+    await page.evaluate(async () => {
+      while (!window.ManchaApp) await new Promise((r) => setTimeout(r, 50));
+      await window.ManchaApp;
+    });
+    await page.waitForLoadState('networkidle');
+
+    await page.getByRole('button', { name: 'Add override' }).click();
+    await page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)').fill('KEY_B');
+    await page.getByPlaceholder('VALUE').fill('VAL_B');
+    await page.waitForTimeout(600); // debounce
+
+    // Verify Project B only has KEY_B
+    const inputsB = page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)');
+    await expect(inputsB).toHaveCount(1);
+    await expect(inputsB).toHaveValue('KEY_B');
+
+    // Go back to Project A
+    await page.goto('http://localhost:8000/?project=ProjectA');
+    await page.evaluate(async () => {
+      while (!window.ManchaApp) await new Promise((r) => setTimeout(r, 50));
+      await window.ManchaApp;
+    });
+    await page.waitForLoadState('networkidle');
+
+    // Verify Project A still has KEY_A
+    const inputsA = page.getByPlaceholder('KEY (e.g. OPENAI_API_KEY)');
+    await expect(inputsA).toHaveCount(1);
+    await expect(inputsA).toHaveValue('KEY_A');
+
+    // Check localStorage keys directly
+    const keys = await page.evaluate(() => Object.keys(localStorage));
+    expect(keys).toContain('lemming[ProjectA]_env_overrides');
+    expect(keys).toContain('lemming[ProjectB]_env_overrides');
   });
 
   test('removes an environment override', async ({ page }) => {
@@ -169,7 +222,7 @@ test.describe('Dashboard E2E', () => {
     await page.waitForTimeout(600);
 
     const localStorageData = await page.evaluate(() =>
-      localStorage.getItem('lemming_env_overrides'),
+      localStorage.getItem('lemming[]_env_overrides'),
     );
     expect(localStorageData).toContain('KEY2');
     expect(localStorageData).not.toContain('KEY1');

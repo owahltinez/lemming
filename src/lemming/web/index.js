@@ -18,20 +18,20 @@
       }
 
       // --- Persistence Management (scoped by project) ---
-      const storagePrefix = $.$$project
-        ? `lemming[${$.$$project}]_`
-        : 'lemming_';
       const Storage = {
+        getPrefix() {
+          return `lemming[${$.$$project}]_`;
+        },
         get(key, fallback) {
           try {
-            const val = localStorage.getItem(storagePrefix + key);
+            const val = localStorage.getItem(this.getPrefix() + key);
             return val !== null ? JSON.parse(val) : fallback;
           } catch {
             return fallback;
           }
         },
         set(key, val) {
-          localStorage.setItem(storagePrefix + key, JSON.stringify(val));
+          localStorage.setItem(this.getPrefix() + key, JSON.stringify(val));
         },
       };
 
@@ -52,7 +52,7 @@
       $.retries = 3;
       $.timeLimit = '60';
       $.envOverrides = []; // Will hydrate below
-      $.hideCompleted = Storage.get('hide_completed', false);
+      $.hideCompleted = false; // Hydrate after mount
       $.toasts = [];
       $.expanded = {};
       $.loopRunning = false;
@@ -61,7 +61,7 @@
 
       // --- Favicon Status ---
       $.faviconState = 'idle';
-      $.lastSeenState = Storage.get('last_seen_state', null);
+      $.lastSeenState = null; // Hydrate after mount
       // --- Folder Picker State ---
       $.folderPickerPath = '';
       $.folderPickerDirs = [];
@@ -715,7 +715,12 @@
         return crumbs;
       });
 
-      // --- Final Hydration from Storage ---
+      // --- Mount to DOM (syncs $$project from URL) ---
+      await renderer.mount(document.body);
+
+      // --- Final Hydration from Storage (Post-Mount) ---
+      $.hideCompleted = Storage.get('hide_completed', false);
+      $.lastSeenState = Storage.get('last_seen_state', null);
       const loadedOverrides = Storage.get('env_overrides', []);
       if (loadedOverrides.length > 0) {
         $.envOverrides = loadedOverrides.map((o, i) => ({
@@ -723,9 +728,6 @@
           id: o.id || `env-${i}`,
         }));
       }
-
-      // --- Mount to DOM (syncs $$project from URL) ---
-      await renderer.mount(document.body);
 
       // --- Initial Data Fetch (after mount so $$project is available) ---
       await Promise.all([$.fetchData(), $.fetchRunners(), $.fetchHooks()]);

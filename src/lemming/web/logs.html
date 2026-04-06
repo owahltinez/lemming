@@ -198,26 +198,30 @@
             $.taskLog = '';
             $.loading = true;
 
+            // --- Project Scoping ---
+            // $$project is auto-synced with the ?project= URL query param by mancha.
+            $.$$project = $.$$project ?? '';
+
             // --- Persistence Management (scoped by project) ---
-            const storagePrefix = $.$$project
-              ? `lemming[${$.$$project}]_`
-              : 'lemming_';
             const Storage = {
+              getPrefix() {
+                return `lemming[${$.$$project}]_`;
+              },
               get(key, fallback) {
                 try {
-                  const val = localStorage.getItem(storagePrefix + key);
+                  const val = localStorage.getItem(this.getPrefix() + key);
                   return val !== null ? JSON.parse(val) : fallback;
                 } catch {
                   return fallback;
                 }
               },
               set(key, val) {
-                localStorage.setItem(storagePrefix + key, JSON.stringify(val));
+                localStorage.setItem(this.getPrefix() + key, JSON.stringify(val));
               },
             };
 
             $.faviconState = 'idle';
-            $.lastSeenState = Storage.get('last_seen_state', null);
+            $.lastSeenState = null; // Hydrate after mount
 
             const getTaskId = () => {
               const parts = window.location.pathname.split('/');
@@ -225,7 +229,6 @@
               return parts[parts.length - 2];
             };
 
-            $.$$project = $.$$project ?? '';
             function logApiUrl(path) {
               const url = new URL(path, window.location.origin);
               if ($.$$project) url.searchParams.set('project', $.$$project);
@@ -338,6 +341,10 @@
             });
 
             await renderer.mount(document.body);
+
+            // Hydrate persistence after mount
+            $.lastSeenState = Storage.get('last_seen_state', null);
+
             await $.refresh();
             setInterval($.refresh, 1000);
           },

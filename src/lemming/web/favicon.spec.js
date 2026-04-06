@@ -235,7 +235,7 @@ test.describe('Favicon Status Synchronization', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
     const lastSeen = await page.evaluate(() =>
-      localStorage.getItem('lemming_last_seen_state'),
+      localStorage.getItem('lemming[]_last_seen_state'),
     );
     expect(lastSeen).toBe(JSON.stringify('success'));
   });
