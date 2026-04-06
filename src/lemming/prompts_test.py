@@ -317,6 +317,46 @@ def test_prepare_prompt_time_limit_custom(tmp_path):
     assert "30 minutes" in prompt
 
 
+def test_prepare_hook_prompt_shows_failed_for_exhausted_task(tmp_path, monkeypatch):
+    """A task with requested_status=FAILED (during hook execution) should show
+    Result: failed and [FAILED] in the roadmap, not in_progress."""
+    lemming_home = tmp_path / "lemming_home"
+    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
+
+    tasks_file = tmp_path / "tasks.yml"
+    # Simulate the state during hook execution after retry exhaustion:
+    # status=IN_PROGRESS, requested_status=FAILED
+    failed_task = tasks.Task(
+        id="task1",
+        description="Flaky task",
+        status=tasks.TaskStatus.IN_PROGRESS,
+        requested_status=tasks.TaskStatus.FAILED,
+        attempts=3,
+        progress=["Task killed: time limit of 60 minutes reached."],
+    )
+    data = tasks.Roadmap(
+        context="Test",
+        tasks=[
+            failed_task,
+            tasks.Task(id="task2", description="Next task"),
+        ],
+    )
+
+    local_hooks_dir = tmp_path / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    (local_hooks_dir / "test-hook.md").write_text(
+        "Roadmap: {{roadmap}}\nFinished: {{finished_task}}"
+    )
+
+    prompt = prompts.prepare_hook_prompt("test-hook", data, failed_task, tasks_file)
+
+    # The finished task section must show "failed", not "in_progress"
+    assert "Result: failed" in prompt
+    # The roadmap overview must show [FAILED], not [IN PROGRESS]
+    assert "[FAILED - 3 attempt(s)]" in prompt
+    assert "[PENDING]" in prompt
+
+
 def test_list_hooks_roadmap_is_last(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     tasks_file.touch()

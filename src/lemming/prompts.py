@@ -144,8 +144,11 @@ def prepare_hook_prompt(
 
     roadmap_str += "## All Tasks\n"
     for t in data.tasks:
-        if t.status == tasks.TaskStatus.COMPLETED:
+        effective_status = t.requested_status or t.status
+        if effective_status == tasks.TaskStatus.COMPLETED:
             marker = "[COMPLETED]"
+        elif effective_status == tasks.TaskStatus.FAILED:
+            marker = f"[FAILED - {t.attempts} attempt(s)]"
         elif t.status == tasks.TaskStatus.IN_PROGRESS:
             marker = "[IN PROGRESS]"
         elif t.attempts > 0:
@@ -158,9 +161,13 @@ def prepare_hook_prompt(
             for o in t.progress:
                 roadmap_str += f"  - {o}\n"
 
+    # Use requested_status when available — it reflects the actual outcome
+    # (e.g. FAILED) while status may still be IN_PROGRESS during hook execution.
+    result_status = finished_task.requested_status or finished_task.status
+
     finished_str = f"Task ID: {finished_task.id}\n"
     finished_str += f"Description: {finished_task.description}\n"
-    finished_str += f"Result: {finished_task.status}\n"
+    finished_str += f"Result: {result_status}\n"
     finished_str += f"Attempts: {finished_task.attempts}\n"
     if finished_task.progress:
         finished_str += "Progress:\n"

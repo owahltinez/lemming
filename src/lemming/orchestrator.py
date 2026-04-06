@@ -42,31 +42,26 @@ def run_loop(
         task_id = current_task.id
 
         if current_task.attempts >= retries:
-            # Run hooks (like roadmap revision) even on final failure to give them
-            # a chance to heal the task before we abort.
-            # But do NOT run them if the task was cancelled.
-            if returncode != -15:
-                # Mark as in_progress so hooks can run and heartbeats work.
-                # We use update_task to set requested_status=FAILED so it shows
-                # as "Finalizing" in the UI.
-                tasks.mark_task_in_progress(tasks_file, task_id)
-                tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
+            # Run hooks (like roadmap revision) even on final failure to give
+            # them a chance to heal the task before we abort.
+            # Mark as in_progress so hooks can run and heartbeats work.
+            # We use update_task to set requested_status=FAILED so it shows
+            # as "Finalizing" in the UI.
+            tasks.mark_task_in_progress(tasks_file, task_id)
+            tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
 
-                run_hooks(
-                    tasks_file,
-                    task_id,
-                    runner_name,
-                    yolo,
-                    runner_args,
-                    no_defaults,
-                    verbose,
-                    hooks=active_hooks,
-                    working_dir=working_dir,
-                    final_status=tasks.TaskStatus.FAILED,
-                )
-            else:
-                if verbose:
-                    click.echo("Task was cancelled. Skipping final failure hooks.")
+            run_hooks(
+                tasks_file,
+                task_id,
+                runner_name,
+                yolo,
+                runner_args,
+                no_defaults,
+                verbose,
+                hooks=active_hooks,
+                working_dir=working_dir,
+                final_status=tasks.TaskStatus.FAILED,
+            )
 
             # Re-check: if a hook reset/edited/replaced the task, continue the loop
             data = tasks.load_tasks(tasks_file)
