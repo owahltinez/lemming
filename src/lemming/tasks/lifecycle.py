@@ -67,6 +67,27 @@ def update_run_time(task: models.Task, end_time: float | None = None) -> None:
         task.last_started_at = None
 
 
+def is_task_active(task: models.Task, now: float) -> bool:
+    """Returns True if the task is actively being executed.
+
+    A task is active if:
+    1. It is marked IN_PROGRESS or has a requested_status (finalizing).
+    2. AND it has a PID that is alive.
+    3. AND its heartbeat is recent (not stale).
+    """
+    if task.status != models.TaskStatus.IN_PROGRESS and not task.requested_status:
+        return False
+
+    if not task.pid or not is_pid_alive(task.pid):
+        return False
+
+    last_heartbeat = task.last_heartbeat or 0
+    if now - last_heartbeat > STALE_THRESHOLD:
+        return False
+
+    return True
+
+
 def _mark_task_in_progress(
     data: models.Roadmap, task_id: str, pid: int | None = None
 ) -> bool:
@@ -83,17 +104,12 @@ def _mark_task_in_progress(
     now = time.time()
     for task in data.tasks:
         if task.id == task_id:
-            # Check if it's still available (pending or stale)
-            is_pending = task.status == models.TaskStatus.PENDING
-            is_stale = False
-            if task.status == models.TaskStatus.IN_PROGRESS:
-                last_heartbeat = task.last_heartbeat or 0
-                if now - last_heartbeat > STALE_THRESHOLD:
-                    is_stale = True
-                elif task.pid and not is_pid_alive(task.pid):
-                    is_stale = True
-
-            if is_pending or is_stale:
+            # A task can be marked in progress if it's pending, or if it's
+            # nominally in progress/finalizing but has crashed or timed out (stale).
+            if task.status == models.TaskStatus.PENDING or (
+                (task.status == models.TaskStatus.IN_PROGRESS or task.requested_status)
+                and not is_task_active(task, now)
+            ):
                 task.status = models.TaskStatus.IN_PROGRESS
                 task.last_heartbeat = now
                 if task.started_at is None:
@@ -144,7 +160,8 @@ def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> models.Task 
             return None
 
         task = next(t for t in data.tasks if t.id == task_id)
-        task.attempts += 1
+        if not task.requested_status:
+            task.attempts += 1
         persistence.save_tasks(tasks_file, data)
         return task
 

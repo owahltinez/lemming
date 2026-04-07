@@ -18,6 +18,7 @@ def run_hooks(
     hooks: list[str] | None = None,
     working_dir: pathlib.Path | None = None,
     final_status: tasks.TaskStatus | None = None,
+    time_limit: int = 0,
 ) -> None:
     """Discovers and executes orchestrator hooks for a finished task.
 
@@ -86,6 +87,7 @@ def run_hooks(
                 echo_fn=lambda line: click.echo(line, nl=False),
                 header=f"Hook: {hook_name}",
                 cwd=working_dir,
+                time_limit=time_limit,
             )
             if verbose:
                 if returncode != 0:

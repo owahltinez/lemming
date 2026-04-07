@@ -223,3 +223,77 @@ def test_reset_task(tmp_path):
     assert reset_task.status == models.TaskStatus.PENDING
     assert reset_task.progress == []
     assert not log_file.exists()
+
+
+@patch("lemming.tasks.lifecycle.is_pid_alive")
+def test_is_task_active(mock_is_pid_alive):
+    now = time.time()
+
+    # 1. Pending task is never active
+    task_pending = models.Task(
+        id="1", description="test", status=models.TaskStatus.PENDING
+    )
+    assert not lifecycle.is_task_active(task_pending, now)
+
+    # 2. IN_PROGRESS but no PID -> not active
+    task_no_pid = models.Task(
+        id="2",
+        description="test",
+        status=models.TaskStatus.IN_PROGRESS,
+        last_heartbeat=now,
+    )
+    assert not lifecycle.is_task_active(task_no_pid, now)
+
+    # 3. IN_PROGRESS, has PID, PID dead -> not active
+    mock_is_pid_alive.return_value = False
+    task_dead_pid = models.Task(
+        id="3",
+        description="test",
+        status=models.TaskStatus.IN_PROGRESS,
+        pid=123,
+        last_heartbeat=now,
+    )
+    assert not lifecycle.is_task_active(task_dead_pid, now)
+
+    # 4. IN_PROGRESS, has PID, PID alive, stale heartbeat -> not active
+    mock_is_pid_alive.return_value = True
+    stale_time = now - lifecycle.STALE_THRESHOLD - 10
+    task_stale = models.Task(
+        id="4",
+        description="test",
+        status=models.TaskStatus.IN_PROGRESS,
+        pid=123,
+        last_heartbeat=stale_time,
+    )
+    assert not lifecycle.is_task_active(task_stale, now)
+
+    # 5. IN_PROGRESS, has PID, PID alive, fresh heartbeat -> active!
+    task_active = models.Task(
+        id="5",
+        description="test",
+        status=models.TaskStatus.IN_PROGRESS,
+        pid=123,
+        last_heartbeat=now,
+    )
+    assert lifecycle.is_task_active(task_active, now)
+
+    # 6. Finalizing (requested_status), no PID -> not active (ready for hooks)
+    task_finalizing = models.Task(
+        id="6",
+        description="test",
+        status=models.TaskStatus.IN_PROGRESS,
+        requested_status=models.TaskStatus.COMPLETED,
+        last_heartbeat=now,
+    )
+    assert not lifecycle.is_task_active(task_finalizing, now)
+
+    # 7. Finalizing (requested_status), PID alive, fresh heartbeat -> active! (hooks running)
+    task_hooks_running = models.Task(
+        id="7",
+        description="test",
+        status=models.TaskStatus.IN_PROGRESS,
+        requested_status=models.TaskStatus.COMPLETED,
+        pid=123,
+        last_heartbeat=now,
+    )
+    assert lifecycle.is_task_active(task_hooks_running, now)

@@ -6,7 +6,14 @@ import unittest
 import unittest.mock
 
 from lemming import tasks
-from lemming.orchestrator import format_duration, run_loop, parse_timeout
+from lemming.orchestrator import (
+    format_duration,
+    run_loop,
+    parse_timeout,
+    _process_exhausted_retries,
+    _process_finalizing_task,
+    _handle_runner_exit,
+)
 from lemming.runner import RETURNCODE_TIMEOUT
 
 
@@ -302,6 +309,143 @@ class TestOrchestrator(unittest.TestCase):
 
         _, kwargs = mock_run.call_args
         self.assertEqual(kwargs.get("time_limit"), 30)
+
+    @unittest.mock.patch("lemming.orchestrator.run_hooks")
+    def test_process_exhausted_retries_aborts(self, mock_run_hooks):
+        # 1. Setup task that has exhausted retries and won't be healed
+        data = tasks.load_tasks(self.test_tasks_file)
+        task = data.tasks[0]
+        task.attempts = 3
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        should_abort = _process_exhausted_retries(
+            self.test_tasks_file,
+            task.id,
+            retries=3,
+            runner_name="gemini",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["roadmap"],
+            working_dir=None,
+            time_limit=1,
+        )
+        self.assertTrue(should_abort)
+        mock_run_hooks.assert_called_once()
+        self.assertEqual(
+            mock_run_hooks.call_args[1]["final_status"], tasks.TaskStatus.FAILED
+        )
+
+    @unittest.mock.patch("lemming.orchestrator.run_hooks")
+    def test_process_exhausted_retries_healed(self, mock_run_hooks):
+        # Setup task but simulate a hook healing it by resetting attempts
+        def fake_run_hooks(*args, **kwargs):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data.tasks[0].attempts = 0  # Healed!
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        mock_run_hooks.side_effect = fake_run_hooks
+
+        data = tasks.load_tasks(self.test_tasks_file)
+        task = data.tasks[0]
+        task.attempts = 3
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        should_abort = _process_exhausted_retries(
+            self.test_tasks_file,
+            task.id,
+            retries=3,
+            runner_name="gemini",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["roadmap"],
+            working_dir=None,
+            time_limit=1,
+        )
+        self.assertFalse(should_abort)
+        mock_run_hooks.assert_called_once()
+
+    @unittest.mock.patch("lemming.orchestrator.run_hooks")
+    def test_process_finalizing_task(self, mock_run_hooks):
+        _process_finalizing_task(
+            self.test_tasks_file,
+            "task1",
+            requested_status=tasks.TaskStatus.COMPLETED,
+            runner_name="gemini",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["readability"],
+            working_dir=None,
+            time_limit=1,
+        )
+        mock_run_hooks.assert_called_once()
+        self.assertEqual(
+            mock_run_hooks.call_args[1]["final_status"], tasks.TaskStatus.COMPLETED
+        )
+
+    @unittest.mock.patch("lemming.orchestrator.run_hooks")
+    @unittest.mock.patch("time.sleep", return_value=None)
+    def test_handle_runner_exit_completes(self, mock_sleep, mock_run_hooks):
+        # A task requesting completion runs hooks and doesn't abort loop
+        data = tasks.load_tasks(self.test_tasks_file)
+        task = data.tasks[0]
+        task.status = tasks.TaskStatus.IN_PROGRESS
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        # Simulate agent calling `lemming complete` (finish_task_attempt checks requested_status)
+        tasks.update_task(
+            self.test_tasks_file, task.id, status=tasks.TaskStatus.COMPLETED
+        )
+
+        should_abort = _handle_runner_exit(
+            self.test_tasks_file,
+            task.id,
+            returncode=0,
+            stdout="done",
+            stderr="",
+            retries=3,
+            retry_delay=5,
+            runner_name="gemini",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=[],
+            working_dir=None,
+            time_limit=1,
+        )
+        self.assertFalse(should_abort)
+
+    @unittest.mock.patch("lemming.orchestrator.run_hooks")
+    def test_handle_runner_exit_cancelled(self, mock_run_hooks):
+        data = tasks.load_tasks(self.test_tasks_file)
+        task = data.tasks[0]
+        task.status = tasks.TaskStatus.IN_PROGRESS
+        tasks.save_tasks(self.test_tasks_file, data)
+
+        should_abort = _handle_runner_exit(
+            self.test_tasks_file,
+            task.id,
+            returncode=-15,
+            stdout="",
+            stderr="",
+            retries=3,
+            retry_delay=5,
+            runner_name="gemini",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=[],
+            working_dir=None,
+            time_limit=1,
+        )
+        self.assertTrue(should_abort, "Cancellation (-15) should abort the loop")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
 import time
+from unittest import mock
+
 from lemming import paths
 from .. import models, persistence
 from . import queries
@@ -203,15 +205,17 @@ def test_get_pending_task(tmp_path):
 
 
 def test_get_pending_task_none_if_in_progress(tmp_path):
-    data = models.Roadmap(
-        tasks=[
-            models.Task(
-                id="1",
-                description="Task 1",
-                status=models.TaskStatus.IN_PROGRESS,
-                last_heartbeat=time.time(),
-            )
-        ]
-    )
-    pending = queries.get_pending_task(data)
-    assert pending is None
+    with mock.patch("lemming.tasks.lifecycle.is_pid_alive", return_value=True):
+        data = models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="1",
+                    description="Task 1",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    last_heartbeat=time.time(),
+                    pid=12345,
+                )
+            ]
+        )
+        pending = queries.get_pending_task(data)
+        assert pending is None

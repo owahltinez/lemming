@@ -11,6 +11,171 @@ from . import tasks
 from .hooks import run_hooks
 
 
+def _process_exhausted_retries(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    retries: int,
+    runner_name: str,
+    yolo: bool,
+    runner_args: tuple,
+    no_defaults: bool,
+    verbose: bool,
+    active_hooks: list[str],
+    working_dir: pathlib.Path | None,
+    time_limit: int,
+) -> bool:
+    """Handles tasks that have exhausted retries. Returns True to abort, False to continue."""
+    # Run hooks (like roadmap revision) even on final failure to give
+    # them a chance to heal the task before we abort.
+    # Mark as in_progress so hooks can run and heartbeats work.
+    # We use update_task to set requested_status=FAILED so it shows
+    # as "Finalizing" in the UI.
+    tasks.mark_task_in_progress(tasks_file, task_id)
+    tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
+
+    run_hooks(
+        tasks_file,
+        task_id,
+        runner_name,
+        yolo,
+        runner_args,
+        no_defaults,
+        verbose,
+        hooks=active_hooks,
+        working_dir=working_dir,
+        final_status=tasks.TaskStatus.FAILED,
+        time_limit=time_limit,
+    )
+
+    # Re-check: if a hook reset/edited/replaced the task, continue the loop
+    data = tasks.load_tasks(tasks_file)
+    healed_task = next((t for t in data.tasks if t.id == task_id), None)
+    if healed_task and healed_task.attempts >= retries:
+        click.echo(f"\nTask {task_id} failed after {retries} attempts. Aborting run.")
+        return True
+
+    # Orchestrator healed it (reset attempts, deleted it, etc.) — continue the loop
+    click.echo(f"Orchestrator intervened on task {task_id}. Continuing...")
+    return False
+
+
+def _process_finalizing_task(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    requested_status: tasks.TaskStatus,
+    runner_name: str,
+    yolo: bool,
+    runner_args: tuple,
+    no_defaults: bool,
+    verbose: bool,
+    active_hooks: list[str],
+    working_dir: pathlib.Path | None,
+    time_limit: int,
+) -> None:
+    """Runs hooks for a task that is in a finalizing state."""
+    if verbose:
+        click.echo(
+            f"Task {task_id} resumed in finalizing state ({requested_status}). Skipping runner."
+        )
+
+    run_hooks(
+        tasks_file,
+        task_id,
+        runner_name,
+        yolo,
+        runner_args,
+        no_defaults,
+        verbose,
+        hooks=active_hooks,
+        working_dir=working_dir,
+        final_status=requested_status,
+        time_limit=time_limit,
+    )
+
+
+def _handle_runner_exit(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    retries: int,
+    retry_delay: int,
+    runner_name: str,
+    yolo: bool,
+    runner_args: tuple,
+    no_defaults: bool,
+    verbose: bool,
+    active_hooks: list[str],
+    working_dir: pathlib.Path | None,
+    time_limit: int,
+) -> bool:
+    """Handles the aftermath of a task runner exiting. Returns True to abort, False to continue."""
+    # Post-execution validation and heartbeat cleanup
+    # This will mark the task as COMPLETED or PENDING based on whether
+    # the agent called 'lemming complete'.
+    post_task = tasks.finish_task_attempt(tasks_file, task_id)
+
+    if not post_task:
+        click.echo("Error: Task disappeared from roadmap during execution.")
+        return True
+
+    # Run orchestrator hooks synchronously if the task requested a status
+    # change (completion or failure). This ensures the roadmap is updated
+    # and all validation hooks complete before the next task is picked up.
+    if post_task.requested_status:
+        run_hooks(
+            tasks_file,
+            task_id,
+            runner_name,
+            yolo,
+            runner_args,
+            no_defaults,
+            verbose,
+            hooks=active_hooks,
+            working_dir=working_dir,
+            final_status=post_task.requested_status,
+            time_limit=time_limit,
+        )
+
+    if post_task.status == tasks.TaskStatus.COMPLETED:
+        if verbose:
+            click.echo("Runner successfully reported task completion.")
+        else:
+            click.echo(f"[{task_id}] Task completed successfully!")
+    else:
+        if not verbose:
+            if stdout:
+                click.echo(stdout)
+            if stderr:
+                click.echo(stderr, err=True)
+
+        if returncode == -15:
+            if verbose:
+                click.echo("Task was cancelled. Stopping orchestrator loop.")
+            return True
+
+        if verbose:
+            click.echo(
+                "Runner finished execution but did NOT report completion. Retrying..."
+            )
+
+        # Only sleep if the task is still pending AND it wasn't cancelled (it would have requested a status if not)
+        if (
+            post_task.status == tasks.TaskStatus.PENDING
+            and post_task.attempts < retries
+            and retry_delay > 0
+            and post_task.requested_status is None
+        ):
+            if verbose:
+                click.echo(
+                    f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
+                )
+            time.sleep(retry_delay)
+
+    return False
+
+
 def run_loop(
     tasks_file: pathlib.Path,
     verbose: bool,
@@ -28,6 +193,7 @@ def run_loop(
         data = tasks.load_tasks(tasks_file)
 
         retries = data.config.retries
+        time_limit = data.config.time_limit
         runner_name = data.config.runner
         active_hooks = data.config.hooks
         if active_hooks is None:
@@ -42,38 +208,21 @@ def run_loop(
         task_id = current_task.id
 
         if current_task.attempts >= retries:
-            # Run hooks (like roadmap revision) even on final failure to give
-            # them a chance to heal the task before we abort.
-            # Mark as in_progress so hooks can run and heartbeats work.
-            # We use update_task to set requested_status=FAILED so it shows
-            # as "Finalizing" in the UI.
-            tasks.mark_task_in_progress(tasks_file, task_id)
-            tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
-
-            run_hooks(
-                tasks_file,
-                task_id,
-                runner_name,
-                yolo,
-                runner_args,
-                no_defaults,
-                verbose,
-                hooks=active_hooks,
+            should_abort = _process_exhausted_retries(
+                tasks_file=tasks_file,
+                task_id=task_id,
+                retries=retries,
+                runner_name=runner_name,
+                yolo=yolo,
+                runner_args=runner_args,
+                no_defaults=no_defaults,
+                verbose=verbose,
+                active_hooks=active_hooks,
                 working_dir=working_dir,
-                final_status=tasks.TaskStatus.FAILED,
+                time_limit=time_limit,
             )
-
-            # Re-check: if a hook reset/edited/replaced the task, continue the loop
-            data = tasks.load_tasks(tasks_file)
-            healed_task = next((t for t in data.tasks if t.id == task_id), None)
-            if healed_task and healed_task.attempts >= retries:
-                click.echo(
-                    f"\nTask {task_id} failed after {retries} attempts. Aborting run."
-                )
+            if should_abort:
                 break
-
-            # Orchestrator healed it (reset attempts, deleted it, etc.) — continue the loop
-            click.echo(f"Orchestrator intervened on task {task_id}. Continuing...")
             continue
 
         # Add a small random jitter to avoid race conditions between multiple instances
@@ -100,26 +249,21 @@ def run_loop(
 
         # If the task was picked up in a finalizing state, skip the runner and go straight to hooks.
         if current_task.requested_status:
-            if verbose:
-                click.echo(
-                    f"Task {task_id} resumed in finalizing state ({current_task.requested_status}). Skipping runner."
-                )
-
-            run_hooks(
-                tasks_file,
-                task_id,
-                runner_name,
-                yolo,
-                runner_args,
-                no_defaults,
-                verbose,
-                hooks=active_hooks,
+            _process_finalizing_task(
+                tasks_file=tasks_file,
+                task_id=task_id,
+                requested_status=current_task.requested_status,
+                runner_name=runner_name,
+                yolo=yolo,
+                runner_args=runner_args,
+                no_defaults=no_defaults,
+                verbose=verbose,
+                active_hooks=active_hooks,
                 working_dir=working_dir,
-                final_status=current_task.requested_status,
+                time_limit=time_limit,
             )
             continue
 
-        time_limit = data.config.time_limit
         prompt = prompts.prepare_prompt(data, current_task, tasks_file, time_limit)
 
         if verbose:
@@ -168,66 +312,25 @@ def run_loop(
         except Exception as e:
             click.echo(f"\nAn error occurred while executing {runner_name}: {e}")
 
-        # Post-execution validation and heartbeat cleanup
-        # This will mark the task as COMPLETED or PENDING based on whether
-        # the agent called 'lemming complete'.
-        post_task = tasks.finish_task_attempt(tasks_file, task_id)
-
-        if not post_task:
-            click.echo("Error: Task disappeared from roadmap during execution.")
+        should_abort = _handle_runner_exit(
+            tasks_file=tasks_file,
+            task_id=task_id,
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+            retries=retries,
+            retry_delay=retry_delay,
+            runner_name=runner_name,
+            yolo=yolo,
+            runner_args=runner_args,
+            no_defaults=no_defaults,
+            verbose=verbose,
+            active_hooks=active_hooks,
+            working_dir=working_dir,
+            time_limit=time_limit,
+        )
+        if should_abort:
             break
-
-        # Run orchestrator hooks synchronously if the task requested a status
-        # change (completion or failure). This ensures the roadmap is updated
-        # and all validation hooks complete before the next task is picked up.
-        if post_task.requested_status:
-            run_hooks(
-                tasks_file,
-                task_id,
-                runner_name,
-                yolo,
-                runner_args,
-                no_defaults,
-                verbose,
-                hooks=active_hooks,
-                working_dir=working_dir,
-                final_status=post_task.requested_status,
-            )
-
-        if post_task.status == tasks.TaskStatus.COMPLETED:
-            if verbose:
-                click.echo("Runner successfully reported task completion.")
-            else:
-                click.echo(f"[{task_id}] Task completed successfully!")
-        else:
-            if not verbose:
-                if stdout:
-                    click.echo(stdout)
-                if stderr:
-                    click.echo(stderr, err=True)
-
-            if returncode == -15:
-                if verbose:
-                    click.echo("Task was cancelled. Stopping orchestrator loop.")
-                break
-
-            if verbose:
-                click.echo(
-                    "Runner finished execution but did NOT report completion. Retrying..."
-                )
-
-            # Only sleep if the task is still pending AND it wasn't cancelled (it would have requested a status if not)
-            if (
-                post_task.status == tasks.TaskStatus.PENDING
-                and post_task.attempts < retries
-                and retry_delay > 0
-                and post_task.requested_status is None
-            ):
-                if verbose:
-                    click.echo(
-                        f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
-                    )
-                time.sleep(retry_delay)
 
 
 def format_duration(minutes: int) -> str:
