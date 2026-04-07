@@ -37,7 +37,7 @@ overhead.
 
 ```bash
 # Record progress
-lemming --tasks-file {{tasks_file_path}} progress add {{finished_task_id}} '<finding>'
+lemming --tasks-file {{tasks_file_path}} progress {{finished_task_id}} '<finding>'
 ```
 
 Limit your review ONLY to the code changed in the last task. Your goal is

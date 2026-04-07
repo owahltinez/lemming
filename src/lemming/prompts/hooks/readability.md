@@ -17,7 +17,7 @@ adherence to the Google Style Guide with minimal overhead.
     every file modified or created in the last task. This handles standard
     formatting (ruff, biome, prettier).
 2.  **Report**: Record any meaningful findings as progress using
-    `lemming progress add {{finished_task_id}} '<finding>'`.
+    `lemming progress {{finished_task_id}} '<finding>'`.
 3.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify
     significant issues that require follow-up work, record them as progress so
     the roadmap hook can decide whether to add a new task.
@@ -34,7 +34,7 @@ lemming readability check <path> --fix
 # Consult style guides (only if strictly necessary)
 lemming readability guide <language>
 # Record progress
-lemming --tasks-file {{tasks_file_path}} progress add {{finished_task_id}} '<finding>'
+lemming --tasks-file {{tasks_file_path}} progress {{finished_task_id}} '<finding>'
 ```
 
 Limit your review ONLY to the files changed in the last task. Avoid

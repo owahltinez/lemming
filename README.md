@@ -206,7 +206,6 @@ lemming hooks set roadmap lint
 - **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk
   operations.
 - **`progress`**: Manage progress entries and findings for specific tasks.
-  Supports shorthand `<id> <finding>` syntax for quick additions.
   - `list <id>`: List all progress for a task.
   - `add <id> <finding>`: Record a new technical detail.
   - `edit <id> <index> <text>`: Modify an existing progress entry.
