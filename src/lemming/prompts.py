@@ -134,7 +134,11 @@ def _format_roadmap(data: tasks.Roadmap, current_task_id: str | None = None) -> 
     roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
     roadmap_str += "## Roadmap\n"
 
-    completed_tasks = [t for t in data.tasks if t.status == tasks.TaskStatus.COMPLETED]
+    completed_tasks = [
+        t
+        for t in data.tasks
+        if (t.requested_status or t.status) == tasks.TaskStatus.COMPLETED
+    ]
 
     for i, t in enumerate(data.tasks):
         effective_status = t.requested_status or t.status

@@ -374,3 +374,54 @@ def test_list_hooks_roadmap_is_last(tmp_path):
     assert "a_hook" in hooks
     # Even though z_hook is alphabetically last, roadmap should be moved to the end
     assert hooks[-1] == "roadmap"
+
+
+def test_format_roadmap_with_finalizing_task():
+    from lemming import models
+
+    data = models.Roadmap(
+        tasks=[
+            models.Task(
+                id="1",
+                description="Done",
+                status=models.TaskStatus.COMPLETED,
+                progress=["a"],
+            ),
+            models.Task(
+                id="2",
+                description="Finalizing",
+                status=models.TaskStatus.IN_PROGRESS,
+                requested_status=models.TaskStatus.COMPLETED,
+                progress=["b"],
+            ),
+        ]
+    )
+
+    output = prompts._format_roadmap(data)
+    assert "[COMPLETED] (2)" in output
+    assert "- b" in output
+
+
+def test_format_roadmap_with_finalizing_task():
+    from lemming import models
+    data = models.Roadmap(
+        tasks=[
+            models.Task(
+                id="1", 
+                description="Done", 
+                status=models.TaskStatus.COMPLETED,
+                progress=["a"]
+            ),
+            models.Task(
+                id="2", 
+                description="Finalizing", 
+                status=models.TaskStatus.IN_PROGRESS,
+                requested_status=models.TaskStatus.COMPLETED,
+                progress=["b"]
+            ),
+        ]
+    )
+    
+    output = prompts._format_roadmap(data)
+    assert "[COMPLETED] (2)" in output
+    assert "- b" in output
