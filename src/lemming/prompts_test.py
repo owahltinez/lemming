@@ -400,28 +400,3 @@ def test_format_roadmap_with_finalizing_task():
     output = prompts._format_roadmap(data)
     assert "[COMPLETED] (2)" in output
     assert "- b" in output
-
-
-def test_format_roadmap_with_finalizing_task():
-    from lemming import models
-    data = models.Roadmap(
-        tasks=[
-            models.Task(
-                id="1", 
-                description="Done", 
-                status=models.TaskStatus.COMPLETED,
-                progress=["a"]
-            ),
-            models.Task(
-                id="2", 
-                description="Finalizing", 
-                status=models.TaskStatus.IN_PROGRESS,
-                requested_status=models.TaskStatus.COMPLETED,
-                progress=["b"]
-            ),
-        ]
-    )
-    
-    output = prompts._format_roadmap(data)
-    assert "[COMPLETED] (2)" in output
-    assert "- b" in output
