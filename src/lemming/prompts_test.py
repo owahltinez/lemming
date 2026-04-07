@@ -1,6 +1,7 @@
 from lemming import prompts
 from lemming import tasks
 from lemming import paths
+from lemming import models
 
 
 def test_load_prompt():
@@ -377,8 +378,6 @@ def test_list_hooks_roadmap_is_last(tmp_path):
 
 
 def test_format_roadmap_with_finalizing_task():
-    from lemming import models
-
     data = models.Roadmap(
         tasks=[
             models.Task(
