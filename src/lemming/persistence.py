@@ -71,15 +71,28 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
             tasks=[],
         )
 
-    with open(tasks_file, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-        if not data:
-            data = {}
-        # TODO(compat): Remove once all clients write "progress" instead of "outcomes".
-        for task_data in data.get("tasks", []):
-            if "outcomes" in task_data:
-                task_data["progress"] = task_data.pop("outcomes")
-        return models.Roadmap.model_validate(data)
+    try:
+        with open(tasks_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except (yaml.scanner.ScannerError, yaml.parser.ParserError) as e:
+        # If the file is corrupted, return an empty roadmap.
+        # This allows the user to continue, but may cause loss of some data.
+        # In a real-world scenario, we might want to back up the corrupted file.
+        print(f"Warning: Failed to load corrupted tasks file: {e}")
+        return models.Roadmap(
+            context="# Project Context (Corrupted File Recovery)\n\n"
+            "The tasks file was corrupted and could not be fully loaded.\n"
+            "Check the server logs or the original file for details.",
+            tasks=[],
+        )
+
+    if not data:
+        data = {}
+    # TODO(compat): Remove once all clients write "progress" instead of "outcomes".
+    for task_data in data.get("tasks", []):
+        if "outcomes" in task_data:
+            task_data["progress"] = task_data.pop("outcomes")
+    return models.Roadmap.model_validate(data)
 
 
 class _BlockStyleDumper(yaml.SafeDumper):
@@ -99,7 +112,10 @@ def save_tasks(tasks_file: pathlib.Path, data: models.Roadmap) -> None:
         data: The Roadmap to save.
     """
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(tasks_file, "w", encoding="utf-8") as f:
+
+    # Use a temporary file for atomic write
+    temp_file = tasks_file.with_suffix(".tmp")
+    with open(temp_file, "w", encoding="utf-8") as f:
         # Exclude runtime-computed fields from the YAML file.
         exclude = {
             "tasks": {
@@ -117,6 +133,9 @@ def save_tasks(tasks_file: pathlib.Path, data: models.Roadmap) -> None:
             sort_keys=False,
             width=1000,
         )
+
+    # Atomically replace the old file with the new one
+    os.replace(temp_file, tasks_file)
 
 
 def _get_loop_lock_path(tasks_file: pathlib.Path) -> pathlib.Path:

@@ -22,17 +22,17 @@ def setup_env(tmp_path):
         ],
     )
     tasks.save_tasks(tasks_file, data)
-    
+
     return runner, base_args, tasks_file
 
 
 def test_progress(setup_env):
     runner, base_args, tasks_file = setup_env
-    
+
     result = runner.invoke(
         cli.cli, base_args + ["progress", "12345678", "Observed behavior X"]
     )
-    
+
     assert result.exit_code == 0
     assert "Progress added to task" in result.output
 
