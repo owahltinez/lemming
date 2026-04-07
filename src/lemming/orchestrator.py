@@ -98,6 +98,27 @@ def run_loop(
                 f"[{task_id}] Attempt {current_task.attempts}/{retries}: {current_task.description}"
             )
 
+        # If the task was picked up in a finalizing state, skip the runner and go straight to hooks.
+        if current_task.requested_status:
+            if verbose:
+                click.echo(
+                    f"Task {task_id} resumed in finalizing state ({current_task.requested_status}). Skipping runner."
+                )
+
+            run_hooks(
+                tasks_file,
+                task_id,
+                runner_name,
+                yolo,
+                runner_args,
+                no_defaults,
+                verbose,
+                hooks=active_hooks,
+                working_dir=working_dir,
+                final_status=current_task.requested_status,
+            )
+            continue
+
         time_limit = data.config.time_limit
         prompt = prompts.prepare_prompt(data, current_task, tasks_file, time_limit)
 

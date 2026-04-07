@@ -156,8 +156,7 @@ class TestOrchestrator(unittest.TestCase):
                 data = tasks.load_tasks(t_file)
                 task = next(t for t in data.tasks if t.id == t_id)
                 task.requested_status = tasks.TaskStatus.COMPLETED
-                task.status = tasks.TaskStatus.COMPLETED
-                task.completed_at = time.time()
+                task.status = tasks.TaskStatus.IN_PROGRESS
                 tasks.save_tasks(t_file, data)
                 return task
 

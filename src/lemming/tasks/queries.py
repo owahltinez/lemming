@@ -33,7 +33,9 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
         t.has_runner_log = paths.get_log_file(tasks_file, t.id).exists()
 
         # Detect active loop from task heartbeats if not already known.
-        if not loop_running and t.status == models.TaskStatus.IN_PROGRESS:
+        if not loop_running and (
+            t.status == models.TaskStatus.IN_PROGRESS or t.requested_status
+        ):
             is_stale = False
             if t.last_heartbeat and (
                 now - t.last_heartbeat > persistence.STALE_THRESHOLD
@@ -98,7 +100,7 @@ def get_pending_task(data: models.Roadmap) -> models.Task | None:
     # 1. Check if ANY task is currently in_progress and not stale.
     # If so, we must not start any other task (unless it's finalizing).
     for task in data.tasks:
-        if task.status == models.TaskStatus.IN_PROGRESS:
+        if task.status == models.TaskStatus.IN_PROGRESS or task.requested_status:
             last_heartbeat = task.last_heartbeat or 0
             is_stale = False
             if now - last_heartbeat > persistence.STALE_THRESHOLD:
@@ -108,6 +110,10 @@ def get_pending_task(data: models.Roadmap) -> models.Task | None:
 
             if not is_stale:
                 return None
+
+            # If it's stale AND has requested_status, we want to pick it up specifically.
+            if task.requested_status:
+                return task
 
     # 2. Sort uncompleted tasks (pending or stale in_progress) to pick the oldest one (FIFO).
     # Note: we exclude tasks that are currently finalizing (have requested_status).
