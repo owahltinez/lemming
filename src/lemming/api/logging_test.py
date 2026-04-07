@@ -7,7 +7,7 @@ def test_quiet_poll_filter():
     filt = api.QuietPollFilter()
 
     # Simulate a uvicorn access-log record for the polling endpoints.
-    for path in ("/api/data",):
+    for path in ("/api/data", "/api/files/burger", "/api/files"):
         record = logging.LogRecord(
             name="uvicorn.access",
             level=logging.INFO,

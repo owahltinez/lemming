@@ -1,7 +1,7 @@
 import logging
 
 # Paths that should not appear in the uvicorn access log (e.g. polling endpoints).
-QUIET_PATHS = {"/api/data", "GET /api/tasks/"}
+QUIET_PATHS = {"/api/data", "GET /api/tasks/", "/api/files"}
 
 
 class QuietPollFilter(logging.Filter):
