@@ -31,7 +31,7 @@ def setup_env(tmp_path):
                 progress=[],
             )
         ],
-        config=tasks.RoadmapConfig(retries=3, runner="gemini"),
+        config=tasks.RoadmapConfig(retries=3, runner="agy"),
     )
     tasks.save_tasks(test_tasks_file, initial_data)
     return test_tasks_file, initial_data
@@ -323,7 +323,7 @@ def test_process_exhausted_retries_aborts(mock_run_hooks, setup_env):
         test_tasks_file,
         task.id,
         retries=3,
-        runner_name="gemini",
+        runner_name="agy",
         yolo=True,
         runner_args=(),
         no_defaults=False,
@@ -358,7 +358,7 @@ def test_process_exhausted_retries_healed(mock_run_hooks, setup_env):
         test_tasks_file,
         task.id,
         retries=3,
-        runner_name="gemini",
+        runner_name="agy",
         yolo=True,
         runner_args=(),
         no_defaults=False,
@@ -378,7 +378,7 @@ def test_process_finalizing_task(mock_run_hooks, setup_env):
         test_tasks_file,
         "task1",
         requested_status=tasks.TaskStatus.COMPLETED,
-        runner_name="gemini",
+        runner_name="agy",
         yolo=True,
         runner_args=(),
         no_defaults=False,
@@ -412,7 +412,7 @@ def test_handle_runner_exit_completes(mock_sleep, mock_run_hooks, setup_env):
         stderr="",
         retries=3,
         retry_delay=5,
-        runner_name="gemini",
+        runner_name="agy",
         yolo=True,
         runner_args=(),
         no_defaults=False,
@@ -440,7 +440,7 @@ def test_handle_runner_exit_cancelled(mock_run_hooks, setup_env):
         stderr="",
         retries=3,
         retry_delay=5,
-        runner_name="gemini",
+        runner_name="agy",
         yolo=True,
         runner_args=(),
         no_defaults=False,

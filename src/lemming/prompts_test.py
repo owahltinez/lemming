@@ -199,7 +199,7 @@ def test_prepare_hook_prompt_filters_command_noise(tmp_path, monkeypatch):
     log_file = paths.get_log_file(tasks_file, finished_task.id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     log_file.write_text(
-        "Command: gemini --prompt \"HUGE PROMPT WITH 'QUOTES'\" ...\nReal output from AI\n"
+        "Command: agy --prompt \"HUGE PROMPT WITH 'QUOTES'\" ...\nReal output from AI\n"
     )
 
     prompt = prompts.prepare_hook_prompt("test-hook", data, finished_task, tasks_file)

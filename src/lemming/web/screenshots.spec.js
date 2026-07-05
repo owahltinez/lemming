@@ -234,7 +234,7 @@ test.describe('Screenshot Generation', () => {
         await page.route('**/api/runners', async (route) => {
           await route.fulfill({
             contentType: 'application/json',
-            json: ['gemini', 'aider', 'claude', 'codex'],
+            json: ['agy', 'aider', 'claude', 'codex'],
           });
         });
         await page.route('**/api/hooks', async (route) => {

@@ -45,7 +45,7 @@ class RoadmapConfig(pydantic.BaseModel):
     """Configuration for the roadmap execution loop."""
 
     retries: int = 3
-    runner: str = "gemini"
+    runner: str = "agy"
     hooks: list[str] | None = None
     time_limit: int = 60
 

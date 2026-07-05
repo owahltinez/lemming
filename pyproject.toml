@@ -12,7 +12,7 @@ authors = [
 ]
 license = { text = "MIT" }
 requires-python = ">=3.12"
-keywords = ["ai", "agents", "automation", "gemini", "claude", "aider"]
+keywords = ["ai", "agents", "automation", "antigravity", "claude", "aider"]
 dependencies = [
     "beautifulsoup4>=4.13.3",
     "click>=8.0.0",

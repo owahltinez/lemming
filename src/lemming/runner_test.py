@@ -8,9 +8,9 @@ from lemming import tasks
 from lemming import paths
 
 
-def test_build_runner_command_gemini():
-    cmd = runner.build_runner_command("gemini", "my prompt", yolo=True)
-    assert "--yolo" in cmd
+def test_build_runner_command_agy():
+    cmd = runner.build_runner_command("agy", "my prompt", yolo=True)
+    assert "--dangerously-skip-permissions" in cmd
     assert "--prompt" in cmd
     assert "my prompt" in cmd
 
@@ -64,14 +64,11 @@ def test_build_runner_command_template_with_runner_args():
 
 
 def test_build_runner_command_template_ignores_defaults():
-    # Even though runner starts with "gemini", template mode should not
-    # inject --yolo etc.
-    cmd = runner.build_runner_command(
-        "gemini --custom {{prompt}}", "do stuff", yolo=True
-    )
-    assert "--yolo" not in cmd
-    assert "--no-sandbox" not in cmd
-    assert cmd == ["gemini", "--custom", "do stuff"]
+    # Even though runner starts with "agy", template mode should not
+    # inject --dangerously-skip-permissions etc.
+    cmd = runner.build_runner_command("agy --custom {{prompt}}", "do stuff", yolo=True)
+    assert "--dangerously-skip-permissions" not in cmd
+    assert cmd == ["agy", "--custom", "do stuff"]
 
 
 def test_build_runner_command_template_prompt_in_flag_value():

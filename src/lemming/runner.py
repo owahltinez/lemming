@@ -121,9 +121,9 @@ def build_runner_command(
     runner_base = os.path.basename(parts[0])
 
     if not no_defaults:
-        if runner_base.startswith("gemini"):
+        if runner_base.startswith("agy"):
             if yolo:
-                cmd.extend(["--yolo", "--no-sandbox"])
+                cmd.append("--dangerously-skip-permissions")
             prompt_arg = "--prompt"
         elif runner_base.startswith("aider"):
             if yolo:

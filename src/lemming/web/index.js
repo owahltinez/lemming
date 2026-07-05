@@ -40,7 +40,7 @@
       $.context = '';
       $.config = {
         retries: 3,
-        runner: 'gemini',
+        runner: 'agy',
         hooks: ['roadmap'],
       };
       $.cwd = '';
@@ -48,7 +48,7 @@
       $.loading = true;
       $.runners = [];
       $.availableHooks = [];
-      $.selectedRunner = 'gemini';
+      $.selectedRunner = 'agy';
       $.retries = 3;
       $.timeLimit = '60';
       $.envOverrides = []; // Will hydrate below

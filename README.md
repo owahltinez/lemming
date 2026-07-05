@@ -16,7 +16,7 @@ human-readable `tasks.yml` file.
   recorded in a human-readable `tasks.yml` file. You can step in, adjust the
   roadmap, or swap agents at any time.
 - **Tool Agnostic**: Lemming doesn't care which agent you use. It works
-  out-of-the-box with `gemini`, `aider`, `claude`, `codex`, or even your own
+  out-of-the-box with `agy`, `aider`, `claude`, `codex`, or even your own
   custom scripts.
 - **Resilient Execution**: With built-in heartbeat monitoring, automatic
   retries, and progress tracking, Lemming handles process crashes and rate limits
@@ -65,7 +65,7 @@ lemming status
 Start the autonomous loop.
 
 ```bash
-# Run using the project's configured agent (default: gemini)
+# Run using the project's configured agent (default: agy)
 lemming run
 
 # Flags passed after -- are sent directly to the underlying runner
@@ -259,7 +259,7 @@ lemming hooks set roadmap lint
 Lemming uses **fuzzy matching** to automatically inject the correct "YOLO"
 (auto-approve) and "Quiet" flags for popular tools:
 
-- **Gemini**: Adds `--yolo --no-sandbox`
+- **Antigravity (`agy`)**: Adds `--dangerously-skip-permissions`
 - **Aider**: Adds `--yes --quiet`
 - **Claude**: Adds `--dangerously-skip-permissions`
 - **Codex**: Adds `--yolo`

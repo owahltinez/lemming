@@ -40,7 +40,7 @@ def test_roadmap_defaults():
 def test_roadmap_config_defaults():
     config = models.RoadmapConfig()
     assert config.retries == 3
-    assert config.runner == "gemini"
+    assert config.runner == "agy"
     assert config.hooks is None
     assert config.time_limit == 60
 

@@ -19,7 +19,7 @@ def test_run_loop(client, test_tasks):
 def test_get_runners(client):
     response = client.get("/api/runners")
     assert response.status_code == 200
-    assert response.json() == ["gemini", "aider", "claude", "codex"]
+    assert response.json() == ["agy", "aider", "claude", "codex"]
 
 
 def test_project_context_isolation(client, test_tasks):

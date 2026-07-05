@@ -25,7 +25,7 @@ class TestHooks(unittest.TestCase):
                     progress=[],
                 )
             ],
-            config=tasks.RoadmapConfig(retries=3, runner="gemini", hooks=["roadmap"]),
+            config=tasks.RoadmapConfig(retries=3, runner="agy", hooks=["roadmap"]),
         )
         tasks.save_tasks(self.test_tasks_file, data)
 
@@ -48,7 +48,7 @@ class TestHooks(unittest.TestCase):
         run_hooks(
             self.test_tasks_file,
             "12345678",
-            "gemini",
+            "agy",
             yolo=True,
             runner_args=(),
             no_defaults=False,
@@ -65,7 +65,7 @@ class TestHooks(unittest.TestCase):
         run_hooks(
             self.test_tasks_file,
             "12345678",
-            "gemini",
+            "agy",
             yolo=True,
             runner_args=(),
             no_defaults=False,
@@ -92,7 +92,7 @@ class TestHooks(unittest.TestCase):
         run_hooks(
             self.test_tasks_file,
             "12345678",
-            "gemini",
+            "agy",
             yolo=True,
             runner_args=(),
             no_defaults=False,
@@ -126,7 +126,7 @@ class TestHooks(unittest.TestCase):
         run_hooks(
             self.test_tasks_file,
             "12345678",
-            "gemini",
+            "agy",
             yolo=True,
             runner_args=(),
             no_defaults=False,
@@ -154,7 +154,7 @@ class TestHooks(unittest.TestCase):
             run_hooks(
                 self.test_tasks_file,
                 "12345678",
-                "gemini",
+                "agy",
                 yolo=True,
                 runner_args=(),
                 no_defaults=False,

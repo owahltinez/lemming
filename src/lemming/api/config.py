@@ -13,7 +13,7 @@ router = fastapi.APIRouter()
 
 @router.get("/api/runners")
 def get_runners():
-    return ["gemini", "aider", "claude", "codex"]
+    return ["agy", "aider", "claude", "codex"]
 
 
 @router.post("/api/context")
