@@ -86,6 +86,7 @@ def build_runner_command(
     runner_args: tuple | None = None,
     no_defaults: bool = False,
     verbose: bool = False,
+    time_limit: int = 0,
 ) -> list[str]:
     """Constructs the CLI command for the specified runner.
 
@@ -100,6 +101,8 @@ def build_runner_command(
         runner_args: Extra arguments to pass to the runner.
         no_defaults: If True, do not inject default flags for known runners.
         verbose: If True, enable verbose output for supported runners.
+        time_limit: Task time limit in minutes; used to size runner-side
+            timeouts for runners that enforce their own (0 means no limit).
 
     Returns:
         A list of command-line arguments.
@@ -124,6 +127,16 @@ def build_runner_command(
         if runner_base.startswith("agy"):
             if yolo:
                 cmd.append("--dangerously-skip-permissions")
+
+            # Print mode buffers stdout until the run completes, so stream the
+            # internal log to stdout for live visibility in the task log.
+            cmd.extend(["--log-file", "/dev/stdout"])
+
+            # agy caps print mode at 5 minutes by default; extend it to the
+            # task time limit (or effectively unlimited when there is none).
+            print_timeout = f"{time_limit}m" if time_limit > 0 else "24h"
+            cmd.extend(["--print-timeout", print_timeout])
+
             prompt_arg = "--prompt"
         elif runner_base.startswith("aider"):
             if yolo:

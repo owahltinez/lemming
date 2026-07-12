@@ -278,6 +278,7 @@ def run_loop(
             runner_args,
             no_defaults,
             verbose=verbose,
+            time_limit=time_limit,
         )
 
         returncode = 0

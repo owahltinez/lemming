@@ -15,6 +15,31 @@ def test_build_runner_command_agy():
     assert "my prompt" in cmd
 
 
+def test_build_runner_command_agy_streams_internal_log():
+    # agy print mode buffers stdout until the end, so its internal log is
+    # redirected to stdout to give live visibility in the task log.
+    cmd = runner.build_runner_command("agy", "my prompt", yolo=True)
+    assert cmd[cmd.index("--log-file") + 1] == "/dev/stdout"
+
+
+def test_build_runner_command_agy_print_timeout_matches_time_limit():
+    cmd = runner.build_runner_command("agy", "my prompt", yolo=True, time_limit=45)
+    assert cmd[cmd.index("--print-timeout") + 1] == "45m"
+
+
+def test_build_runner_command_agy_print_timeout_without_time_limit():
+    # agy defaults --print-timeout to 5m, so an explicit large value is
+    # required even when the task has no time limit.
+    cmd = runner.build_runner_command("agy", "my prompt", yolo=True, time_limit=0)
+    assert cmd[cmd.index("--print-timeout") + 1] == "24h"
+
+
+def test_build_runner_command_time_limit_ignored_by_other_runners():
+    cmd = runner.build_runner_command("claude", "my prompt", yolo=True, time_limit=45)
+    assert "--print-timeout" not in cmd
+    assert "--log-file" not in cmd
+
+
 def test_build_runner_command_aider():
     cmd = runner.build_runner_command("aider", "my prompt", yolo=True)
     assert "--yes" in cmd

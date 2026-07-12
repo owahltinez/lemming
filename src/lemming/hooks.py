@@ -75,6 +75,7 @@ def run_hooks(
             runner_args,
             no_defaults,
             verbose=verbose,
+            time_limit=time_limit,
         )
 
         try:
