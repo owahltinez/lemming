@@ -15,7 +15,7 @@ adherence to the Google Style Guide with minimal overhead.
 
 1.  **Automate**: Immediately run `lemming readability check <path> --fix` for
     every file modified or created in the last task. This handles standard
-    formatting (ruff, biome, prettier).
+    formatting (ruff, biome, prettier) and type checking (pyrefly).
 2.  **Report**: Record any meaningful findings as progress using
     `lemming progress {{finished_task_id}} '<finding>'`.
 3.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify

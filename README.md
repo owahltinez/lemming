@@ -155,8 +155,9 @@ Lemming comes with several built-in hooks to help manage your project:
   needs to be adjusted (e.g., adding a missing prerequisite, skipping obsolete
   tasks, or breaking down a broad task).
 - **`readability`**: A code quality hook that reviews changes for adherence to
-  the Google Style Guide and general readability using the bundled
-  `lemming readability` tool. It can record findings as task progress or suggest
+  the Google Style Guide and general readability using the
+  [readability](https://github.com/owahltinez/readability) tool (exposed as
+  `lemming readability`). It can record findings as task progress or suggest
   follow-up refactoring tasks.
 
 ### Custom and Global Hooks
@@ -221,7 +222,10 @@ lemming hooks set roadmap lint
   - `disable <name>...`: Deactivate one or more hooks.
   - `set <name>...`: Set the exact list of active hooks.
   - `reset`: Restore default hooks (run all available).
-- **`readability`**: Bundled code quality tool for style guide adherence.
+- **`readability`**: Code quality tool for style guide adherence, wrapping
+  the [readability](https://github.com/owahltinez/readability) package. Ruff
+  and Pyrefly run with bundled Google-style defaults unless the target project
+  defines its own configuration.
   - `check <paths>...`: Run formatters and linters.
   - `guide <language>`: Fetch and view style guides.
   - `languages`: List all supported languages.

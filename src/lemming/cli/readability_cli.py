@@ -1,6 +1,6 @@
 import logging
 import click
-from . import readability_logic
+import readability
 
 from .main import cli
 
@@ -10,7 +10,7 @@ from .main import cli
 def readability_group(ctx: click.Context):
     """Run the readability tool for code quality checks.
 
-    This is a bundled version of the 'readability' tool, ensuring it is always
+    This wraps the standalone 'readability' package, ensuring it is always
     available to coding agents running within Lemming.
     """
     # Sync verbose flag from lemming's top-level option
@@ -20,5 +20,5 @@ def readability_group(ctx: click.Context):
 
 # Merge the commands from the readability package directly into our group.
 # This allows 'lemming readability check ...' instead of 'lemming readability cli check ...'
-for name, command in readability_logic.cli.commands.items():
+for name, command in readability.cli.commands.items():
     readability_group.add_command(command, name=name)
