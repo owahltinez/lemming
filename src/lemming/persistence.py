@@ -92,6 +92,17 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
     for task_data in data.get("tasks", []):
         if "outcomes" in task_data:
             task_data["progress"] = task_data.pop("outcomes")
+
+        # TODO(compat): Remove alongside the config migration below.
+        if task_data.get("runner") == "gemini":
+            task_data.pop("runner")
+
+    # TODO(compat): Remove once no persisted configs reference the deprecated
+    # gemini runner. Dropping the key lets runtime detection pick the default.
+    config_data = data.get("config")
+    if isinstance(config_data, dict) and config_data.get("runner") == "gemini":
+        config_data.pop("runner")
+
     return models.Roadmap.model_validate(data)
 
 

@@ -1,7 +1,25 @@
 import enum
+import functools
+import shutil
 import time
 
 import pydantic
+
+# Runner CLIs the orchestrator knows how to drive, in default-preference order.
+KNOWN_RUNNERS = ("agy", "aider", "claude", "codex")
+
+
+@functools.cache
+def detect_default_runner() -> str:
+    """Returns the first known runner CLI found on PATH, falling back to "agy".
+
+    Only used when no runner is persisted in the tasks file; an explicit
+    (user-set) runner always takes precedence and remains sticky.
+    """
+    for name in KNOWN_RUNNERS:
+        if shutil.which(name):
+            return name
+    return KNOWN_RUNNERS[0]
 
 
 class TaskNotFoundError(ValueError):
@@ -45,7 +63,7 @@ class RoadmapConfig(pydantic.BaseModel):
     """Configuration for the roadmap execution loop."""
 
     retries: int = 3
-    runner: str = "agy"
+    runner: str = pydantic.Field(default_factory=detect_default_runner)
     hooks: list[str] | None = None
     time_limit: int = 60
 

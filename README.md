@@ -65,7 +65,8 @@ lemming status
 Start the autonomous loop.
 
 ```bash
-# Run using the project's configured agent (default: agy)
+# Run using the project's configured agent (defaults to the first
+# supported runner found on PATH: agy, aider, claude, or codex)
 lemming run
 
 # Flags passed after -- are sent directly to the underlying runner

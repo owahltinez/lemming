@@ -5,6 +5,7 @@ import sys
 import fastapi
 import pydantic
 
+from .. import models
 from .. import tasks
 from . import context
 
@@ -13,7 +14,7 @@ router = fastapi.APIRouter()
 
 @router.get("/api/runners")
 def get_runners():
-    return ["agy", "aider", "claude", "codex"]
+    return list(models.KNOWN_RUNNERS)
 
 
 @router.post("/api/context")

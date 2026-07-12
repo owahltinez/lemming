@@ -40,9 +40,43 @@ def test_roadmap_defaults():
 def test_roadmap_config_defaults():
     config = models.RoadmapConfig()
     assert config.retries == 3
-    assert config.runner == "agy"
+    assert config.runner in models.KNOWN_RUNNERS
     assert config.hooks is None
     assert config.time_limit == 60
+
+
+def test_detect_default_runner_picks_first_installed(monkeypatch):
+    models.detect_default_runner.cache_clear()
+    monkeypatch.setattr(
+        models.shutil, "which", lambda name: "/bin/x" if name == "claude" else None
+    )
+    assert models.detect_default_runner() == "claude"
+    models.detect_default_runner.cache_clear()
+
+
+def test_detect_default_runner_falls_back_to_agy(monkeypatch):
+    models.detect_default_runner.cache_clear()
+    monkeypatch.setattr(models.shutil, "which", lambda name: None)
+    assert models.detect_default_runner() == "agy"
+    models.detect_default_runner.cache_clear()
+
+
+def test_detect_default_runner_prefers_agy(monkeypatch):
+    models.detect_default_runner.cache_clear()
+    monkeypatch.setattr(models.shutil, "which", lambda name: f"/bin/{name}")
+    assert models.detect_default_runner() == "agy"
+    models.detect_default_runner.cache_clear()
+
+
+def test_roadmap_config_uses_detected_runner(monkeypatch):
+    models.detect_default_runner.cache_clear()
+    monkeypatch.setattr(
+        models.shutil, "which", lambda name: "/bin/x" if name == "codex" else None
+    )
+    assert models.RoadmapConfig().runner == "codex"
+    # An explicit value always wins over detection.
+    assert models.RoadmapConfig(runner="aider").runner == "aider"
+    models.detect_default_runner.cache_clear()
 
 
 def test_roadmap_config_custom_time_limit():

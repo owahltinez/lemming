@@ -36,6 +36,44 @@ def test_load_save_tasks(tmp_path):
     assert loaded.tasks[0].id == "1"
 
 
+def test_load_tasks_migrates_deprecated_gemini_runner(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.write_text(yaml.dump({"config": {"runner": "gemini", "retries": 5}}))
+
+    loaded = persistence.load_tasks(tasks_file)
+    # The deprecated runner is dropped so runtime detection supplies the default.
+    assert loaded.config.runner in models.KNOWN_RUNNERS
+    # Other user-set config values are preserved.
+    assert loaded.config.retries == 5
+
+
+def test_load_tasks_migrates_deprecated_gemini_task_runner(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.write_text(
+        yaml.dump(
+            {
+                "tasks": [
+                    {"id": "1", "description": "a", "runner": "gemini"},
+                    {"id": "2", "description": "b", "runner": "aider"},
+                ]
+            }
+        )
+    )
+
+    loaded = persistence.load_tasks(tasks_file)
+    # The deprecated per-task runner is dropped so the config runner is used.
+    assert loaded.tasks[0].runner is None
+    assert loaded.tasks[1].runner == "aider"
+
+
+def test_load_tasks_preserves_explicit_runner(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.write_text(yaml.dump({"config": {"runner": "aider"}}))
+
+    loaded = persistence.load_tasks(tasks_file)
+    assert loaded.config.runner == "aider"
+
+
 def test_loop_lock_management(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
 
