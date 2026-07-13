@@ -32,7 +32,7 @@ human-readable `tasks.yml` file.
 Install globally using `uv`:
 
 ```bash
-uv tool install git+https://github.com/owahltinez/lemming.git
+uv tool install lemming-cli
 ```
 
 ## Quick Start in 3 Steps
