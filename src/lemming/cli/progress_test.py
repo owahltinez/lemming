@@ -1,8 +1,8 @@
 import pytest
 from click.testing import CliRunner
 
-from lemming.cli import main as cli
 from lemming import tasks
+from lemming.cli import main as cli
 
 
 @pytest.fixture

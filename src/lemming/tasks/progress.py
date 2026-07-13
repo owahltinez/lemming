@@ -1,9 +1,13 @@
+"""Recording of task progress entries."""
+
 import pathlib
 
 from .. import models, persistence
 
 
-def add_progress(tasks_file: pathlib.Path, task_id: str, text: str) -> models.Task:
+def add_progress(
+    tasks_file: pathlib.Path, task_id: str, text: str
+) -> models.Task:
     """Adds a progress entry to a task.
 
     Args:

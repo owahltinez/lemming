@@ -1,5 +1,9 @@
+"""Top-level click group and shared options for the Lemming CLI."""
+
 import pathlib
+
 import click
+
 from .. import paths
 
 
@@ -7,7 +11,10 @@ from .. import paths
 @click.option(
     "--tasks-file",
     type=click.Path(path_type=pathlib.Path),
-    help="Path to the tasks file (defaults to ./tasks.yml or project-isolated tasks in ~/.local/lemming/<hash>/).",
+    help=(
+        "Path to the tasks file (defaults to ./tasks.yml or "
+        "project-isolated tasks in ~/.local/lemming/<hash>/)."
+    ),
 )
 @click.option(
     "--verbose",
@@ -19,8 +26,9 @@ from .. import paths
 def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     """Lemming: An autonomous, iterative task runner for AI agents.
 
-    Lemming orchestrates AI coding agents by walking through a structured `tasks.yml` file.
-    It manages the context, tracks task attempts, and records progress.
+    Lemming orchestrates AI coding agents by walking through a structured
+    `tasks.yml` file. It manages the context, tracks task attempts, and
+    records progress.
     """
     ctx.ensure_object(dict)
     if tasks_file is None:

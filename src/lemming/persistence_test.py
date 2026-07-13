@@ -38,10 +38,13 @@ def test_load_save_tasks(tmp_path):
 
 def test_load_tasks_migrates_deprecated_gemini_runner(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
-    tasks_file.write_text(yaml.dump({"config": {"runner": "gemini", "retries": 5}}))
+    tasks_file.write_text(
+        yaml.dump({"config": {"runner": "gemini", "retries": 5}})
+    )
 
     loaded = persistence.load_tasks(tasks_file)
-    # The deprecated runner is dropped so runtime detection supplies the default.
+    # The deprecated runner is dropped so runtime detection supplies the
+    # default.
     assert loaded.config.runner in models.KNOWN_RUNNERS
     # Other user-set config values are preserved.
     assert loaded.config.retries == 5

@@ -1,5 +1,9 @@
+"""Helpers to resolve per-project directories and tasks files."""
+
 import pathlib
+
 import fastapi
+
 from .. import paths
 
 

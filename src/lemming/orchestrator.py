@@ -1,3 +1,5 @@
+"""Orchestrator loop that executes pending tasks via runners and hooks."""
+
 import os
 import pathlib
 import random
@@ -5,9 +7,7 @@ import time
 
 import click
 
-from . import prompts
-from . import runner
-from . import tasks
+from . import prompts, runner, tasks
 from .hooks import run_hooks
 
 
@@ -24,7 +24,10 @@ def _process_exhausted_retries(
     working_dir: pathlib.Path | None,
     time_limit: int,
 ) -> bool:
-    """Handles tasks that have exhausted retries. Returns True to abort, False to continue."""
+    """Handles tasks that have exhausted retries.
+
+    Returns True to abort the run loop, False to continue.
+    """
     # Run hooks (like roadmap revision) even on final failure to give
     # them a chance to heal the task before we abort.
     # Mark as in_progress so hooks can run and heartbeats work.
@@ -51,10 +54,13 @@ def _process_exhausted_retries(
     data = tasks.load_tasks(tasks_file)
     healed_task = next((t for t in data.tasks if t.id == task_id), None)
     if healed_task and healed_task.attempts >= retries:
-        click.echo(f"\nTask {task_id} failed after {retries} attempts. Aborting run.")
+        click.echo(
+            f"\nTask {task_id} failed after {retries} attempts. Aborting run."
+        )
         return True
 
-    # Orchestrator healed it (reset attempts, deleted it, etc.) — continue the loop
+    # Orchestrator healed it (reset attempts, deleted it, etc.) — continue
+    # the loop
     click.echo(f"Orchestrator intervened on task {task_id}. Continuing...")
     return False
 
@@ -75,7 +81,8 @@ def _process_finalizing_task(
     """Runs hooks for a task that is in a finalizing state."""
     if verbose:
         click.echo(
-            f"Task {task_id} resumed in finalizing state ({requested_status}). Skipping runner."
+            f"Task {task_id} resumed in finalizing state "
+            f"({requested_status}). Skipping runner."
         )
 
     run_hooks(
@@ -110,7 +117,10 @@ def _handle_runner_exit(
     working_dir: pathlib.Path | None,
     time_limit: int,
 ) -> bool:
-    """Handles the aftermath of a task runner exiting. Returns True to abort, False to continue."""
+    """Handles the aftermath of a task runner exiting.
+
+    Returns True to abort the run loop, False to continue.
+    """
     # Post-execution validation and heartbeat cleanup
     # This will mark the task as COMPLETED or PENDING based on whether
     # the agent called 'lemming complete'.
@@ -157,10 +167,12 @@ def _handle_runner_exit(
 
         if verbose:
             click.echo(
-                "Runner finished execution but did NOT report completion. Retrying..."
+                "Runner finished execution but did NOT report completion. "
+                "Retrying..."
             )
 
-        # Only sleep if the task is still pending AND it wasn't cancelled (it would have requested a status if not)
+        # Only sleep if the task is still pending AND it wasn't cancelled
+        # (it would have requested a status if not)
         if (
             post_task.status == tasks.TaskStatus.PENDING
             and post_task.attempts < retries
@@ -169,7 +181,8 @@ def _handle_runner_exit(
         ):
             if verbose:
                 click.echo(
-                    f"Waiting {retry_delay} seconds before next attempt to avoid rate limits..."
+                    f"Waiting {retry_delay} seconds before next attempt "
+                    "to avoid rate limits..."
                 )
             time.sleep(retry_delay)
 
@@ -189,7 +202,8 @@ def run_loop(
     while True:
         returncode = 0
 
-        # Reload configuration on each iteration to respond to changes (e.g., from Web UI)
+        # Reload configuration on each iteration to respond to changes
+        # (e.g., from Web UI)
         data = tasks.load_tasks(tasks_file)
 
         retries = data.config.retries
@@ -225,7 +239,8 @@ def run_loop(
                 break
             continue
 
-        # Add a small random jitter to avoid race conditions between multiple instances
+        # Add a small random jitter to avoid race conditions between
+        # multiple instances
         time.sleep(random.uniform(0.1, 0.5))
 
         # Try to claim the task
@@ -233,21 +248,25 @@ def run_loop(
         if not current_task:
             if verbose:
                 click.echo(
-                    f"Task {task_id} already claimed by another instance. Skipping."
+                    f"Task {task_id} already claimed by another instance. "
+                    "Skipping."
                 )
             continue
 
         if verbose:
             click.echo(
-                f"\n--- Task {task_id} (Attempt {current_task.attempts}/{retries}) ---"
+                f"\n--- Task {task_id} "
+                f"(Attempt {current_task.attempts}/{retries}) ---"
             )
             click.echo(f"Working on: {current_task.description}")
         else:
             click.echo(
-                f"[{task_id}] Attempt {current_task.attempts}/{retries}: {current_task.description}"
+                f"[{task_id}] Attempt {current_task.attempts}/{retries}: "
+                f"{current_task.description}"
             )
 
-        # If the task was picked up in a finalizing state, skip the runner and go straight to hooks.
+        # If the task was picked up in a finalizing state, skip the runner
+        # and go straight to hooks.
         if current_task.requested_status:
             _process_finalizing_task(
                 tasks_file=tasks_file,
@@ -264,7 +283,9 @@ def run_loop(
             )
             continue
 
-        prompt = prompts.prepare_prompt(data, current_task, tasks_file, time_limit)
+        prompt = prompts.prepare_prompt(
+            data, current_task, tasks_file, time_limit
+        )
 
         if verbose:
             click.secho("\n=== Runner Prompt ===", fg="blue", bold=True)
@@ -296,22 +317,29 @@ def run_loop(
             )
             if returncode == runner.RETURNCODE_TIMEOUT:
                 click.echo(
-                    f"\nTask {task_id} killed: time limit of {time_limit}m reached."
+                    f"\nTask {task_id} killed: "
+                    f"time limit of {time_limit}m reached."
                 )
             elif returncode != 0:
                 click.echo(
-                    f"\n{runner_name.capitalize()} execution failed with exit code {returncode}"
+                    f"\n{runner_name.capitalize()} execution failed "
+                    f"with exit code {returncode}"
                 )
                 if returncode == 127:
                     click.echo(
                         f"\nNOTE: Command '{runner_name}' not found.\n"
-                        "If you are using a shell alias, Python subprocesses cannot see it.\n"
+                        "If you are using a shell alias, "
+                        "Python subprocesses cannot see it.\n"
                         "Fixes:\n"
-                        f"1. Use the absolute path: `lemming config set runner /path/to/{runner_name}`\n"
-                        f"2. Create an executable wrapper script for '{runner_name}' in your PATH."
+                        "1. Use the absolute path: `lemming config set "
+                        f"runner /path/to/{runner_name}`\n"
+                        "2. Create an executable wrapper script for "
+                        f"'{runner_name}' in your PATH."
                     )
         except Exception as e:
-            click.echo(f"\nAn error occurred while executing {runner_name}: {e}")
+            click.echo(
+                f"\nAn error occurred while executing {runner_name}: {e}"
+            )
 
         should_abort = _handle_runner_exit(
             tasks_file=tasks_file,

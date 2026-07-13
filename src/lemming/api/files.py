@@ -1,3 +1,5 @@
+"""API routes for the file browser and raw file serving."""
+
 import importlib.resources
 import mimetypes
 import pathlib
@@ -10,15 +12,20 @@ from .. import paths
 router = fastapi.APIRouter()
 
 # Get the web directory for serving HTML templates
-web_dir = pathlib.Path(str(importlib.resources.files("lemming").joinpath("web")))
+web_dir = pathlib.Path(
+    str(importlib.resources.files("lemming").joinpath("web"))
+)
 
 
 @router.get("/api/files/{path:path}")
 def get_files_api(request: fastapi.Request, path: str):
+    """List the contents of a directory under the server root."""
     base_path = request.app.state.root
     target_path = (base_path / path).resolve()
 
-    if not target_path.is_relative_to(base_path) or paths.is_ignored(target_path):
+    if not target_path.is_relative_to(base_path) or paths.is_ignored(
+        target_path
+    ):
         raise fastapi.HTTPException(403, "Forbidden")
 
     if not target_path.is_dir():
@@ -53,15 +60,19 @@ def get_files_api(request: fastapi.Request, path: str):
 
 @router.get("/tasks/{task_id}/log")
 def serve_task_log(task_id: str):
+    """Serve the log viewer page for a task."""
     return fastapi.responses.FileResponse(web_dir / "logs.html")
 
 
 @router.get("/files/{path:path}")
 def serve_files(request: fastapi.Request, path: str):
+    """Serve a file's contents, or the file browser page for directories."""
     base_path = request.app.state.root
     target_path = (base_path / path).resolve()
 
-    if not target_path.is_relative_to(base_path) or paths.is_ignored(target_path):
+    if not target_path.is_relative_to(base_path) or paths.is_ignored(
+        target_path
+    ):
         raise fastapi.HTTPException(403, "Forbidden")
 
     if target_path.is_dir():
@@ -70,7 +81,8 @@ def serve_files(request: fastapi.Request, path: str):
         # Guess the MIME type to identify binary formats.
         guess, _ = mimetypes.guess_type(target_path)
 
-        # Consider images, video, audio, PDFs, and common archives as "binary" to be served as-is.
+        # Consider images, video, audio, PDFs, and common archives as
+        # "binary" to be served as-is.
         is_binary = guess and (
             guess.startswith(("image/", "video/", "audio/"))
             or guess
@@ -89,12 +101,16 @@ def serve_files(request: fastapi.Request, path: str):
         if is_binary:
             return fastapi.responses.FileResponse(target_path)
 
-        # For everything else, force text/plain to ensure browser views source code.
-        return fastapi.responses.FileResponse(target_path, media_type="text/plain")
+        # For everything else, force text/plain to ensure browser views
+        # source code.
+        return fastapi.responses.FileResponse(
+            target_path, media_type="text/plain"
+        )
 
     raise fastapi.HTTPException(404, "Not found")
 
 
 @router.get("/files")
 def redirect_files():
+    """Redirect /files to the file browser at the root directory."""
     return fastapi.responses.RedirectResponse("/files/")

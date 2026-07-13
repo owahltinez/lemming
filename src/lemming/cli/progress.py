@@ -1,3 +1,5 @@
+"""CLI command for recording task progress entries."""
+
 import typing
 
 import click
@@ -25,6 +27,7 @@ def progress(
     """Records a progress entry or finding for a specific task.
 
     Args:
+        ctx: The click context holding shared CLI state.
         task_id: The ID of the task.
         text: The progress to record (optional if --file is used).
         file: An optional file to read the progress from.

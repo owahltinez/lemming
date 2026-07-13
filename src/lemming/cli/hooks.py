@@ -1,7 +1,9 @@
+"""CLI commands for managing orchestrator hooks."""
+
 import click
+
+from .. import prompts, tasks
 from .main import cli
-from .. import tasks
-from .. import prompts
 
 
 @cli.group(name="hooks", short_help="Manage orchestrator hooks")
@@ -18,7 +20,11 @@ def hooks_list(ctx: click.Context):
     available = prompts.list_hooks(tasks_file)
 
     data = tasks.load_tasks(tasks_file)
-    active = set(data.config.hooks) if data.config.hooks is not None else set(available)
+    active = (
+        set(data.config.hooks)
+        if data.config.hooks is not None
+        else set(available)
+    )
 
     click.secho("Available orchestrator hooks:", bold=True)
     for h in available:
@@ -41,10 +47,11 @@ def hooks_enable(ctx: click.Context, names: tuple[str, ...]):
             ctx.exit(1)
 
         if data.config.hooks is None:
-            # If currently "all", it's already enabled.
-            # We don't transition to an explicit list here to keep the default behavior.
+            # If currently "all", it's already enabled. We don't transition
+            # to an explicit list here to keep the default behavior.
             click.echo(
-                f"Hook '{name}' is already active (all available hooks are enabled)."
+                f"Hook '{name}' is already active "
+                "(all available hooks are enabled)."
             )
             continue
 
@@ -72,7 +79,8 @@ def hooks_disable(ctx: click.Context, names: tuple[str, ...]):
             ctx.exit(1)
 
         if data.config.hooks is None:
-            # If currently "all", we transition to an explicit list minus the disabled one
+            # If currently "all", we transition to an explicit list minus
+            # the disabled one
             data.config.hooks = [h for h in available if h != name]
         else:
             data.config.hooks = [h for h in data.config.hooks if h != name]
@@ -132,7 +140,8 @@ def hooks_reset(ctx: click.Context):
 def hooks_install(ctx: click.Context):
     """Installs (symlinks) built-in hooks into the global hooks directory.
 
-    This makes them easily discoverable and overridable in ~/.local/lemming/hooks/.
+    This makes them easily discoverable and overridable in
+    ~/.local/lemming/hooks/.
     """
     prompts.ensure_hooks_symlinked()
     click.echo("Built-in hooks installed to ~/.local/lemming/hooks/")

@@ -1,14 +1,15 @@
+"""Prompt template loading and rendering for runners and orchestrator hooks."""
+
 import logging
 import pathlib
 
-from . import paths
-from . import tasks
+from . import paths, runner, tasks
 
 logger = logging.getLogger(__name__)
 
 
 def ensure_hooks_symlinked():
-    """Ensures that all built-in hooks are symlinked in the global hooks directory.
+    """Ensures built-in hooks are symlinked in the global hooks directory.
 
     If a hook already exists (as a file or symlink), it is not overwritten.
     This allows users to override them by replacing the symlink with their
@@ -24,15 +25,18 @@ def ensure_hooks_symlinked():
     for f in base_path.glob("*.md"):
         target = global_hooks_dir / f.name
         # We only create the symlink if NOTHING exists there yet.
-        # This respects manual deletion as a way to "disable" the global symlink,
-        # but the hook will still be available as a built-in fallback unless
-        # disabled in the project's tasks.yml.
+        # This respects manual deletion as a way to "disable" the global
+        # symlink, but the hook will still be available as a built-in
+        # fallback unless disabled in the project's tasks.yml.
         if not target.exists() and not target.is_symlink():
             try:
                 target.symlink_to(f.absolute())
             except (OSError, PermissionError) as e:
-                logger.error("Failed to create symlink for hook %s: %s", target, e)
-                # If we hit permission issues, we want to know, not just skip silently
+                logger.error(
+                    "Failed to create symlink for hook %s: %s", target, e
+                )
+                # If we hit permission issues, we want to know, not just
+                # skip silently
                 if isinstance(e, PermissionError):
                     raise e
 
@@ -121,7 +125,9 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
     return hooks_list
 
 
-def _format_roadmap(data: tasks.Roadmap, current_task_id: str | None = None) -> str:
+def _format_roadmap(
+    data: tasks.Roadmap, current_task_id: str | None = None
+) -> str:
     """Formats the roadmap for inclusion in prompts.
 
     Args:
@@ -131,7 +137,9 @@ def _format_roadmap(data: tasks.Roadmap, current_task_id: str | None = None) -> 
     Returns:
         A formatted roadmap string.
     """
-    roadmap_str = f"## Project Context\n{data.context or 'No context provided.'}\n\n"
+    roadmap_str = (
+        f"## Project Context\n{data.context or 'No context provided.'}\n\n"
+    )
     roadmap_str += "## Roadmap\n"
 
     completed_tasks = [
@@ -146,10 +154,15 @@ def _format_roadmap(data: tasks.Roadmap, current_task_id: str | None = None) -> 
             marker = "[COMPLETED]"
         elif effective_status == tasks.TaskStatus.FAILED:
             marker = f"[FAILED - {t.attempts}/{data.config.retries} attempt(s)]"
-        elif t.status == tasks.TaskStatus.IN_PROGRESS or t.id == current_task_id:
+        elif (
+            t.status == tasks.TaskStatus.IN_PROGRESS or t.id == current_task_id
+        ):
             marker = "[IN PROGRESS]"
         elif t.attempts > 0:
-            marker = f"[PENDING - {t.attempts}/{data.config.retries} attempt(s) so far]"
+            marker = (
+                f"[PENDING - {t.attempts}/{data.config.retries}"
+                " attempt(s) so far]"
+            )
         else:
             marker = "[PENDING]"
 
@@ -160,7 +173,8 @@ def _format_roadmap(data: tasks.Roadmap, current_task_id: str | None = None) -> 
             roadmap_str += f"- {marker} ({t.id}) {t.description}\n"
 
         if t.progress:
-            # For completed tasks, only show progress for the last 5 to keep the prompt concise
+            # For completed tasks, only show progress for the last 5 to
+            # keep the prompt concise
             if effective_status == tasks.TaskStatus.COMPLETED:
                 completed_index = completed_tasks.index(t)
                 if len(completed_tasks) - completed_index <= 5:
@@ -190,8 +204,6 @@ def prepare_hook_prompt(
     Returns:
         The fully rendered hook prompt string.
     """
-    from . import runner
-
     roadmap_str = _format_roadmap(data, current_task_id=finished_task.id)
 
     # Use requested_status when available — it reflects the actual outcome
@@ -201,7 +213,9 @@ def prepare_hook_prompt(
     finished_str = f"Task ID: {finished_task.id}\n"
     finished_str += f"Description: {finished_task.description}\n"
     finished_str += f"Result: {result_status}\n"
-    finished_str += f"Attempts: {finished_task.attempts}/{data.config.retries}\n"
+    finished_str += (
+        f"Attempts: {finished_task.attempts}/{data.config.retries}\n"
+    )
 
     if (
         finished_task.attempts >= data.config.retries
@@ -209,7 +223,8 @@ def prepare_hook_prompt(
     ):
         finished_str += "\n!!! WARNING: FINAL ATTEMPT FAILED !!!\n"
         finished_str += (
-            f"This task has reached the maximum of {data.config.retries} attempts.\n"
+            f"This task has reached the maximum of"
+            f" {data.config.retries} attempts.\n"
         )
         finished_str += (
             "Unless you intervene NOW (by resetting it with a new approach,\n"
@@ -225,16 +240,20 @@ def prepare_hook_prompt(
             finished_str += f"- {o}\n"
 
     # Include the last 100 lines of the runner log for the finished task.
-    # We filter out 'Command:' lines because they contain the full previous prompt
-    # and cause exponential escaping growth when prompts are re-quoted.
+    # We filter out 'Command:' lines because they contain the full previous
+    # prompt and cause exponential escaping growth when prompts are re-quoted.
     log_file = paths.get_log_file(tasks_file, finished_task.id)
     if log_file.exists():
         try:
             with open(log_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-                filtered = [line for line in lines if not line.startswith("Command: ")]
+                filtered = [
+                    line for line in lines if not line.startswith("Command: ")
+                ]
                 last_lines = [line.rstrip() for line in filtered[-100:]]
-                finished_str += "\nExecution log of THIS task (last 100 lines):\n"
+                finished_str += (
+                    "\nExecution log of THIS task (last 100 lines):\n"
+                )
                 finished_str += "```\n"
                 finished_str += "\n".join(last_lines)
                 finished_str += "\n```\n"
@@ -270,8 +289,6 @@ def prepare_prompt(
     Returns:
         The fully rendered prompt string.
     """
-    from . import runner
-
     roadmap_str = _format_roadmap(data, current_task_id=task.id)
 
     # Add parent task context if it's from another project
@@ -281,10 +298,13 @@ def prepare_prompt(
             if parent_tasks_path.exists():
                 parent_roadmap = tasks.load_tasks(parent_tasks_path)
                 parent_task = next(
-                    (t for t in parent_roadmap.tasks if t.id == task.parent), None
+                    (t for t in parent_roadmap.tasks if t.id == task.parent),
+                    None,
                 )
                 if parent_task:
-                    roadmap_str += "\n## Parent Task Context (From root project)\n"
+                    roadmap_str += (
+                        "\n## Parent Task Context (From root project)\n"
+                    )
                     roadmap_str += f"- [ ] {parent_task.description}\n"
                     if parent_task.progress:
                         for progress_item in parent_task.progress:
@@ -303,14 +323,21 @@ def prepare_prompt(
     if time_limit > 0:
         time_limit_section = (
             f"\n## Time Limit\n\n"
-            f"You have a hard time limit of **{time_limit} minutes**. If you exceed it, your\n"
-            f"process will be killed and any unrecorded progress will be lost.\n\n"
-            f"- **Record progress early and often.** Don't wait until the end. If you\n"
-            f"  are killed, your recorded progress will be passed to the next attempt.\n"
-            f"- **If the work is too large** for {time_limit} minutes, break it into smaller\n"
+            f"You have a hard time limit of **{time_limit} minutes**."
+            f" If you exceed it, your\n"
+            f"process will be killed and any unrecorded progress will be"
+            f" lost.\n\n"
+            f"- **Record progress early and often.** Don't wait until the"
+            f" end. If you\n"
+            f"  are killed, your recorded progress will be passed to the"
+            f" next attempt.\n"
+            f"- **If the work is too large** for {time_limit} minutes,"
+            f" break it into smaller\n"
             f"  sub-tasks using `lemming` and complete what you can.\n"
-            f"- **Leverage background tasks and subagents** if your runner supports\n"
-            f"  them. Long-running operations (builds, test suites, large refactors)\n"
+            f"- **Leverage background tasks and subagents** if your runner"
+            f" supports\n"
+            f"  them. Long-running operations (builds, test suites, large"
+            f" refactors)\n"
             f"  are good candidates for parallel execution."
         )
 

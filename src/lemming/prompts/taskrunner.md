@@ -15,8 +15,8 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
 1. **Execute:** Write the code to fulfill the current task. Run any necessary
    tests. **Your operations should be idempotent** — your process may be killed
    at any time (e.g. due to a timeout) and the task retried from scratch. Design
-   your work so that re-running it on a partially modified workspace produces the
-   correct result: check whether changes already exist before applying them,
+   your work so that re-running it on a partially modified workspace produces
+   the correct result: check whether changes already exist before applying them,
    use create-or-update patterns, and avoid operations that fail if run twice.
 2. **DO NOT edit `{{tasks_file_name}}` directly.** You must use the Lemming CLI
    API.
@@ -66,4 +66,4 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
    `lemming --tasks-file {{tasks_file_path}} fail {{task_id}}`
 
 7. Stop and exit after running either the complete or fail command.
-{{time_limit_section}}
+   {{time_limit_section}}

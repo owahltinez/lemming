@@ -1,3 +1,5 @@
+"""Task CRUD operations: add, update, delete, and context updates."""
+
 import os
 import pathlib
 import time
@@ -108,7 +110,9 @@ def delete_tasks(
                 )
             ]
         elif task_id:
-            tasks_to_delete = [t for t in data.tasks if t.id.startswith(task_id)]
+            tasks_to_delete = [
+                t for t in data.tasks if t.id.startswith(task_id)
+            ]
             for t in tasks_to_delete:
                 lifecycle.reset_task_logs(tasks_file, t.id)
             data.tasks = [t for t in data.tasks if not t.id.startswith(task_id)]
@@ -138,7 +142,8 @@ def update_task(
         runner: New preferred runner.
         index: New position in the task list.
         status: New status.
-        require_progress: If True, raises ValueError if the task has no progress.
+        require_progress: If True, raises ValueError if the task has no
+            progress.
         parent: New parent task ID.
         parent_tasks_file: New parent tasks file path.
         force: If True, force status transition even if task is in progress.
@@ -170,7 +175,8 @@ def update_task(
         if require_progress and not target.progress:
             raise ValueError(
                 f"Task {target.id} has no recorded progress. "
-                "Record at least one progress entry before completing or failing."
+                "Record at least one progress entry before completing "
+                "or failing."
             )
 
         if description is not None:
@@ -204,7 +210,9 @@ def update_task(
             ):
                 lifecycle.update_run_time(target)
                 target.requested_status = models.TaskStatus(status)
-                target.last_started_at = time.time()  # Track hook execution time
+                target.last_started_at = (
+                    time.time()
+                )  # Track hook execution time
             else:
                 if target.status == models.TaskStatus.IN_PROGRESS:
                     lifecycle.update_run_time(target)

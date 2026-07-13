@@ -1,7 +1,10 @@
+"""CLI commands for managing project configuration."""
+
 import click
-from .main import cli
+
 from .. import tasks
 from ..orchestrator import format_duration, parse_timeout
+from .main import cli
 
 
 @cli.group(name="config", short_help="Manage project configuration")
@@ -23,7 +26,8 @@ def config_list(ctx: click.Context):
     click.echo(f"  Retries:       {c.retries}")
     click.echo(f"  Time limit:    {format_duration(c.time_limit)}")
     click.echo(
-        f"  Hooks:         {', '.join(c.hooks) if c.hooks is not None else '(all)'}"
+        "  Hooks:         "
+        f"{', '.join(c.hooks) if c.hooks is not None else '(all)'}"
     )
 
 

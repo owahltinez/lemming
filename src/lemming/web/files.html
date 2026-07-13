@@ -254,7 +254,10 @@
                 }
               },
               set(key, val) {
-                localStorage.setItem(this.getPrefix() + key, JSON.stringify(val));
+                localStorage.setItem(
+                  this.getPrefix() + key,
+                  JSON.stringify(val),
+                );
               },
             };
 

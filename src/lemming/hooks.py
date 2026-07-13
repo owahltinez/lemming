@@ -1,10 +1,11 @@
+"""Discovery and execution of orchestrator hooks for finished tasks."""
+
 import pathlib
+import traceback
 
 import click
 
-from . import prompts
-from . import runner
-from . import tasks
+from . import prompts, runner, tasks
 
 
 def run_hooks(
@@ -23,8 +24,17 @@ def run_hooks(
     """Discovers and executes orchestrator hooks for a finished task.
 
     Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task the hooks run against.
+        runner_name: Name of the runner CLI used to execute the hooks.
+        yolo: Whether to run the runner in unattended (yolo) mode.
+        runner_args: Extra arguments forwarded to the runner CLI.
+        no_defaults: Whether to skip the runner's default arguments.
+        verbose: Whether to echo prompts and hook diagnostics.
         hooks: Explicit list of hooks to run. If None, uses config.hooks.
+        working_dir: Working directory for the hook runner processes.
         final_status: If provided, mark the task with this status after hooks.
+        time_limit: Time limit in minutes for each hook run (0 disables it).
     """
     data = tasks.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
@@ -44,27 +54,36 @@ def run_hooks(
 
     if not active_hooks:
         if final_status:
-            tasks.update_task(tasks_file, task_id, status=final_status, force=True)
+            tasks.update_task(
+                tasks_file, task_id, status=final_status, force=True
+            )
         return
 
     for hook_name in active_hooks:
-        # Reload tasks every time to ensure each hook sees progress from previous hooks
+        # Reload tasks every time to ensure each hook sees progress from
+        # previous hooks
         data = tasks.load_tasks(tasks_file)
         task = next((t for t in data.tasks if t.id == task_id), None)
         if not task:
             if verbose:
-                click.echo(f"Task {task_id} not found during hook '{hook_name}' run.")
+                click.echo(
+                    f"Task {task_id} not found during hook '{hook_name}' run."
+                )
             continue
 
         try:
-            prompt = prompts.prepare_hook_prompt(hook_name, data, task, tasks_file)
+            prompt = prompts.prepare_hook_prompt(
+                hook_name, data, task, tasks_file
+            )
         except FileNotFoundError:
             if verbose:
                 click.echo(f"Hook '{hook_name}' prompt not found, skipping.")
             continue
 
         if verbose:
-            click.secho(f"\n=== Hook: {hook_name} Prompt ===", fg="magenta", bold=True)
+            click.secho(
+                f"\n=== Hook: {hook_name} Prompt ===", fg="magenta", bold=True
+            )
             click.echo(prompt)
             click.secho("========================\n", fg="magenta", bold=True)
 
@@ -92,7 +111,9 @@ def run_hooks(
             )
             if verbose:
                 if returncode != 0:
-                    click.echo(f"Hook '{hook_name}' exited with code {returncode}.")
+                    click.echo(
+                        f"Hook '{hook_name}' exited with code {returncode}."
+                    )
         except Exception as e:
             click.echo(f"Hook '{hook_name}' error: {e}")
 
@@ -107,7 +128,9 @@ def run_hooks(
             current = next((t for t in data.tasks if t.id == task_id), None)
             if current and current.status != tasks.TaskStatus.IN_PROGRESS:
                 return
-            tasks.update_task(tasks_file, task_id, status=final_status, force=True)
+            tasks.update_task(
+                tasks_file, task_id, status=final_status, force=True
+            )
         except tasks.TaskNotFoundError:
             # Task may have been deleted by the orchestrator (e.g. after
             # a failure it decided to take a different approach).  This
@@ -118,7 +141,5 @@ def run_hooks(
                 "the plan."
             )
         except Exception as e:
-            import traceback
-
             click.echo(f"Error finalizing task {task_id}: {e}")
             traceback.print_exc()

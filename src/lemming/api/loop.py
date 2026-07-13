@@ -1,3 +1,5 @@
+"""Helpers to auto-start the orchestrator loop from API requests."""
+
 import os
 import pathlib
 import subprocess
@@ -13,7 +15,7 @@ def start_loop_if_needed(
     tasks_file: pathlib.Path,
     cwd: pathlib.Path | None = None,
 ):
-    """Automatically start the orchestrator loop if it is not already running."""
+    """Start the orchestrator loop unless disabled or already running."""
     if getattr(app_state, "disable_auto_start", False):
         return
 
@@ -38,4 +40,6 @@ def start_loop_if_needed(
     )
 
     # Start the loop in a new session so it outlives the request.
-    subprocess.Popen(cmd, start_new_session=True, env=os.environ.copy(), cwd=cwd)
+    subprocess.Popen(
+        cmd, start_new_session=True, env=os.environ.copy(), cwd=cwd
+    )

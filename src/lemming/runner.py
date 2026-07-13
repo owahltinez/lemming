@@ -1,3 +1,5 @@
+"""Runner command construction and subprocess execution with heartbeats."""
+
 import logging
 import os
 import pathlib
@@ -8,8 +10,7 @@ import threading
 import time
 from typing import Callable
 
-from . import paths
-from . import tasks
+from . import paths, tasks
 
 logger = logging.getLogger(__name__)
 
@@ -18,22 +19,26 @@ RETURNCODE_TIMEOUT = -14
 
 
 def _pretty_quote(s: str) -> str:
-    """Quotes a string for shell execution, preferring readable double quotes if it contains single quotes.
+    """Quotes a string for shell execution, preferring readable quoting.
 
-    This function is idempotent for single shell words: if s is already a valid shell-quoted
-    single word, it is unquoted before being re-quoted prettily.
+    Strings containing single quotes are wrapped in double quotes for
+    readability. This function is idempotent for single shell words: if s
+    is already a valid shell-quoted single word, it is unquoted before
+    being re-quoted prettily.
     """
     if not s:
         return "''"
 
-    # If it's already a single shell word, try to unquote it first to avoid compounding.
-    # We only unquote if shlex.split succeeds and returns exactly one token.
+    # If it's already a single shell word, try to unquote it first to avoid
+    # compounding. We only unquote if shlex.split succeeds and returns
+    # exactly one token.
     try:
         parts = shlex.split(s)
         if len(parts) == 1:
             # Check if it was actually quoted or escaped.
-            # shlex.split("foo") is "foo", but shlex.split("'foo'") is also "foo".
-            # We want to canonicalize any quoted string back to its literal form.
+            # shlex.split("foo") is "foo", but shlex.split("'foo'") is also
+            # "foo". We want to canonicalize any quoted string back to its
+            # literal form.
             if parts[0] != s or (s.startswith("'") or s.startswith('"')):
                 s = parts[0]
     except Exception:
@@ -43,9 +48,11 @@ def _pretty_quote(s: str) -> str:
     if shlex.quote(s) == s:
         return s
 
-    # If it contains single quotes, try to use double quotes for better readability
+    # If it contains single quotes, try to use double quotes for better
+    # readability
     if "'" in s:
-        # If it has !, double quotes might trigger history expansion in interactive bash
+        # If it has !, double quotes might trigger history expansion in
+        # interactive bash
         if "!" in s:
             return shlex.quote(s)
 
@@ -200,22 +207,25 @@ def run_with_heartbeat(
     Args:
         cmd: The command to execute as a list of strings.
         tasks_file: Path to the tasks YAML file.
-        task_id: ID of the task being executed (used for heartbeat and parent env var).
+        task_id: ID of the task being executed (used for heartbeat and
+            parent env var).
         verbose: If True, echo runner output to the console.
         echo_fn: Function to use for echoing output (defaults to print).
         cwd: Optional working directory for the subprocess.
-        header: Optional header to write to the log (e.g. "Orchestrator Hook: roadmap").
+        header: Optional header to write to the log (e.g. "Orchestrator
+            Hook: roadmap").
         time_limit: Maximum execution time in minutes. 0 means no limit.
 
     Returns:
-        A tuple of (returncode, stdout_log, stderr_log). Note: stderr is currently
-        merged into stdout_log.
+        A tuple of (returncode, stdout_log, stderr_log). Note: stderr is
+        currently merged into stdout_log.
     """
     log_file = paths.get_log_file(tasks_file, task_id)
 
     # Use a separator for new attempts or hooks
-    # For the log file, we truncate long arguments (like the prompt) to avoid
-    # unreadable logs and exponential escaping growth when prompts are re-quoted.
+    # For the log file, we truncate long arguments (like the prompt) to
+    # avoid unreadable logs and exponential escaping growth when prompts
+    # are re-quoted.
     log_command_str = _shlex_join_pretty(cmd, max_len=200)
     command_str = _shlex_join_pretty(cmd)
 
@@ -232,7 +242,8 @@ def run_with_heartbeat(
     if verbose:
         echo_fn(f"Executing: {command_str}\n\n")
 
-    # Start the process in a new session so we can kill its entire process tree if needed.
+    # Start the process in a new session so we can kill its entire process
+    # tree if needed.
     env = os.environ.copy()
     env["LEMMING_PARENT_TASK_ID"] = task_id
     env["LEMMING_PARENT_TASKS_FILE"] = str(tasks_file.resolve())
@@ -255,7 +266,9 @@ def run_with_heartbeat(
 
     try:
         # Heartbeat and cancellation management
-        is_claimed = tasks.update_heartbeat(tasks_file, task_id, pid=process.pid)
+        is_claimed = tasks.update_heartbeat(
+            tasks_file, task_id, pid=process.pid
+        )
         start_time = time.monotonic()
 
         def heartbeat_loop():
@@ -275,7 +288,8 @@ def run_with_heartbeat(
                         tasks.add_progress(
                             tasks_file,
                             task_id,
-                            f"Task killed: time limit of {time_limit} minutes reached.",
+                            f"Task killed: time limit of {time_limit}"
+                            " minutes reached.",
                         )
                         _kill_process_tree(process)
                         return
@@ -283,7 +297,9 @@ def run_with_heartbeat(
                 time.sleep(tasks.STALE_THRESHOLD // 2)
 
         if is_claimed:
-            heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+            heartbeat_thread = threading.Thread(
+                target=heartbeat_loop, daemon=True
+            )
             heartbeat_thread.start()
 
         # Stream output to log file and optionally to console

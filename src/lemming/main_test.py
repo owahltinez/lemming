@@ -5,8 +5,7 @@ import unittest
 
 import click.testing
 
-from lemming import main
-from lemming import tasks
+from lemming import main, tasks
 
 
 class TestMain(unittest.TestCase):

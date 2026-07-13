@@ -1,12 +1,18 @@
+"""CLI commands for the orchestrator loop and the web interface."""
+
+import copy
 import os
 import pathlib
+import secrets
+import sys
 import threading
 import time
+
 import click
+
+from .. import paths, providers, tasks
+from ..orchestrator import parse_timeout, run_loop
 from .main import cli
-from .. import tasks
-from .. import paths
-from ..orchestrator import run_loop, parse_timeout
 
 
 @cli.command(
@@ -15,10 +21,14 @@ from ..orchestrator import run_loop, parse_timeout
 @click.option(
     "--retry-delay",
     default=10,
-    help="Seconds to wait before retrying a failed task (to handle rate limits).",
+    help=(
+        "Seconds to wait before retrying a failed task (to handle rate limits)."
+    ),
 )
 @click.option(
-    "--yolo/--no-yolo", default=True, help="Run the runner in YOLO/auto-approve mode."
+    "--yolo/--no-yolo",
+    default=True,
+    help="Run the runner in YOLO/auto-approve mode.",
 )
 @click.option(
     "--env",
@@ -43,6 +53,7 @@ def run(
     """Starts the orchestrator loop to autonomously execute pending tasks.
 
     Args:
+        ctx: The click context.
         retry_delay: Delay between retries.
         yolo: If True, skip runner confirmations.
         env: Environment variables to inject.
@@ -94,25 +105,29 @@ def run(
 @click.option(
     "--timeout",
     default=None,
-    help="Auto-shutdown after duration (e.g., '8h', '30m', '0' to disable). Defaults to '8h' when --tunnel is used.",
+    help=(
+        "Auto-shutdown after duration (e.g., '8h', '30m', '0' to disable)."
+        " Defaults to '8h' when --tunnel is used."
+    ),
 )
 @click.pass_context
 def serve(
-    ctx: click.Context, port: int, host: str, tunnel: str | None, timeout: str | None
+    ctx: click.Context,
+    port: int,
+    host: str,
+    tunnel: str | None,
+    timeout: str | None,
 ):
     """Launches the local web dashboard for monitoring and interaction.
 
     Optionally exposes it to the public internet via --tunnel.
     """
-    import copy
-    import secrets
-    import sys
+    # Lazy imports: the api package builds the FastAPI app and mounts static
+    # assets at import time, so keep the server stack out of CLI startup.
+    import uvicorn  # noqa: PLC0415
+    import uvicorn.config  # noqa: PLC0415
 
-    import uvicorn
-    import uvicorn.config
-
-    from .. import api
-    from .. import providers
+    from .. import api  # noqa: PLC0415
 
     api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
     api.app.state.verbose = ctx.obj["VERBOSE"]
@@ -121,7 +136,9 @@ def serve(
     tunnel_proc = None
     if tunnel:
         click.echo(f"[ Lemming ] Starting local server on port {port}...")
-        click.echo(f"[ Lemming ] Initiating public tunnel via {tunnel.capitalize()}...")
+        click.echo(
+            f"[ Lemming ] Initiating public tunnel via {tunnel.capitalize()}..."
+        )
 
         tunnel_proc = (
             providers.CloudflareProvider()
@@ -140,13 +157,17 @@ def serve(
         click.echo("[ Lemming ] ")
         click.echo("[ Lemming ] ⚠️  SECURITY WARNING ")
         click.echo(
-            "[ Lemming ] Your Lemming instance is being exposed to the public internet."
+            "[ Lemming ] Your Lemming instance is being exposed to the"
+            " public internet."
         )
         click.echo(
-            "[ Lemming ] Token-based authentication has been automatically enabled."
+            "[ Lemming ] Token-based authentication has been automatically"
+            " enabled."
         )
         click.echo("[ Lemming ] ")
-        click.echo("[ Lemming ] 🌐 Share this exact, secure link with the remote user:")
+        click.echo(
+            "[ Lemming ] 🌐 Share this exact, secure link with the remote user:"
+        )
         click.echo(f"[ Lemming ] 👉 {public_url}?token={token}")
         click.echo("")
     else:
@@ -158,12 +179,15 @@ def serve(
 
     if timeout_seconds > 0:
         click.echo(
-            f"[ Lemming ] The server will automatically shut down in {timeout_str}."
+            "[ Lemming ] The server will automatically shut down"
+            f" in {timeout_str}."
         )
 
         def monitor():
             time.sleep(timeout_seconds)
-            click.echo("\n[ Lemming ] Timeout reached. Waiting for tasks to finish...")
+            click.echo(
+                "\n[ Lemming ] Timeout reached. Waiting for tasks to finish..."
+            )
             if tunnel_proc:
                 tunnel_proc.stop()
 
@@ -182,7 +206,8 @@ def serve(
 
     if tunnel:
         click.echo(
-            "[ Lemming ] Press Ctrl+C to manually close the tunnel and shut down the server."
+            "[ Lemming ] Press Ctrl+C to manually close the tunnel and"
+            " shut down the server."
         )
 
     # Suppress repetitive access-log lines from UI polling endpoints.

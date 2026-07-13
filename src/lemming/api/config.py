@@ -1,3 +1,5 @@
+"""API routes for runner discovery, project configuration, and loop runs."""
+
 import os
 import subprocess
 import sys
@@ -5,8 +7,7 @@ import sys
 import fastapi
 import pydantic
 
-from .. import models
-from .. import tasks
+from .. import models, tasks
 from . import context
 
 router = fastapi.APIRouter()
@@ -14,11 +15,15 @@ router = fastapi.APIRouter()
 
 @router.get("/api/runners")
 def get_runners():
+    """List the names of all known task runners."""
     return list(models.KNOWN_RUNNERS)
 
 
 @router.post("/api/context")
-def update_context(request: fastapi.Request, update: dict, project: str | None = None):
+def update_context(
+    request: fastapi.Request, update: dict, project: str | None = None
+):
+    """Update the shared project context passed to task runners."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     tasks.update_context(tasks_file, update.get("context", ""))
     return {"status": "ok"}
@@ -26,8 +31,11 @@ def update_context(request: fastapi.Request, update: dict, project: str | None =
 
 @router.post("/api/config")
 def update_config(
-    request: fastapi.Request, config: tasks.RoadmapConfig, project: str | None = None
+    request: fastapi.Request,
+    config: tasks.RoadmapConfig,
+    project: str | None = None,
 ):
+    """Replace the roadmap configuration and return the saved value."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     with tasks.lock_tasks(tasks_file):
         data = tasks.load_tasks(tasks_file)
@@ -37,13 +45,18 @@ def update_config(
 
 
 class RunRequest(pydantic.BaseModel):
+    """Request body for starting the orchestrator loop."""
+
     env: dict[str, str] | None = None
 
 
 @router.post("/api/run")
 def run_loop(
-    request: fastapi.Request, run_request: RunRequest, project: str | None = None
+    request: fastapi.Request,
+    run_request: RunRequest,
+    project: str | None = None,
 ):
+    """Start the orchestrator loop as a detached background process."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     project_dir = context.resolve_project_dir(request.app.state, project)
 

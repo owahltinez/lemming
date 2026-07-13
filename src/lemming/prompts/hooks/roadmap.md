@@ -16,8 +16,8 @@ the plan up-to-date with minimal friction.
 1.  **Diagnose**: Review the execution logs and progress of the finished task to
     understand its impact on the roadmap. Check if the task was FULLY completed,
     including any necessary cleanup, teardowns, or documentation.
-2.  **Repair**: If a task has failed, you MUST intervene. Simply resetting a task
-    without changing the approach will lead to the same failure. You MUST
+2.  **Repair**: If a task has failed, you MUST intervene. Simply resetting a
+    task without changing the approach will lead to the same failure. You MUST
     either:
     - Rewrite its description with a fundamentally different approach and then
       reset its attempts.
@@ -41,8 +41,8 @@ the plan up-to-date with minimal friction.
 7.  **Fast Exit**: If the roadmap is accurate and well-structured, AND there are
     no failed tasks that have reached their maximum attempts, you may exit
     immediately without running any commands. However, if a task is marked as
-    FAILED and has reached its maximum attempts, a Fast Exit will result in
-    the entire project ABORTING. In that case, you MUST repair it.
+    FAILED and has reached its maximum attempts, a Fast Exit will result in the
+    entire project ABORTING. In that case, you MUST repair it.
 
 ## Commands
 

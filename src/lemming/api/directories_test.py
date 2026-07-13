@@ -1,3 +1,7 @@
+import pathlib
+import shutil
+import tempfile
+
 from lemming import api
 
 
@@ -29,7 +33,9 @@ def test_create_directory(client, test_tasks):
 
     # Test creating in a subdirectory
     (root / "parent").mkdir()
-    response = client.post("/api/directories", json={"path": "parent", "name": "child"})
+    response = client.post(
+        "/api/directories", json={"path": "parent", "name": "child"}
+    )
     assert response.status_code == 200
     assert (root / "parent" / "child").is_dir()
 
@@ -68,10 +74,6 @@ def test_project_param_traversal_rejected(client, test_tasks):
 
 def test_symlink_traversal_rejected(client, test_tasks):
     """Symlinks pointing outside the root are rejected."""
-    import tempfile
-    import pathlib
-    import shutil
-
     root = api.app.state.root
     external_dir = pathlib.Path(tempfile.mkdtemp())
     try:
@@ -83,7 +85,9 @@ def test_symlink_traversal_rejected(client, test_tasks):
         response = client.get("/api/data", params={"project": "sneaky_link"})
         assert response.status_code == 403
 
-        response = client.get("/api/directories", params={"path": "sneaky_link"})
+        response = client.get(
+            "/api/directories", params={"path": "sneaky_link"}
+        )
         assert response.status_code == 403
     finally:
         symlink.unlink(missing_ok=True)

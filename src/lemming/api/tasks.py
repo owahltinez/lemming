@@ -1,16 +1,17 @@
+"""API routes for creating, updating, and inspecting tasks."""
+
 import fastapi
 import pydantic
 
-from .. import tasks
-from .. import paths
-from . import context
-from . import loop
+from .. import paths, tasks
+from . import context, loop
 
 router = fastapi.APIRouter()
 
 
 @router.get("/api/data", response_model=tasks.ProjectData)
 def get_data(request: fastapi.Request, project: str | None = None):
+    """Get the full project data: context, config, tasks, and status."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     data = tasks.get_project_data(tasks_file)
     data.cwd = str(context.resolve_project_dir(request.app.state, project))
@@ -18,6 +19,8 @@ def get_data(request: fastapi.Request, project: str | None = None):
 
 
 class AddTaskRequest(pydantic.BaseModel):
+    """Request body for adding a new task to the roadmap."""
+
     description: str
     runner: str | None = None
     index: int = -1
@@ -29,6 +32,7 @@ class AddTaskRequest(pydantic.BaseModel):
 def add_task(
     request: fastapi.Request, task: AddTaskRequest, project: str | None = None
 ):
+    """Add a new task and start the orchestrator loop if needed."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     new_task = tasks.add_task(
         tasks_file,
@@ -47,7 +51,10 @@ def add_task(
 
 
 @router.get("/api/tasks/{task_id}", response_model=tasks.Task)
-def get_task(request: fastapi.Request, task_id: str, project: str | None = None):
+def get_task(
+    request: fastapi.Request, task_id: str, project: str | None = None
+):
+    """Get a single task by ID (or unique ID prefix)."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     data = tasks.load_tasks(tasks_file)
     target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
@@ -58,8 +65,12 @@ def get_task(request: fastapi.Request, task_id: str, project: str | None = None)
 
 @router.post("/api/tasks/{task_id}/update")
 def update_task(
-    request: fastapi.Request, task_id: str, update: dict, project: str | None = None
+    request: fastapi.Request,
+    task_id: str,
+    update: dict,
+    project: str | None = None,
 ):
+    """Update a task's description, runner, position, status, or parent."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     status = update.get("status")
 
@@ -99,15 +110,22 @@ def update_task(
 
 
 @router.post("/api/tasks/delete-completed")
-def delete_completed_tasks(request: fastapi.Request, project: str | None = None):
+def delete_completed_tasks(
+    request: fastapi.Request, project: str | None = None
+):
+    """Delete all completed tasks from the roadmap."""
     tasks.delete_tasks(
-        context.resolve_tasks_file(request.app.state, project), completed_only=True
+        context.resolve_tasks_file(request.app.state, project),
+        completed_only=True,
     )
     return {"status": "ok"}
 
 
 @router.post("/api/tasks/{task_id}/delete")
-def delete_task(request: fastapi.Request, task_id: str, project: str | None = None):
+def delete_task(
+    request: fastapi.Request, task_id: str, project: str | None = None
+):
+    """Delete a single task by ID."""
     tasks.delete_tasks(
         context.resolve_tasks_file(request.app.state, project), task_id=task_id
     )
@@ -118,6 +136,7 @@ def delete_task(request: fastapi.Request, task_id: str, project: str | None = No
 def cancel_task_endpoint(
     request: fastapi.Request, task_id: str, project: str | None = None
 ):
+    """Cancel a running or pending task."""
     if tasks.cancel_task(
         context.resolve_tasks_file(request.app.state, project), task_id
     ):
@@ -129,6 +148,7 @@ def cancel_task_endpoint(
 def clear_task_endpoint(
     request: fastapi.Request, task_id: str, project: str | None = None
 ):
+    """Reset a task to pending, clearing its attempts and progress."""
     try:
         tasks_file = context.resolve_tasks_file(request.app.state, project)
         tasks.reset_task(tasks_file, task_id)
@@ -138,7 +158,10 @@ def clear_task_endpoint(
 
 
 @router.get("/api/tasks/{task_id}/log")
-def get_task_log(request: fastapi.Request, task_id: str, project: str | None = None):
+def get_task_log(
+    request: fastapi.Request, task_id: str, project: str | None = None
+):
+    """Get the runner log output for a task, or empty if none exists."""
     log_file = paths.get_log_file(
         context.resolve_tasks_file(request.app.state, project), task_id
     )

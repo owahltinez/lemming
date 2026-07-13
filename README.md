@@ -12,15 +12,15 @@ human-readable `tasks.yml` file.
 - **Zero Context Drift**: By breaking projects into discrete tasks, Lemming
   ensures agents stay focused. They only see the project context, relevant
   history, and the specific task at hand.
-- **Transparency & Control**: Every decision, technical finding, and progress update is
-  recorded in a human-readable `tasks.yml` file. You can step in, adjust the
-  roadmap, or swap agents at any time.
+- **Transparency & Control**: Every decision, technical finding, and progress
+  update is recorded in a human-readable `tasks.yml` file. You can step in,
+  adjust the roadmap, or swap agents at any time.
 - **Tool Agnostic**: Lemming doesn't care which agent you use. It works
-  out-of-the-box with `agy`, `aider`, `claude`, `codex`, or even your own
-  custom scripts.
+  out-of-the-box with `agy`, `aider`, `claude`, `codex`, or even your own custom
+  scripts.
 - **Resilient Execution**: With built-in heartbeat monitoring, automatic
-  retries, and progress tracking, Lemming handles process crashes and rate limits
-  gracefully.
+  retries, and progress tracking, Lemming handles process crashes and rate
+  limits gracefully.
 - **Human-Agent Collaboration**: Use the CLI or the Web UI to collaborate with
   your agents in real-time. Mark tasks, edit descriptions, and review progress
   as they happen.
@@ -222,9 +222,9 @@ lemming hooks set roadmap lint
   - `disable <name>...`: Deactivate one or more hooks.
   - `set <name>...`: Set the exact list of active hooks.
   - `reset`: Restore default hooks (run all available).
-- **`readability`**: Code quality tool for style guide adherence, wrapping
-  the [readability](https://github.com/owahltinez/readability) package. Ruff
-  and Pyrefly run with bundled Google-style defaults unless the target project
+- **`readability`**: Code quality tool for style guide adherence, wrapping the
+  [readability](https://github.com/owahltinez/readability) package. Ruff and
+  Pyrefly run with bundled Google-style defaults unless the target project
   defines its own configuration.
   - `check <paths>...`: Run formatters and linters.
   - `guide <language>`: Fetch and view style guides.

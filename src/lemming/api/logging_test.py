@@ -1,4 +1,5 @@
 import logging
+
 from lemming import api
 
 
@@ -19,7 +20,8 @@ def test_quiet_poll_filter():
         )
         assert filt.filter(record) is False
 
-    # GET /api/tasks/{task_id} and GET /api/tasks/{task_id}/log should be quieted.
+    # GET /api/tasks/{task_id} and GET /api/tasks/{task_id}/log should be
+    # quieted.
     for path in ("/api/tasks/abc-123", "/api/tasks/xyz-789/log"):
         record = logging.LogRecord(
             name="uvicorn.access",

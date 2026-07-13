@@ -25,7 +25,9 @@ class TestHooks(unittest.TestCase):
                     progress=[],
                 )
             ],
-            config=tasks.RoadmapConfig(retries=3, runner="agy", hooks=["roadmap"]),
+            config=tasks.RoadmapConfig(
+                retries=3, runner="agy", hooks=["roadmap"]
+            ),
         )
         tasks.save_tasks(self.test_tasks_file, data)
 
@@ -42,7 +44,9 @@ class TestHooks(unittest.TestCase):
 
         # Task must be IN_PROGRESS for finalization to apply
         tasks.update_task(
-            self.test_tasks_file, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+            self.test_tasks_file,
+            "12345678",
+            status=tasks.TaskStatus.IN_PROGRESS,
         )
 
         run_hooks(
@@ -86,7 +90,9 @@ class TestHooks(unittest.TestCase):
 
         # Task must be IN_PROGRESS for finalization to apply
         tasks.update_task(
-            self.test_tasks_file, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+            self.test_tasks_file,
+            "12345678",
+            status=tasks.TaskStatus.IN_PROGRESS,
         )
 
         run_hooks(
@@ -107,13 +113,17 @@ class TestHooks(unittest.TestCase):
 
     @unittest.mock.patch("lemming.hooks.prompts.prepare_hook_prompt")
     @unittest.mock.patch("lemming.runner.run_with_heartbeat")
-    def test_run_hooks_skips_finalization_when_healed(self, mock_run, mock_prepare):
-        """If a hook resets the task (heals it), finalization should be skipped."""
+    def test_run_hooks_skips_finalization_when_healed(
+        self, mock_run, mock_prepare
+    ):
+        """If a hook resets the task (heals it), skip finalization."""
         mock_prepare.return_value = "Mock Prompt"
 
         # Task must be IN_PROGRESS for hooks to run
         tasks.update_task(
-            self.test_tasks_file, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+            self.test_tasks_file,
+            "12345678",
+            status=tasks.TaskStatus.IN_PROGRESS,
         )
 
         # Simulate the hook resetting the task during execution

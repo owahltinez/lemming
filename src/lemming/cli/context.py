@@ -1,7 +1,11 @@
+"""CLI command for viewing or setting the project context."""
+
 import pathlib
+
 import click
-from .main import cli
+
 from .. import tasks
+from .main import cli
 
 
 @cli.command(short_help="[<text>] View or set the project context")
@@ -13,10 +17,13 @@ from .. import tasks
     help="Read context from a file.",
 )
 @click.pass_context
-def context(ctx: click.Context, context_text: str | None, file: pathlib.Path | None):
+def context(
+    ctx: click.Context, context_text: str | None, file: pathlib.Path | None
+):
     """Sets or displays the global project-wide context and rules.
 
     Args:
+        ctx: The click context holding shared CLI state.
         context_text: The context string to set (optional).
         file: A file path to read the context from (optional).
     """

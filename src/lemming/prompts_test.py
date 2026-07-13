@@ -1,7 +1,4 @@
-from lemming import prompts
-from lemming import tasks
-from lemming import paths
-from lemming import models
+from lemming import models, paths, prompts, tasks
 
 
 def test_load_prompt():
@@ -21,7 +18,9 @@ def test_prepare_prompt(tmp_path):
                 status=tasks.TaskStatus.COMPLETED,
                 progress=["O1"],
             ),
-            tasks.Task(id="2", description="T2", status=tasks.TaskStatus.PENDING),
+            tasks.Task(
+                id="2", description="T2", status=tasks.TaskStatus.PENDING
+            ),
         ],
     )
     task = data.tasks[1]
@@ -112,7 +111,9 @@ def test_prepare_hook_prompt_substitution(tmp_path, monkeypatch):
                 progress=["Done"],
             ),
             tasks.Task(
-                id="task2", description="Task 2", status=tasks.TaskStatus.IN_PROGRESS
+                id="task2",
+                description="Task 2",
+                status=tasks.TaskStatus.IN_PROGRESS,
             ),
         ],
     )
@@ -135,7 +136,9 @@ File Path: {{tasks_file_path}}
     log_file.parent.mkdir(parents=True, exist_ok=True)
     log_file.write_text("line 1\nline 2\nline 3")
 
-    prompt = prompts.prepare_hook_prompt("test-hook", data, finished_task, tasks_file)
+    prompt = prompts.prepare_hook_prompt(
+        "test-hook", data, finished_task, tasks_file
+    )
 
     # Verify roadmap substitution
     assert "Roadmap: ## Project Context" in prompt
@@ -159,7 +162,9 @@ def test_prepare_prompt_local_override(tmp_path):
     project_dir = tmp_path
     local_hooks_dir = project_dir / ".lemming" / "hooks"
     local_hooks_dir.mkdir(parents=True)
-    (local_hooks_dir / "taskrunner.md").write_text("LOCAL OVERRIDE {{description}}")
+    (local_hooks_dir / "taskrunner.md").write_text(
+        "LOCAL OVERRIDE {{description}}"
+    )
 
     data = tasks.Roadmap(
         tasks=[
@@ -199,10 +204,13 @@ def test_prepare_hook_prompt_filters_command_noise(tmp_path, monkeypatch):
     log_file = paths.get_log_file(tasks_file, finished_task.id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     log_file.write_text(
-        "Command: agy --prompt \"HUGE PROMPT WITH 'QUOTES'\" ...\nReal output from AI\n"
+        "Command: agy --prompt \"HUGE PROMPT WITH 'QUOTES'\" ...\n"
+        "Real output from AI\n"
     )
 
-    prompt = prompts.prepare_hook_prompt("test-hook", data, finished_task, tasks_file)
+    prompt = prompts.prepare_hook_prompt(
+        "test-hook", data, finished_task, tasks_file
+    )
 
     # Verify Command: line is filtered out
     assert "HUGE PROMPT" not in prompt
@@ -264,14 +272,18 @@ def test_hook_override_precedence(tmp_path, monkeypatch):
     # Global override
     global_hooks_dir = paths.get_global_hooks_dir()
     global_hooks_dir.mkdir(parents=True)
-    (global_hooks_dir / "roadmap.md").write_text("global roadmap", encoding="utf-8")
+    (global_hooks_dir / "roadmap.md").write_text(
+        "global roadmap", encoding="utf-8"
+    )
 
     # Project override
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     local_hooks_dir = project_dir / ".lemming" / "hooks"
     local_hooks_dir.mkdir(parents=True)
-    (local_hooks_dir / "roadmap.md").write_text("project roadmap", encoding="utf-8")
+    (local_hooks_dir / "roadmap.md").write_text(
+        "project roadmap", encoding="utf-8"
+    )
 
     tasks_file = project_dir / "tasks.yml"
     tasks_file.touch()
@@ -302,7 +314,9 @@ def test_prepare_prompt_time_limit_section(tmp_path):
     assert "subagents" in prompt
 
     # Without time limit
-    prompt_no_limit = prompts.prepare_prompt(data, task, tasks_file, time_limit=0)
+    prompt_no_limit = prompts.prepare_prompt(
+        data, task, tasks_file, time_limit=0
+    )
     assert "## Time Limit" not in prompt_no_limit
 
 
@@ -318,7 +332,9 @@ def test_prepare_prompt_time_limit_custom(tmp_path):
     assert "30 minutes" in prompt
 
 
-def test_prepare_hook_prompt_shows_failed_for_exhausted_task(tmp_path, monkeypatch):
+def test_prepare_hook_prompt_shows_failed_for_exhausted_task(
+    tmp_path, monkeypatch
+):
     """A task with requested_status=FAILED (during hook execution) should show
     Result: failed and [FAILED] in the roadmap, not in_progress."""
     lemming_home = tmp_path / "lemming_home"
@@ -349,7 +365,9 @@ def test_prepare_hook_prompt_shows_failed_for_exhausted_task(tmp_path, monkeypat
         "Roadmap: {{roadmap}}\nFinished: {{finished_task}}"
     )
 
-    prompt = prompts.prepare_hook_prompt("test-hook", data, failed_task, tasks_file)
+    prompt = prompts.prepare_hook_prompt(
+        "test-hook", data, failed_task, tasks_file
+    )
 
     # The finished task section must show "failed", not "in_progress"
     assert "Result: failed" in prompt
@@ -362,7 +380,8 @@ def test_list_hooks_roadmap_is_last(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     tasks_file.touch()
 
-    # Create project hooks that would alphabetically come before and after 'roadmap'
+    # Create project hooks that would alphabetically come before and after
+    # 'roadmap'
     local_hooks_dir = tmp_path / ".lemming" / "hooks"
     local_hooks_dir.mkdir(parents=True)
     (local_hooks_dir / "z_hook.md").write_text("z", encoding="utf-8")
@@ -373,7 +392,8 @@ def test_list_hooks_roadmap_is_last(tmp_path):
     assert "roadmap" in hooks
     assert "z_hook" in hooks
     assert "a_hook" in hooks
-    # Even though z_hook is alphabetically last, roadmap should be moved to the end
+    # Even though z_hook is alphabetically last, roadmap should be moved to
+    # the end
     assert hooks[-1] == "roadmap"
 
 

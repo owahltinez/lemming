@@ -1,3 +1,5 @@
+"""API routes for listing orchestrator hooks."""
+
 import fastapi
 
 from .. import prompts

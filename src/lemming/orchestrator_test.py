@@ -123,7 +123,7 @@ def test_run_loop_retry_and_fail(mock_sleep, mock_popen, setup_env):
 
 
 def test_synchronous_hooks_execution_timing(setup_env):
-    """Verifies that a new task starts only AFTER the hooks of the previous task have finished."""
+    """Verifies a new task starts only AFTER previous hooks finished."""
     test_tasks_file, initial_data = setup_env
     # 1. Setup two pending tasks.
     now = time.time()
@@ -180,7 +180,9 @@ def test_synchronous_hooks_execution_timing(setup_env):
             side_effect=mocked_finish_task_attempt,
         ),
         mock.patch("lemming.prompts.list_hooks", return_value=["test_hook"]),
-        mock.patch("lemming.prompts.prepare_hook_prompt", return_value="Dummy hook"),
+        mock.patch(
+            "lemming.prompts.prepare_hook_prompt", return_value="Dummy hook"
+        ),
     ):
         run_loop(
             test_tasks_file,
@@ -209,7 +211,9 @@ def test_run_loop_calls_runner_with_header(mock_run, setup_env):
     # Mock finish_task_attempt to return a completed task to end loop
     mock_task = initial_data.tasks[0]
     mock_task.status = tasks.TaskStatus.COMPLETED
-    with mock.patch("lemming.tasks.finish_task_attempt", return_value=mock_task):
+    with mock.patch(
+        "lemming.tasks.finish_task_attempt", return_value=mock_task
+    ):
         run_loop(
             test_tasks_file,
             verbose=False,
@@ -253,7 +257,9 @@ def test_run_loop_cancelled(mock_sleep, mock_run, setup_env):
     # It might be called with other values if I didn't mock enough,
     # but here it should not be called at all after the break.
     for call in mock_sleep.call_args_list:
-        assert call[0][0] != 1, "Should not sleep with retry_delay on cancellation"
+        assert call[0][0] != 1, (
+            "Should not sleep with retry_delay on cancellation"
+        )
 
 
 @mock.patch("lemming.runner.run_with_heartbeat")
@@ -296,7 +302,9 @@ def test_run_loop_passes_time_limit(mock_sleep, mock_run, setup_env):
 
     mock_task = initial_data.tasks[0]
     mock_task.status = tasks.TaskStatus.COMPLETED
-    with mock.patch("lemming.tasks.finish_task_attempt", return_value=mock_task):
+    with mock.patch(
+        "lemming.tasks.finish_task_attempt", return_value=mock_task
+    ):
         run_loop(
             test_tasks_file,
             verbose=False,
@@ -334,7 +342,9 @@ def test_process_exhausted_retries_aborts(mock_run_hooks, setup_env):
     )
     assert should_abort
     mock_run_hooks.assert_called_once()
-    assert mock_run_hooks.call_args[1]["final_status"] == tasks.TaskStatus.FAILED
+    assert (
+        mock_run_hooks.call_args[1]["final_status"] == tasks.TaskStatus.FAILED
+    )
 
 
 @mock.patch("lemming.orchestrator.run_hooks")
@@ -388,7 +398,10 @@ def test_process_finalizing_task(mock_run_hooks, setup_env):
         time_limit=1,
     )
     mock_run_hooks.assert_called_once()
-    assert mock_run_hooks.call_args[1]["final_status"] == tasks.TaskStatus.COMPLETED
+    assert (
+        mock_run_hooks.call_args[1]["final_status"]
+        == tasks.TaskStatus.COMPLETED
+    )
 
 
 @mock.patch("lemming.orchestrator.run_hooks")
@@ -401,8 +414,11 @@ def test_handle_runner_exit_completes(mock_sleep, mock_run_hooks, setup_env):
     task.status = tasks.TaskStatus.IN_PROGRESS
     tasks.save_tasks(test_tasks_file, data)
 
-    # Simulate agent calling `lemming complete` (finish_task_attempt checks requested_status)
-    tasks.update_task(test_tasks_file, task.id, status=tasks.TaskStatus.COMPLETED)
+    # Simulate agent calling `lemming complete` (finish_task_attempt
+    # checks requested_status)
+    tasks.update_task(
+        test_tasks_file, task.id, status=tasks.TaskStatus.COMPLETED
+    )
 
     should_abort = _handle_runner_exit(
         test_tasks_file,

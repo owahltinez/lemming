@@ -1,6 +1,7 @@
+"""API routes for browsing and creating directories under the root."""
+
 import fastapi
 import pydantic
-
 
 router = fastapi.APIRouter()
 
@@ -24,12 +25,16 @@ def list_directories(request: fastapi.Request, path: str = ""):
 
 
 class CreateDirectoryRequest(pydantic.BaseModel):
+    """Request body for creating a directory under the server root."""
+
     path: str = ""
     name: str
 
 
 @router.post("/api/directories")
-def create_directory(request: fastapi.Request, dir_request: CreateDirectoryRequest):
+def create_directory(
+    request: fastapi.Request, dir_request: CreateDirectoryRequest
+):
     """Create a new directory under the server root."""
     root = request.app.state.root
     parent = (root / dir_request.path).resolve() if dir_request.path else root
@@ -40,7 +45,9 @@ def create_directory(request: fastapi.Request, dir_request: CreateDirectoryReque
 
     new_dir = parent / dir_request.name
     if not new_dir.resolve().is_relative_to(root):
-        raise fastapi.HTTPException(403, "Target path is outside the server root")
+        raise fastapi.HTTPException(
+            403, "Target path is outside the server root"
+        )
 
     if new_dir.exists():
         raise fastapi.HTTPException(400, "Directory already exists")

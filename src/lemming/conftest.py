@@ -1,4 +1,7 @@
+"""Shared pytest fixtures for the lemming test suite."""
+
 import os
+
 import pytest
 
 

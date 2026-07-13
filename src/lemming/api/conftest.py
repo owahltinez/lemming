@@ -1,3 +1,5 @@
+"""Shared pytest fixtures for the API test suite."""
+
 import os
 import pathlib
 import shutil
@@ -5,21 +7,21 @@ import subprocess
 import tempfile
 import time
 
-import pytest
 import fastapi.testclient
+import pytest
 
-from lemming import api
-from lemming import paths
-from lemming import tasks
+from lemming import api, paths, tasks
 
 
 @pytest.fixture
 def client():
+    """A TestClient bound to the lemming FastAPI app."""
     return fastapi.testclient.TestClient(api.app)
 
 
 @pytest.fixture
 def test_tasks():
+    """A temporary tasks file with sample tasks, wired into the app state."""
     # Create a temporary directory and a tasks file
     test_dir = tempfile.mkdtemp()
     test_tasks_file = pathlib.Path(test_dir) / "tasks_test.yml"
@@ -75,6 +77,7 @@ def test_tasks():
 
 @pytest.fixture
 def git_repo():
+    """A temporary git repo with tracked and gitignored files as the root."""
     # Create a temporary directory and initialize a git repo
     test_dir = tempfile.mkdtemp()
     orig_cwd = os.getcwd()
@@ -87,7 +90,9 @@ def git_repo():
         del paths.in_git_repo._result
 
     subprocess.run(["git", "init"], check=True)
-    subprocess.run(["git", "config", "user.email", "you@example.com"], check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "you@example.com"], check=True
+    )
     subprocess.run(["git", "config", "user.name", "Your Name"], check=True)
 
     # Create some files
@@ -96,10 +101,14 @@ def git_repo():
     (pathlib.Path(test_dir) / "dir1" / "file2.txt").write_text("content2")
 
     # Create .gitignore and ignore some files
-    (pathlib.Path(test_dir) / ".gitignore").write_text("ignored.txt\nnode_modules/")
+    (pathlib.Path(test_dir) / ".gitignore").write_text(
+        "ignored.txt\nnode_modules/"
+    )
     (pathlib.Path(test_dir) / "ignored.txt").write_text("should be ignored")
     (pathlib.Path(test_dir) / "node_modules").mkdir()
-    (pathlib.Path(test_dir) / "node_modules" / "some_file.txt").write_text("ignored")
+    (pathlib.Path(test_dir) / "node_modules" / "some_file.txt").write_text(
+        "ignored"
+    )
 
     yield pathlib.Path(test_dir)
 
@@ -155,6 +164,7 @@ def temp_repo(tmp_path, monkeypatch):
 
 @pytest.fixture
 def test_workspace():
+    """A temporary root with a subproject, with auto-start enabled."""
     # Create a temporary root directory
     root_dir = pathlib.Path(tempfile.mkdtemp()).resolve()
 
@@ -168,7 +178,9 @@ def test_workspace():
         context="Subproject context",
         tasks=[
             tasks.Task(
-                id="sub1", description="Sub Task 1", status=tasks.TaskStatus.PENDING
+                id="sub1",
+                description="Sub Task 1",
+                status=tasks.TaskStatus.PENDING,
             ),
         ],
     )

@@ -1,4 +1,4 @@
-from lemming import models
+from lemming import models, persistence
 from lemming.tasks import progress
 
 
@@ -13,8 +13,6 @@ def test_add_progress(tmp_path):
         ]
     )
     # create file to test load/save logic
-    from lemming import persistence
-
     persistence.save_tasks(tasks_file, data)
 
     target = progress.add_progress(tasks_file, "123", "Found bug in module X")

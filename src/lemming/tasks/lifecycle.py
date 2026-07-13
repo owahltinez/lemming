@@ -1,6 +1,9 @@
+"""Task lifecycle management: claiming, heartbeats, cancellation, resets."""
+
 import os
 import pathlib
 import secrets
+import signal
 import time
 
 from .. import models, paths, persistence
@@ -75,7 +78,10 @@ def is_task_active(task: models.Task, now: float) -> bool:
     2. AND it has a PID that is alive.
     3. AND its heartbeat is recent (not stale).
     """
-    if task.status != models.TaskStatus.IN_PROGRESS and not task.requested_status:
+    if (
+        task.status != models.TaskStatus.IN_PROGRESS
+        and not task.requested_status
+    ):
         return False
 
     if not task.pid or not is_pid_alive(task.pid):
@@ -105,9 +111,13 @@ def _mark_task_in_progress(
     for task in data.tasks:
         if task.id == task_id:
             # A task can be marked in progress if it's pending, or if it's
-            # nominally in progress/finalizing but has crashed or timed out (stale).
+            # nominally in progress/finalizing but has crashed or timed out
+            # (stale).
             if task.status == models.TaskStatus.PENDING or (
-                (task.status == models.TaskStatus.IN_PROGRESS or task.requested_status)
+                (
+                    task.status == models.TaskStatus.IN_PROGRESS
+                    or task.requested_status
+                )
                 and not is_task_active(task, now)
             ):
                 task.status = models.TaskStatus.IN_PROGRESS
@@ -143,7 +153,9 @@ def mark_task_in_progress(
     return False
 
 
-def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> models.Task | None:
+def claim_task(
+    tasks_file: pathlib.Path, task_id: str, pid: int
+) -> models.Task | None:
     """Claims a task for execution: marks in_progress and increments attempts.
 
     Args:
@@ -166,7 +178,9 @@ def claim_task(tasks_file: pathlib.Path, task_id: str, pid: int) -> models.Task 
         return task
 
 
-def finish_task_attempt(tasks_file: pathlib.Path, task_id: str) -> models.Task | None:
+def finish_task_attempt(
+    tasks_file: pathlib.Path, task_id: str
+) -> models.Task | None:
     """Handles post-execution cleanup for a task attempt.
 
     Args:
@@ -239,17 +253,16 @@ def reset_task_logs(tasks_file: pathlib.Path, task_id: str) -> None:
 
 
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
-    """Kill the process associated with the task AND the orchestrator loop, then mark it as cancelled.
+    """Kill the task process AND the orchestrator loop, then mark cancelled.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task to cancel.
 
     Returns:
-        True if the task was found and cancellation was attempted, False otherwise.
+        True if the task was found and cancellation was attempted, False
+        otherwise.
     """
-    import signal
-
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
 

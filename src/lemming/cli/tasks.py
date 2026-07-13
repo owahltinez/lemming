@@ -1,9 +1,12 @@
+"""CLI commands for managing tasks in the roadmap queue."""
+
 import time
 import typing
+
 import click
+
+from .. import paths, tasks
 from .main import cli
-from .. import tasks
-from .. import paths
 
 
 @cli.command(short_help="[description] Add a new task to the queue")
@@ -22,7 +25,9 @@ from .. import paths
 @click.option(
     "--runner",
     "runner_name",
-    help="Custom runner to use for this task (overrides the default run runner).",
+    help=(
+        "Custom runner to use for this task (overrides the default run runner)."
+    ),
 )
 @click.option(
     "--parent",
@@ -45,7 +50,9 @@ def add(
     """Adds a new task to the roadmap queue.
 
     Args:
-        description: A text description of the task to perform (optional if --file is used).
+        ctx: The click context.
+        description: A text description of the task to perform (optional if
+            --file is used).
         file: An optional file to read the description from.
         index: The position in the roadmap to insert the task.
         runner_name: An optional custom runner to use for this specific task.
@@ -113,9 +120,10 @@ def edit(
     parent: str | None,
     parent_tasks_file: str | None,
 ):
-    """Edits an existing task's description, preferred runner, position, or parent.
+    """Edits an existing task's description, runner, position, or parent.
 
     Args:
+        ctx: The click context.
         task_id: The ID of the task to update.
         description: The new description (optional).
         file: An optional file to read the new description from.
@@ -140,7 +148,8 @@ def edit(
         and parent_tasks_file is None
     ):
         click.echo(
-            "Error: At least one of --description, --runner, --index, --parent, or --parent-tasks-file must be provided."
+            "Error: At least one of --description, --runner, --index,"
+            " --parent, or --parent-tasks-file must be provided."
         )
         ctx.exit(1)
 
@@ -165,7 +174,10 @@ def edit(
 @cli.command(name="delete", short_help="<taskid> Delete a task from the queue")
 @click.argument("task_id", required=False)
 @click.option(
-    "--all", "delete_all", is_flag=True, help="Delete all tasks and clear context."
+    "--all",
+    "delete_all",
+    is_flag=True,
+    help="Delete all tasks and clear context.",
 )
 @click.option("--completed", is_flag=True, help="Delete completed tasks only.")
 @click.pass_context
@@ -175,6 +187,7 @@ def delete_task(
     """Deletes one or more tasks from the roadmap.
 
     Args:
+        ctx: The click context.
         task_id: The ID of the specific task to delete.
         delete_all: If set, clears the entire roadmap and project context.
         completed: If set, deletes all tasks marked as 'completed'.
@@ -193,11 +206,16 @@ def delete_task(
         ctx.exit(1)
 
     removed = tasks.delete_tasks(
-        tasks_file, task_id=task_id, all_tasks=delete_all, completed_only=completed
+        tasks_file,
+        task_id=task_id,
+        all_tasks=delete_all,
+        completed_only=completed,
     )
 
     if delete_all:
-        click.echo("Deleted all tasks, progress, and logs, and cleared context.")
+        click.echo(
+            "Deleted all tasks, progress, and logs, and cleared context."
+        )
     elif completed:
         click.echo(f"Deleted {removed} completed task(s) and their logs.")
     elif task_id:
@@ -214,6 +232,7 @@ def status(ctx: click.Context, task_id: str | None):
     """Displays the roadmap status or details for a specific task.
 
     Args:
+        ctx: The click context.
         task_id: Optional ID of the task to inspect in detail.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -272,13 +291,18 @@ def status(ctx: click.Context, task_id: str | None):
             completed_count = sum(
                 1
                 for t in project_data.tasks
-                if t.status in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.CANCELLED)
+                if t.status
+                in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.CANCELLED)
             )
             if completed_count > 0:
-                click.echo(f"({completed_count} completed/cancelled tasks hidden)")
+                click.echo(
+                    f"({completed_count} completed/cancelled tasks hidden)"
+                )
         return
 
-    target = next((t for t in project_data.tasks if t.id.startswith(task_id)), None)
+    target = next(
+        (t for t in project_data.tasks if t.id.startswith(task_id)), None
+    )
 
     if not target:
         click.echo(f"Error: Task {task_id} not found.")
@@ -294,7 +318,10 @@ def status(ctx: click.Context, task_id: str | None):
     click.secho(f"Loop Status:   {loop_state}", fg=loop_color, bold=True)
     click.secho(f"Task ID:       {target.id}", bold=True)
     status_str = str(target.status)
-    if target.status == tasks.TaskStatus.IN_PROGRESS and target.requested_status:
+    if (
+        target.status == tasks.TaskStatus.IN_PROGRESS
+        and target.requested_status
+    ):
         status_str += f" ({target.requested_status} requested, hooks running)"
     click.echo(f"Status:        {status_str}")
     click.echo(f"Description:   {target.description}")
@@ -312,7 +339,9 @@ def status(ctx: click.Context, task_id: str | None):
     log_parts = []
     if paths.get_log_file(tasks_file, target.id).exists():
         log_parts.append("runner (includes hooks)")
-    click.echo(f"Logs:          {', '.join(log_parts) if log_parts else 'None'}")
+    click.echo(
+        f"Logs:          {', '.join(log_parts) if log_parts else 'None'}"
+    )
 
     if target.completed_at:
         comp_time = time.strftime(
@@ -360,7 +389,8 @@ def logs(ctx: click.Context, task_id: str | None):
     else:
         # Try to find an active task
         target = next(
-            (t for t in data.tasks if t.status == tasks.TaskStatus.IN_PROGRESS), None
+            (t for t in data.tasks if t.status == tasks.TaskStatus.IN_PROGRESS),
+            None,
         )
         if not target:
             # Fall back to the most recently completed task
@@ -368,7 +398,9 @@ def logs(ctx: click.Context, task_id: str | None):
                 t for t in data.tasks if t.status == tasks.TaskStatus.COMPLETED
             ]
             if completed:
-                target = sorted(completed, key=lambda x: x.completed_at or 0)[-1]
+                target = sorted(completed, key=lambda x: x.completed_at or 0)[
+                    -1
+                ]
 
     if not target:
         click.echo("Error: No active or recently completed task found.")
@@ -392,9 +424,10 @@ def logs(ctx: click.Context, task_id: str | None):
 @click.argument("task_id")
 @click.pass_context
 def complete(ctx: click.Context, task_id: str):
-    """Marks a task as completed (requires at least one recorded progress entry).
+    """Marks a task as completed (requires at least one progress entry).
 
     Args:
+        ctx: The click context.
         task_id: The ID of the task to mark as completed.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -419,6 +452,7 @@ def uncomplete(ctx: click.Context, task_id: str):
     """Unmarks a completed task, moving it back to 'pending' status.
 
     Args:
+        ctx: The click context.
         task_id: The ID of the task to uncomplete.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -439,12 +473,16 @@ def fail(ctx: click.Context, task_id: str):
     """Marks a task as failed (requires at least one recorded progress entry).
 
     Args:
+        ctx: The click context.
         task_id: The ID of the task to mark as failed.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(
-            tasks_file, task_id, status=tasks.TaskStatus.FAILED, require_progress=True
+            tasks_file,
+            task_id,
+            status=tasks.TaskStatus.FAILED,
+            require_progress=True,
         )
         click.echo(f"Task {target_task.id} marked as failed.")
     except ValueError as e:
@@ -456,9 +494,10 @@ def fail(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def cancel(ctx: click.Context, task_id: str):
-    """Kills the runner process for an in-progress task and marks it as cancelled.
+    """Kills the runner for an in-progress task and marks it as cancelled.
 
     Args:
+        ctx: The click context.
         task_id: The ID of the task to cancel.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -476,12 +515,15 @@ def reset(ctx: click.Context, task_id: str):
     """Clears all history (attempts, progress, and logs) for a specific task.
 
     Args:
+        ctx: The click context.
         task_id: The ID of the task to reset.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.reset_task(tasks_file, task_id)
-        click.echo(f"Task {target_task.id} attempts, progress, and logs cleared.")
+        click.echo(
+            f"Task {target_task.id} attempts, progress, and logs cleared."
+        )
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)

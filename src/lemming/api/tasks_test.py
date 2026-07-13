@@ -1,7 +1,6 @@
 from unittest.mock import patch
-from lemming import tasks
-from lemming import api
-from lemming import paths
+
+from lemming import api, paths, tasks
 
 
 def test_get_data(client, test_tasks):
@@ -17,7 +16,9 @@ def test_get_data(client, test_tasks):
 
 
 def test_add_task(client, test_tasks):
-    response = client.post("/api/tasks", json={"description": "New task from test"})
+    response = client.post(
+        "/api/tasks", json={"description": "New task from test"}
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["description"] == "New task from test"
@@ -108,7 +109,10 @@ def test_update_completed_task_description_fails(client, test_tasks):
         json={"description": "Attempt to update completed task"},
     )
     assert response.status_code == 400
-    assert "Cannot edit description of a completed task" in response.json()["detail"]
+    assert (
+        "Cannot edit description of a completed task"
+        in response.json()["detail"]
+    )
 
 
 def test_mark_task_failed_via_api(client, test_tasks):
@@ -272,7 +276,9 @@ def test_project_param_get_data(client, test_tasks):
     response = client.get("/api/data")
     assert response.status_code == 200
     data = response.json()
-    assert not any(t["description"] == "Sub-project task" for t in data["tasks"])
+    assert not any(
+        t["description"] == "Sub-project task" for t in data["tasks"]
+    )
 
 
 def test_project_delete_completed_isolation(client, test_tasks):
@@ -314,7 +320,9 @@ def test_add_task_auto_starts_loop(client, test_tasks):
             # Set auto-start to True for this test
             api.app.state.disable_auto_start = False
             try:
-                response = client.post("/api/tasks", json={"description": "New task"})
+                response = client.post(
+                    "/api/tasks", json={"description": "New task"}
+                )
                 assert response.status_code == 200
 
                 # Verify Popen was called to start the loop
@@ -331,7 +339,9 @@ def test_add_task_does_not_restart_if_running(client, test_tasks):
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return True
         with patch("lemming.tasks.is_loop_running", return_value=True):
-            response = client.post("/api/tasks", json={"description": "New task"})
+            response = client.post(
+                "/api/tasks", json={"description": "New task"}
+            )
             assert response.status_code == 200
 
             # Verify Popen was NOT called

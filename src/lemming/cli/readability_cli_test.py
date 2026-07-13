@@ -1,4 +1,7 @@
+import logging
+
 from click.testing import CliRunner
+
 from lemming.cli.main import cli
 
 
@@ -31,11 +34,10 @@ def test_readability_languages():
 
 
 def test_readability_verbose_sync():
-    import logging
-
     runner = CliRunner()
     # This just ensures the command runs with -v,
-    # we can't easily check the logger level of a sub-process or if it was modified in-process
+    # we can't easily check the logger level of a sub-process or if it was
+    # modified in-process
     # without more complex mocking, but we can verify it doesn't crash.
     result = runner.invoke(cli, ["-v", "readability", "languages"])
     assert result.exit_code == 0
@@ -49,5 +51,7 @@ def test_readability_verbose_sync():
 def test_readability_check_ignored_file():
     runner = CliRunner()
     # src/lemming/web/mancha.js is ignored in biome.json
-    result = runner.invoke(cli, ["readability", "check", "src/lemming/web/mancha.js"])
+    result = runner.invoke(
+        cli, ["readability", "check", "src/lemming/web/mancha.js"]
+    )
     assert result.exit_code == 0

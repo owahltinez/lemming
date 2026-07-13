@@ -2,9 +2,10 @@ import pathlib
 import shutil
 import tempfile
 import unittest
+
 import click.testing
-from lemming import cli
-from lemming import tasks
+
+from lemming import cli, tasks
 
 
 class TestCLIOperations(unittest.TestCase):
@@ -12,7 +13,11 @@ class TestCLIOperations(unittest.TestCase):
         self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
-        self.base_args = ["--verbose", "--tasks-file", str(self.test_tasks_file)]
+        self.base_args = [
+            "--verbose",
+            "--tasks-file",
+            str(self.test_tasks_file),
+        ]
 
         # Scaffold a valid file
         data = tasks.Roadmap(

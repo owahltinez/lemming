@@ -3,9 +3,7 @@ import subprocess
 import time
 import unittest.mock
 
-from lemming import runner
-from lemming import tasks
-from lemming import paths
+from lemming import paths, runner, tasks
 
 
 def test_build_runner_command_agy():
@@ -23,19 +21,25 @@ def test_build_runner_command_agy_streams_internal_log():
 
 
 def test_build_runner_command_agy_print_timeout_matches_time_limit():
-    cmd = runner.build_runner_command("agy", "my prompt", yolo=True, time_limit=45)
+    cmd = runner.build_runner_command(
+        "agy", "my prompt", yolo=True, time_limit=45
+    )
     assert cmd[cmd.index("--print-timeout") + 1] == "45m"
 
 
 def test_build_runner_command_agy_print_timeout_without_time_limit():
     # agy defaults --print-timeout to 5m, so an explicit large value is
     # required even when the task has no time limit.
-    cmd = runner.build_runner_command("agy", "my prompt", yolo=True, time_limit=0)
+    cmd = runner.build_runner_command(
+        "agy", "my prompt", yolo=True, time_limit=0
+    )
     assert cmd[cmd.index("--print-timeout") + 1] == "24h"
 
 
 def test_build_runner_command_time_limit_ignored_by_other_runners():
-    cmd = runner.build_runner_command("claude", "my prompt", yolo=True, time_limit=45)
+    cmd = runner.build_runner_command(
+        "claude", "my prompt", yolo=True, time_limit=45
+    )
     assert "--print-timeout" not in cmd
     assert "--log-file" not in cmd
 
@@ -91,7 +95,9 @@ def test_build_runner_command_template_with_runner_args():
 def test_build_runner_command_template_ignores_defaults():
     # Even though runner starts with "agy", template mode should not
     # inject --dangerously-skip-permissions etc.
-    cmd = runner.build_runner_command("agy --custom {{prompt}}", "do stuff", yolo=True)
+    cmd = runner.build_runner_command(
+        "agy --custom {{prompt}}", "do stuff", yolo=True
+    )
     assert "--dangerously-skip-permissions" not in cmd
     assert cmd == ["agy", "--custom", "do stuff"]
 
@@ -109,11 +115,15 @@ def test_pretty_quote():
     assert runner._pretty_quote("has space") == "'has space'"
 
     # Test readable double quotes for single quotes
-    assert runner._pretty_quote("has 'single' quotes") == "\"has 'single' quotes\""
+    assert (
+        runner._pretty_quote("has 'single' quotes") == "\"has 'single' quotes\""
+    )
     assert runner._pretty_quote("You are 'Lemming'") == "\"You are 'Lemming'\""
 
     # Test string with double quotes (should fall back to single quotes)
-    assert runner._pretty_quote('has "double" quotes') == "'has \"double\" quotes'"
+    assert (
+        runner._pretty_quote('has "double" quotes') == "'has \"double\" quotes'"
+    )
 
     # Test escaping specials inside double quotes
     assert (
@@ -161,8 +171,8 @@ def test_shlex_join_pretty():
     ]
     joined = runner._shlex_join_pretty(cmd)
     assert (
-        joined
-        == "example-cli --dangerously-skip-permissions --print \"You are 'Lemming'\""
+        joined == "example-cli --dangerously-skip-permissions --print"
+        " \"You are 'Lemming'\""
     )
 
     # Test truncation
@@ -229,7 +239,9 @@ def test_run_with_heartbeat_log_header(tmp_path):
     # 2. Run without a header (it should still have the attempt marker)
     task_id_2 = "test_task_2"
     log_file_2 = paths.get_log_file(tasks_file, task_id_2)
-    runner.run_with_heartbeat(cmd, tasks_file, task_id_2, verbose=False, header=None)
+    runner.run_with_heartbeat(
+        cmd, tasks_file, task_id_2, verbose=False, header=None
+    )
 
     content_2 = log_file_2.read_text()
     assert "--- Attempt started at" in content_2
@@ -303,17 +315,20 @@ def test_kill_process_tree_fallback():
 
 
 def test_run_with_heartbeat_timeout(tmp_path):
-    """Verifies that run_with_heartbeat kills the process and records progress on timeout."""
+    """Verifies run_with_heartbeat kills and records progress on timeout."""
     tasks_file = tmp_path / "tasks.yml"
     task_id = "timeout_task"
 
     # Setup a task so heartbeat updates work
-    roadmap = tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test timeout")])
+    roadmap = tasks.Roadmap(
+        tasks=[tasks.Task(id=task_id, description="test timeout")]
+    )
     tasks.save_tasks(tasks_file, roadmap)
     tasks.mark_task_in_progress(tasks_file, task_id)
 
-    # Use a 1-minute time limit. Mock time.monotonic to simulate elapsed time so the
-    # heartbeat loop detects the timeout immediately without waiting 60 real seconds.
+    # Use a 1-minute time limit. Mock time.monotonic to simulate elapsed
+    # time so the heartbeat loop detects the timeout immediately without
+    # waiting 60 real seconds.
     real_monotonic = time.monotonic
     call_count = 0
 

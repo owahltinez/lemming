@@ -1,6 +1,8 @@
 import pathlib
-import pytest
+
 import fastapi
+import pytest
+
 from lemming.api import context
 
 
@@ -50,8 +52,11 @@ def test_resolve_tasks_file(tmp_path):
     assert context.resolve_tasks_file(app_state) == default_tasks
 
     # Project (should use get_tasks_file_for_dir logic)
-    # Since project / tasks.yml doesn't exist, it should be in lemming home with a hash
+    # Since project / tasks.yml doesn't exist, it should be in lemming home
+    # with a hash
     tasks_file = context.resolve_tasks_file(app_state, "project")
     assert tasks_file.name == "tasks.yml"
-    assert tasks_file.parent.name != "project"  # It's a hash, not the project name
+    assert (
+        tasks_file.parent.name != "project"
+    )  # It's a hash, not the project name
     assert tasks_file.is_absolute()

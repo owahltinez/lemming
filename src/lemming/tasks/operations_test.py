@@ -51,14 +51,22 @@ def test_update_task_description(tmp_path):
     task_id = task.id
 
     # 1. Successful update
-    updated = operations.update_task(tasks_file, task_id, description="New description")
+    updated = operations.update_task(
+        tasks_file, task_id, description="New description"
+    )
     assert updated.description == "New description"
 
     # 2. Cannot edit description of a completed task
-    operations.update_task(tasks_file, task_id, status=models.TaskStatus.COMPLETED)
+    operations.update_task(
+        tasks_file, task_id, status=models.TaskStatus.COMPLETED
+    )
 
-    with pytest.raises(ValueError, match="Cannot edit description of a completed task"):
-        operations.update_task(tasks_file, task_id, description="Trying to change")
+    with pytest.raises(
+        ValueError, match="Cannot edit description of a completed task"
+    ):
+        operations.update_task(
+            tasks_file, task_id, description="Trying to change"
+        )
 
 
 def test_update_task_runner(tmp_path):
@@ -68,7 +76,9 @@ def test_update_task_runner(tmp_path):
 
     assert task.runner is None
 
-    updated = operations.update_task(tasks_file, task_id, runner="custom-runner")
+    updated = operations.update_task(
+        tasks_file, task_id, runner="custom-runner"
+    )
     assert updated.runner == "custom-runner"
 
 

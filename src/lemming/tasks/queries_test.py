@@ -2,6 +2,7 @@ import time
 from unittest import mock
 
 from lemming import paths
+
 from .. import models, persistence
 from . import queries
 
@@ -13,11 +14,17 @@ def test_get_project_data_deduplication(tmp_path):
     data = models.Roadmap(
         context="test",
         tasks=[
-            models.Task(id="1", description="Task 1", status=models.TaskStatus.PENDING),
             models.Task(
-                id="1", description="Task 1 Duplicate", status=models.TaskStatus.PENDING
+                id="1", description="Task 1", status=models.TaskStatus.PENDING
             ),
-            models.Task(id="2", description="Task 2", status=models.TaskStatus.PENDING),
+            models.Task(
+                id="1",
+                description="Task 1 Duplicate",
+                status=models.TaskStatus.PENDING,
+            ),
+            models.Task(
+                id="2", description="Task 2", status=models.TaskStatus.PENDING
+            ),
         ],
     )
     persistence.save_tasks(tasks_file, data)
@@ -34,8 +41,12 @@ def test_get_project_data_enriches_metadata(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(
         tasks=[
-            models.Task(id="1", description="Task 1", status=models.TaskStatus.PENDING),
-            models.Task(id="2", description="Task 2", status=models.TaskStatus.PENDING),
+            models.Task(
+                id="1", description="Task 1", status=models.TaskStatus.PENDING
+            ),
+            models.Task(
+                id="2", description="Task 2", status=models.TaskStatus.PENDING
+            ),
         ]
     )
     persistence.save_tasks(tasks_file, data)
@@ -125,7 +136,8 @@ def test_uncompleted_tasks_sorting_prioritizes_in_progress(tmp_path):
     uncompleted_tasks = [
         t
         for t in project_data.tasks
-        if t.status not in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED)
+        if t.status
+        not in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED)
     ]
 
     # Should prioritize in_progress first, then chronological index

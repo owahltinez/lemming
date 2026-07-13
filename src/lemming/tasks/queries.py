@@ -1,3 +1,5 @@
+"""Read-only queries over project tasks and orchestrator state."""
+
 import pathlib
 import time
 
@@ -36,9 +38,10 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
         if not loop_running and lifecycle.is_task_active(t, now):
             loop_running = True
 
-    # Unified sort: uncompleted (pending, in_progress) first, then completed (completed, failed).
-    # Within each group:
-    # - Uncompleted: in_progress tasks first, then by index (YAML order), then by created_at.
+    # Unified sort: uncompleted (pending, in_progress) first, then completed
+    # (completed, failed). Within each group:
+    # - Uncompleted: in_progress tasks first, then by index (YAML order),
+    #   then by created_at.
     # - Completed: newer tasks appear first (reverse chronological).
     def sort_key(t):
         is_done = t.status in (
@@ -48,7 +51,8 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
         )
         is_in_progress = t.status == models.TaskStatus.IN_PROGRESS
         if not is_done:
-            # For pending/in_progress, prioritize in_progress and then YAML order (index)
+            # For pending/in_progress, prioritize in_progress and then YAML
+            # order (index)
             return (
                 0,
                 0 if is_in_progress else 1,
@@ -97,12 +101,14 @@ def get_pending_task(data: models.Roadmap) -> models.Task | None:
         if task.requested_status:
             return task
 
-    # 2. Sort uncompleted tasks (pending or stale in_progress) to pick the oldest one (FIFO).
-    # Note: we exclude tasks that are currently finalizing (have requested_status).
+    # 2. Sort uncompleted tasks (pending or stale in_progress) to pick the
+    # oldest one (FIFO). Note: we exclude tasks that are currently finalizing
+    # (have requested_status).
     uncompleted = []
     for i, task in enumerate(data.tasks):
         if (
-            task.status in (models.TaskStatus.PENDING, models.TaskStatus.IN_PROGRESS)
+            task.status
+            in (models.TaskStatus.PENDING, models.TaskStatus.IN_PROGRESS)
             and not task.requested_status
         ):
             # We need to preserve the original index for tie-breaking

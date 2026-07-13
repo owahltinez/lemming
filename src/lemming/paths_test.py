@@ -1,7 +1,10 @@
+import logging
 import os
 import pathlib
 import stat
+import subprocess
 from unittest import mock
+
 from lemming import paths
 
 
@@ -48,13 +51,10 @@ def test_get_log_file(tmp_path):
 
 
 def test_in_git_repo_and_is_ignored(tmp_path):
-    import subprocess
-
     orig_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        if hasattr(paths.in_git_repo, "_result"):
-            delattr(paths.in_git_repo, "_result")
+        paths.in_git_repo.cache_clear()
 
         # Not a git repo yet
         assert paths.in_git_repo() is False
@@ -62,12 +62,13 @@ def test_in_git_repo_and_is_ignored(tmp_path):
 
         # Init git repo
         subprocess.run(["git", "init", "-q"], check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], check=True
+        )
         subprocess.run(["git", "config", "user.name", "test"], check=True)
 
         # Clear cache again
-        if hasattr(paths.in_git_repo, "_result"):
-            delattr(paths.in_git_repo, "_result")
+        paths.in_git_repo.cache_clear()
 
         assert paths.in_git_repo() is True
 
@@ -108,7 +109,9 @@ class TestParseDotenv:
     def test_value_with_equals(self, tmp_path):
         env_file = tmp_path / ".env"
         env_file.write_text("URL=https://example.com?a=1&b=2\n")
-        assert paths._parse_dotenv(env_file) == {"URL": "https://example.com?a=1&b=2"}
+        assert paths._parse_dotenv(env_file) == {
+            "URL": "https://example.com?a=1&b=2"
+        }
 
     def test_missing_file(self, tmp_path):
         assert paths._parse_dotenv(tmp_path / "nope") == {}
@@ -124,7 +127,9 @@ class TestLoadDotenv:
     def test_global_env_loaded(self, tmp_path):
         global_env = tmp_path / ".env"
         global_env.write_text("LEMMING_TEST_GLOBAL=from_global\n")
-        with mock.patch.object(paths, "get_lemming_home", return_value=tmp_path):
+        with mock.patch.object(
+            paths, "get_lemming_home", return_value=tmp_path
+        ):
             with mock.patch.dict(os.environ, {}, clear=True):
                 os.environ["PATH"] = "/usr/bin:/bin"
                 paths.load_dotenv()
@@ -139,7 +144,9 @@ class TestLoadDotenv:
         (home_dir / ".env").write_text("MY_VAR=global\nONLY_GLOBAL=yes\n")
         (proj_dir / ".env").write_text("MY_VAR=project\n")
 
-        with mock.patch.object(paths, "get_lemming_home", return_value=home_dir):
+        with mock.patch.object(
+            paths, "get_lemming_home", return_value=home_dir
+        ):
             with mock.patch.dict(os.environ, {}, clear=True):
                 os.environ["PATH"] = "/usr/bin:/bin"
                 paths.load_dotenv(project_dir=proj_dir)
@@ -149,14 +156,20 @@ class TestLoadDotenv:
     def test_real_env_wins(self, tmp_path):
         env_file = tmp_path / ".env"
         env_file.write_text("EXISTING=from_file\n")
-        with mock.patch.object(paths, "get_lemming_home", return_value=tmp_path):
-            with mock.patch.dict(os.environ, {"EXISTING": "from_shell"}, clear=True):
+        with mock.patch.object(
+            paths, "get_lemming_home", return_value=tmp_path
+        ):
+            with mock.patch.dict(
+                os.environ, {"EXISTING": "from_shell"}, clear=True
+            ):
                 os.environ["PATH"] = "/usr/bin:/bin"
                 paths.load_dotenv()
                 assert os.environ["EXISTING"] == "from_shell"
 
     def test_no_env_files_is_noop(self, tmp_path):
-        with mock.patch.object(paths, "get_lemming_home", return_value=tmp_path):
+        with mock.patch.object(
+            paths, "get_lemming_home", return_value=tmp_path
+        ):
             with mock.patch.dict(os.environ, {}, clear=True):
                 os.environ["PATH"] = "/usr/bin:/bin"
                 paths.load_dotenv()  # should not raise
@@ -167,7 +180,6 @@ class TestCheckPermissions:
         env_file = tmp_path / ".env"
         env_file.write_text("X=1\n")
         env_file.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IROTH)
-        import logging
 
         with caplog.at_level(logging.WARNING):
             paths._check_permissions(env_file)

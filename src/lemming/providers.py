@@ -1,3 +1,5 @@
+"""Tunnel providers that expose a local port through a public URL."""
+
 import abc
 import json
 import re
@@ -6,9 +8,14 @@ import time
 
 
 class TunnelProvider(abc.ABC):
+    """Abstract interface for a tunnel exposing a local port publicly."""
+
     @abc.abstractmethod
     def start(self, local_port: int) -> str:
-        """Starts the tunnel and returns the public URL. Raises exception on failure."""
+        """Starts the tunnel and returns the public URL.
+
+        Raises an exception on failure.
+        """
         pass
 
     @abc.abstractmethod
@@ -18,20 +25,42 @@ class TunnelProvider(abc.ABC):
 
 
 class CloudflareProvider(TunnelProvider):
+    """Tunnel provider backed by Cloudflare quick tunnels (cloudflared)."""
+
     def __init__(self):
+        """Initializes the provider with no running tunnel process."""
         self.process: subprocess.Popen | None = None
 
     def start(self, local_port: int) -> str:
+        """Starts a Cloudflare quick tunnel to the given local port.
+
+        Args:
+            local_port: Local port to expose through the tunnel.
+
+        Returns:
+            The public tunnel URL.
+
+        Raises:
+            RuntimeError: If cloudflared is missing or no URL is obtained.
+        """
         if (
-            subprocess.run(["which", "cloudflared"], capture_output=True).returncode
+            subprocess.run(
+                ["which", "cloudflared"], capture_output=True, check=False
+            ).returncode
             != 0
         ):
             raise RuntimeError(
-                "cloudflared not found in PATH. Please install it via 'brew install cloudflare/cloudflare/cloudflared' "
+                "cloudflared not found in PATH. Please install it via "
+                "'brew install cloudflare/cloudflare/cloudflared' "
                 "or visit https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
             )
 
-        cmd = ["cloudflared", "tunnel", "--url", f"http://127.0.0.1:{local_port}"]
+        cmd = [
+            "cloudflared",
+            "tunnel",
+            "--url",
+            f"http://127.0.0.1:{local_port}",
+        ]
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
@@ -57,9 +86,12 @@ class CloudflareProvider(TunnelProvider):
                 return match.group(1)
 
         self.stop()
-        raise RuntimeError("Failed to obtain Cloudflare tunnel URL within 15 seconds.")
+        raise RuntimeError(
+            "Failed to obtain Cloudflare tunnel URL within 15 seconds."
+        )
 
     def stop(self):
+        """Terminates the cloudflared process, if one is running."""
         if self.process:
             self.process.terminate()
             try:
@@ -72,16 +104,41 @@ class CloudflareProvider(TunnelProvider):
 
 
 class TailscaleProvider(TunnelProvider):
+    """Tunnel provider backed by Tailscale serve and funnel."""
+
     def __init__(self):
+        """Initializes the provider with no running tunnel process."""
         self.process: subprocess.Popen | None = None
 
     def start(self, local_port: int) -> str:
-        if subprocess.run(["which", "tailscale"], capture_output=True).returncode != 0:
+        """Exposes the given local port via Tailscale serve and funnel.
+
+        Args:
+            local_port: Local port to expose through the tunnel.
+
+        Returns:
+            The public URL derived from the node's Tailscale domain.
+
+        Raises:
+            RuntimeError: If tailscale is missing or setup fails.
+        """
+        if (
+            subprocess.run(
+                ["which", "tailscale"], capture_output=True, check=False
+            ).returncode
+            != 0
+        ):
             raise RuntimeError(
                 "tailscale not found in PATH. Please install it from https://tailscale.com/download"
             )
 
-        cmd = ["tailscale", "serve", "https", "/", f"http://127.0.0.1:{local_port}"]
+        cmd = [
+            "tailscale",
+            "serve",
+            "https",
+            "/",
+            f"http://127.0.0.1:{local_port}",
+        ]
         try:
             subprocess.run(cmd, capture_output=True, check=True)
             # funnel is enabled separately: tailscale funnel 8999
@@ -92,11 +149,15 @@ class TailscaleProvider(TunnelProvider):
             )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(
-                f"Failed to start tailscale serve/funnel: {e.stderr.decode() if e.stderr else str(e)}"
+                "Failed to start tailscale serve/funnel: "
+                f"{e.stderr.decode() if e.stderr else str(e)}"
             )
 
         status = subprocess.run(
-            ["tailscale", "status", "--json"], capture_output=True, text=True
+            ["tailscale", "status", "--json"],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if status.returncode != 0:
             self.stop()
@@ -115,10 +176,15 @@ class TailscaleProvider(TunnelProvider):
             raise RuntimeError(f"Failed to determine tailscale domain: {e}")
 
     def stop(self):
-        # We don't have a long-running process to kill, but we can turn off funnel
-        # and serve. It's cleaner to turn them off.
-        subprocess.run(["tailscale", "funnel", "off"], capture_output=True)
-        subprocess.run(["tailscale", "serve", "reset"], capture_output=True)
+        """Turns off Tailscale funnel and serve for this node."""
+        # We don't have a long-running process to kill, but we can turn off
+        # funnel and serve. It's cleaner to turn them off.
+        subprocess.run(
+            ["tailscale", "funnel", "off"], capture_output=True, check=False
+        )
+        subprocess.run(
+            ["tailscale", "serve", "reset"], capture_output=True, check=False
+        )
         if self.process:
             self.process.terminate()
             self.process = None

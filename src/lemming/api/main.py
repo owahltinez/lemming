@@ -1,3 +1,5 @@
+"""FastAPI application setup: middleware, routers, and static files."""
+
 import importlib.resources
 import pathlib
 
@@ -6,24 +8,18 @@ import fastapi.responses
 import fastapi.staticfiles
 
 from .. import paths
-from . import auth
-from . import config
-from . import directories
-from . import files
-from . import hooks
+from . import auth, config, directories, files, hooks, tasks
 from . import logging as lemming_logging
-from . import tasks
 
 # Re-export for backward compatibility and tests
 QuietPollFilter = lemming_logging.QuietPollFilter
 
 
 class FilteredStaticFiles(fastapi.staticfiles.StaticFiles):
-    """
-    Subclass of StaticFiles that filters out web test files.
-    """
+    """Subclass of StaticFiles that filters out web test files."""
 
     def lookup_path(self, path: str):
+        """Hide .spec.js and .test.js files from static file lookups."""
         if path.endswith(".spec.js") or path.endswith(".test.js"):
             return "", None
         return super().lookup_path(path)
@@ -45,10 +41,13 @@ app.include_router(hooks.router)
 app.include_router(config.router)
 
 # Static files and root routes
-web_dir = pathlib.Path(str(importlib.resources.files("lemming").joinpath("web")))
+web_dir = pathlib.Path(
+    str(importlib.resources.files("lemming").joinpath("web"))
+)
 app.mount("/static", FilteredStaticFiles(directory=web_dir), name="static")
 
 
 @app.get("/")
 def read_index():
+    """Serve the main web UI page."""
     return fastapi.responses.FileResponse(web_dir / "index.html")

@@ -1,4 +1,5 @@
 import fastapi.testclient
+
 from lemming import api
 
 
@@ -7,8 +8,9 @@ def test_share_token_middleware():
     original_token = getattr(api.app.state, "share_token", None)
     try:
         api.app.state.share_token = "secret123"
-        # We need a fresh client for each test that modifies app state middleware if it uses the app state
-        # but here TestClient is created with api.app
+        # We need a fresh client for each test that modifies app state
+        # middleware if it uses the app state, but here TestClient is
+        # created with api.app
         client = fastapi.testclient.TestClient(api.app)
 
         # Missing token -> 401
@@ -18,7 +20,9 @@ def test_share_token_middleware():
         # Valid token via query
         response = client.get("/api/data?token=secret123")
         assert response.status_code == 200
-        assert "lemming_share_token=secret123" in response.headers.get("set-cookie", "")
+        assert "lemming_share_token=secret123" in response.headers.get(
+            "set-cookie", ""
+        )
 
         # Valid token via cookie
         client.cookies.set("lemming_share_token", "secret123")

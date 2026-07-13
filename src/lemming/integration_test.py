@@ -1,11 +1,12 @@
 import pathlib
 import shutil
 import tempfile
+import threading
 import time
 import unittest
 import unittest.mock
 
-from lemming import tasks, runner, orchestrator, models
+from lemming import models, orchestrator, runner, tasks
 
 
 class TestIntegration(unittest.TestCase):
@@ -33,14 +34,15 @@ class TestIntegration(unittest.TestCase):
         shutil.rmtree(self.test_dir)
 
     def test_heartbeat_updates_during_execution(self):
-        """Verify that a long-running task updates its heartbeat periodically."""
+        """Verify a long-running task updates its heartbeat periodically."""
         # We need to speed up the threshold for testing
         with (
             unittest.mock.patch("lemming.tasks.STALE_THRESHOLD", 2),
             unittest.mock.patch("lemming.persistence.STALE_THRESHOLD", 2),
             unittest.mock.patch("lemming.tasks.lifecycle.STALE_THRESHOLD", 2),
         ):
-            # 0. Mark task as in progress first, as runner.run_with_heartbeat expects it
+            # 0. Mark task as in progress first, as
+            # runner.run_with_heartbeat expects it
             tasks.mark_task_in_progress(self.test_tasks_file, "task1")
 
             # Start a task that runs for 3 seconds (longer than threshold)
@@ -51,8 +53,6 @@ class TestIntegration(unittest.TestCase):
                 runner.run_with_heartbeat(
                     cmd, self.test_tasks_file, "task1", verbose=False
                 )
-
-            import threading
 
             t = threading.Thread(target=run_task)
             t.start()
@@ -73,7 +73,7 @@ class TestIntegration(unittest.TestCase):
             t.join()
 
     def test_task_reclaimed_if_heartbeat_stops(self):
-        """Verify that if a runner stops updating heartbeat, the task can be reclaimed."""
+        """Verify a task can be reclaimed if its runner stops heartbeats."""
         with (
             unittest.mock.patch("lemming.tasks.STALE_THRESHOLD", 1),
             unittest.mock.patch("lemming.persistence.STALE_THRESHOLD", 1),
@@ -84,7 +84,9 @@ class TestIntegration(unittest.TestCase):
             tasks.claim_task(self.test_tasks_file, "task1", pid=999999)
 
             data = tasks.load_tasks(self.test_tasks_file)
-            self.assertEqual(data.tasks[0].status, models.TaskStatus.IN_PROGRESS)
+            self.assertEqual(
+                data.tasks[0].status, models.TaskStatus.IN_PROGRESS
+            )
 
             # 2. Wait for it to become stale
             time.sleep(1.1)
@@ -98,7 +100,7 @@ class TestIntegration(unittest.TestCase):
             self.assertEqual(task.pid, 88888)
 
     def test_orchestrator_retries_on_runner_failure(self):
-        """Verify that the orchestrator retries if the runner exits but doesn't report success."""
+        """Verify the orchestrator retries if the runner does not succeed."""
         # Mocking time.sleep to speed up tests
         with unittest.mock.patch("time.sleep", return_value=None):
             # Configure roadmap with 2 retries
@@ -122,7 +124,7 @@ class TestIntegration(unittest.TestCase):
             self.assertEqual(data.tasks[0].status, models.TaskStatus.FAILED)
 
     def test_runner_terminates_if_reclaimed(self):
-        """Verify that if a task is reclaimed by another process, the original runner terminates."""
+        """Verify the original runner terminates if its task is reclaimed."""
         with (
             unittest.mock.patch("lemming.tasks.STALE_THRESHOLD", 2),
             unittest.mock.patch("lemming.persistence.STALE_THRESHOLD", 2),
@@ -139,8 +141,6 @@ class TestIntegration(unittest.TestCase):
                     cmd, self.test_tasks_file, "task1", verbose=True
                 )
 
-            import threading
-
             t = threading.Thread(target=run_task)
             t.start()
 
@@ -148,10 +148,11 @@ class TestIntegration(unittest.TestCase):
             time.sleep(0.5)
 
             # 2. Reclaim the task manually by changing the PID in the file
-            # runner.py check: if not tasks.update_heartbeat(tasks_file, task_id):
+            # runner.py check:
+            #   if not tasks.update_heartbeat(tasks_file, task_id):
             # update_heartbeat returns True ONLY if task is IN_PROGRESS.
-            # Wait, update_heartbeat in lifecycle.py DOES NOT check PID if it matches!
-            # It just updates it.
+            # Wait, update_heartbeat in lifecycle.py DOES NOT check PID if
+            # it matches! It just updates it.
 
             # Let's re-read update_heartbeat:
             # def update_heartbeat(tasks_file, task_id, pid=None):
@@ -180,11 +181,12 @@ class TestIntegration(unittest.TestCase):
             t.join(timeout=5)
             self.assertFalse(
                 t.is_alive(),
-                "Runner thread should have terminated after task was marked COMPLETED",
+                "Runner thread should have terminated after task was "
+                "marked COMPLETED",
             )
 
     def test_orchestrator_retries_on_runner_crash(self):
-        """Verify that the orchestrator retries if the runner exits with an error code."""
+        """Verify the orchestrator retries if the runner exits non-zero."""
         with unittest.mock.patch("time.sleep", return_value=None):
             data = tasks.load_tasks(self.test_tasks_file)
             data.config.retries = 3
@@ -206,7 +208,7 @@ class TestIntegration(unittest.TestCase):
             self.assertEqual(data.tasks[0].status, models.TaskStatus.FAILED)
 
     def test_orchestrator_stops_on_cancellation(self):
-        """Verify that the orchestrator stops the loop if the runner exits with -15 (SIGTERM)."""
+        """Verify the orchestrator stops if the runner exits with SIGTERM."""
         with (
             unittest.mock.patch("time.sleep", return_value=None),
             unittest.mock.patch(
@@ -230,7 +232,8 @@ class TestIntegration(unittest.TestCase):
             data = tasks.load_tasks(self.test_tasks_file)
             # It should have only 1 attempt because it broke
             self.assertEqual(data.tasks[0].attempts, 1)
-            # Status should be PENDING (as finish_task_attempt sets it if no requested_status)
+            # Status should be PENDING (as finish_task_attempt sets it if
+            # no requested_status)
             self.assertEqual(data.tasks[0].status, models.TaskStatus.PENDING)
 
     def test_claim_task_race_condition(self):
@@ -248,8 +251,6 @@ class TestIntegration(unittest.TestCase):
                 if res:
                     results.append(pid)
 
-            import threading
-
             threads = []
             for i in range(1, 11):  # Use 1 to 10
                 t = threading.Thread(target=try_claim, args=(i,))
@@ -263,11 +264,16 @@ class TestIntegration(unittest.TestCase):
             # Only one should have succeeded
             self.assertEqual(len(results), 1)
             data = tasks.load_tasks(self.test_tasks_file)
-            self.assertEqual(data.tasks[0].status, models.TaskStatus.IN_PROGRESS)
+            self.assertEqual(
+                data.tasks[0].status, models.TaskStatus.IN_PROGRESS
+            )
             self.assertIn(data.tasks[0].pid, results)
 
     def test_reclaim_if_pid_dead(self):
-        """Verify that a task is reclaimable immediately if its PID is dead, even if heartbeat is fresh."""
+        """Verify a task with a dead PID is immediately reclaimable.
+
+        This holds even if the heartbeat is fresh.
+        """
         with unittest.mock.patch(
             "lemming.tasks.lifecycle.is_pid_alive", return_value=False
         ):
@@ -275,13 +281,17 @@ class TestIntegration(unittest.TestCase):
             tasks.claim_task(self.test_tasks_file, "task1", pid=12345)
 
             data = tasks.load_tasks(self.test_tasks_file)
-            self.assertEqual(data.tasks[0].status, models.TaskStatus.IN_PROGRESS)
+            self.assertEqual(
+                data.tasks[0].status, models.TaskStatus.IN_PROGRESS
+            )
             self.assertEqual(data.tasks[0].pid, 12345)
 
             # 2. Heartbeat is fresh, but is_pid_alive is mocked to False
             # Try to claim it again with another PID
             task = tasks.claim_task(self.test_tasks_file, "task1", pid=67890)
-            self.assertIsNotNone(task, "Task should be reclaimable if PID is dead")
+            self.assertIsNotNone(
+                task, "Task should be reclaimable if PID is dead"
+            )
             self.assertEqual(task.pid, 67890)
 
 

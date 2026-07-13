@@ -48,7 +48,9 @@ def test_roadmap_config_defaults():
 def test_detect_default_runner_picks_first_installed(monkeypatch):
     models.detect_default_runner.cache_clear()
     monkeypatch.setattr(
-        models.shutil, "which", lambda name: "/bin/x" if name == "claude" else None
+        models.shutil,
+        "which",
+        lambda name: "/bin/x" if name == "claude" else None,
     )
     assert models.detect_default_runner() == "claude"
     models.detect_default_runner.cache_clear()
@@ -71,7 +73,9 @@ def test_detect_default_runner_prefers_agy(monkeypatch):
 def test_roadmap_config_uses_detected_runner(monkeypatch):
     models.detect_default_runner.cache_clear()
     monkeypatch.setattr(
-        models.shutil, "which", lambda name: "/bin/x" if name == "codex" else None
+        models.shutil,
+        "which",
+        lambda name: "/bin/x" if name == "codex" else None,
     )
     assert models.RoadmapConfig().runner == "codex"
     # An explicit value always wins over detection.

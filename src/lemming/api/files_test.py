@@ -21,7 +21,9 @@ def test_list_root(client, git_repo):
     assert "node_modules/" not in names
 
     # Check metadata
-    file1 = next(item for item in data["contents"] if item["name"] == "file1.txt")
+    file1 = next(
+        item for item in data["contents"] if item["name"] == "file1.txt"
+    )
     assert file1["size"] == 8  # "content1"
     assert "modified" in file1
 

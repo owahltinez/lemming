@@ -56,7 +56,8 @@ def test_tailscale_provider_success(mock_run):
         unittest.mock.MagicMock(returncode=0),  # serve
         unittest.mock.MagicMock(returncode=0),  # funnel
         unittest.mock.MagicMock(
-            returncode=0, stdout='{"Self": {"DNSName": "my-node.tail-scale.net."}}'
+            returncode=0,
+            stdout='{"Self": {"DNSName": "my-node.tail-scale.net."}}',
         ),  # status
         unittest.mock.MagicMock(returncode=0),  # stop: funnel off
         unittest.mock.MagicMock(returncode=0),  # stop: serve reset

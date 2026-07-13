@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import lemming.api
+
 
 def test_list_hooks(client, test_tasks):
     """Test that the /api/hooks endpoint returns a list of available hooks."""
@@ -15,8 +17,6 @@ def test_list_hooks(client, test_tasks):
 
 def test_list_hooks_with_project(client, test_tasks):
     """Test that the /api/hooks endpoint works with a specified project."""
-    import lemming.api
-
     root = lemming.api.app.state.root
     project_dir = root / "project1"
     project_dir.mkdir()

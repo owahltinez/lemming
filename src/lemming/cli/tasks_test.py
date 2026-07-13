@@ -3,9 +3,10 @@ import shutil
 import tempfile
 import unittest
 from unittest import mock
+
 import click.testing
-from lemming import cli
-from lemming import tasks
+
+from lemming import cli, tasks
 
 
 class TestCLITasks(unittest.TestCase):
@@ -13,7 +14,11 @@ class TestCLITasks(unittest.TestCase):
         self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
-        self.base_args = ["--verbose", "--tasks-file", str(self.test_tasks_file)]
+        self.base_args = [
+            "--verbose",
+            "--tasks-file",
+            str(self.test_tasks_file),
+        ]
 
         # Scaffold a valid file
         data = tasks.Roadmap(
@@ -34,7 +39,9 @@ class TestCLITasks(unittest.TestCase):
         shutil.rmtree(self.test_dir)
 
     def test_add_task(self):
-        result = self.cli_runner.invoke(cli.cli, self.base_args + ["add", "New Task"])
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["add", "New Task"]
+        )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Added task", result.output)
 
@@ -45,7 +52,8 @@ class TestCLITasks(unittest.TestCase):
     def test_edit_task_description(self):
         result = self.cli_runner.invoke(
             cli.cli,
-            self.base_args + ["edit", "12345678", "--description", "Updated Task"],
+            self.base_args
+            + ["edit", "12345678", "--description", "Updated Task"],
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Task 12345678 updated.", result.output)
@@ -54,10 +62,14 @@ class TestCLITasks(unittest.TestCase):
         self.assertEqual(data.tasks[0].description, "Updated Task")
 
     def test_delete_task(self):
-        self.cli_runner.invoke(cli.cli, self.base_args + ["add", "To be removed"])
+        self.cli_runner.invoke(
+            cli.cli, self.base_args + ["add", "To be removed"]
+        )
 
         data = tasks.load_tasks(self.test_tasks_file)
-        task_id = next(t.id for t in data.tasks if t.description == "To be removed")
+        task_id = next(
+            t.id for t in data.tasks if t.description == "To be removed"
+        )
 
         delete_result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["delete", task_id]
@@ -76,12 +88,18 @@ class TestCLITasks(unittest.TestCase):
         self.assertIn("Initial Task", result.output)
 
         # Verify Running state (mocking is_loop_running)
-        with mock.patch("lemming.tasks.lifecycle.is_loop_running", return_value=True):
-            result = self.cli_runner.invoke(cli.cli, self.base_args + ["status"])
+        with mock.patch(
+            "lemming.tasks.lifecycle.is_loop_running", return_value=True
+        ):
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["status"]
+            )
             self.assertIn("Loop Status: Running", result.output)
 
     def test_logs_command_fail_no_logs(self):
-        result = self.cli_runner.invoke(cli.cli, self.base_args + ["logs", "12345678"])
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["logs", "12345678"]
+        )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("No log for task", result.output)
 
@@ -102,7 +120,9 @@ class TestCLITasks(unittest.TestCase):
         self.cli_runner.invoke(
             cli.cli, self.base_args + ["progress", "12345678", "Done"]
         )
-        self.cli_runner.invoke(cli.cli, self.base_args + ["complete", "12345678"])
+        self.cli_runner.invoke(
+            cli.cli, self.base_args + ["complete", "12345678"]
+        )
 
         # Then uncomplete
         result = self.cli_runner.invoke(
@@ -116,7 +136,9 @@ class TestCLITasks(unittest.TestCase):
         self.cli_runner.invoke(
             cli.cli, self.base_args + ["progress", "12345678", "Failed reason"]
         )
-        result = self.cli_runner.invoke(cli.cli, self.base_args + ["fail", "12345678"])
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["fail", "12345678"]
+        )
         self.assertEqual(result.exit_code, 0)
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].status, tasks.TaskStatus.FAILED)
@@ -135,7 +157,9 @@ class TestCLITasks(unittest.TestCase):
         self.assertIn("Task 12345678 cancelled.", result.output)
 
     def test_reset_command(self):
-        result = self.cli_runner.invoke(cli.cli, self.base_args + ["reset", "12345678"])
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["reset", "12345678"]
+        )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("attempts, progress, and logs cleared", result.output)
 

@@ -1,3 +1,5 @@
+"""Pydantic models for tasks, roadmap state, and runner configuration."""
+
 import enum
 import functools
 import shutil

@@ -1,3 +1,6 @@
+"""Path resolution, .env loading, and git helpers for Lemming."""
+
+import functools
 import hashlib
 import logging
 import os
@@ -20,13 +23,19 @@ def _parse_dotenv(path: pathlib.Path) -> dict[str, str]:
             if line.startswith("export "):
                 line = line[7:].strip()
             if "=" not in line:
-                logger.warning("%s:%d: skipping malformed line (no '=')", path, lineno)
+                logger.warning(
+                    "%s:%d: skipping malformed line (no '=')", path, lineno
+                )
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
             # Strip surrounding quotes from value
             value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            if (
+                len(value) >= 2
+                and value[0] == value[-1]
+                and value[0] in ('"', "'")
+            ):
                 value = value[1:-1]
             result[key] = value
     except FileNotFoundError:
@@ -112,11 +121,13 @@ def get_project_dir(tasks_file: pathlib.Path) -> pathlib.Path:
     tasks_file_abs = tasks_file.resolve()
     lemming_home = get_lemming_home()
 
-    # If the tasks file is already inside lemming home, its parent IS the project dir.
+    # If the tasks file is already inside lemming home, its parent IS the
+    # project dir.
     if tasks_file_abs.parent.parent == lemming_home:
         return tasks_file_abs.parent
 
-    # Otherwise, hash the absolute path of the tasks file to get a unique project dir.
+    # Otherwise, hash the absolute path of the tasks file to get a unique
+    # project dir.
     path_hash = hashlib.sha256(str(tasks_file_abs).encode()).hexdigest()[:12]
     return lemming_home / path_hash
 
@@ -187,26 +198,27 @@ def get_log_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     return project_dir / f"{task_id}-runner.log"
 
 
+@functools.cache
 def in_git_repo() -> bool:
     """Check if the current directory is inside a git repository.
 
-    The result is cached on the function after the first call.
+    The result is cached after the first call; use
+    `in_git_repo.cache_clear()` to reset it.
 
     Returns:
         True if inside a git repository, False otherwise.
     """
-    if not hasattr(in_git_repo, "_result"):
-        try:
-            in_git_repo._result = (
-                subprocess.run(
-                    ["git", "rev-parse", "--git-dir"],
-                    capture_output=True,
-                ).returncode
-                == 0
-            )
-        except Exception:
-            in_git_repo._result = False
-    return in_git_repo._result
+    try:
+        return (
+            subprocess.run(
+                ["git", "rev-parse", "--git-dir"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+    except Exception:
+        return False
 
 
 def is_ignored(path: pathlib.Path) -> bool:
@@ -225,6 +237,7 @@ def is_ignored(path: pathlib.Path) -> bool:
             subprocess.run(
                 ["git", "check-ignore", "-q", str(path)],
                 capture_output=True,
+                check=False,
             ).returncode
             == 0
         )

@@ -1,3 +1,5 @@
+"""YAML persistence and file locking for the roadmap state."""
+
 import contextlib
 import fcntl
 import os
@@ -88,7 +90,8 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
 
     if not data:
         data = {}
-    # TODO(compat): Remove once all clients write "progress" instead of "outcomes".
+    # TODO(compat): Remove once all clients write "progress" instead of
+    # "outcomes".
     for task_data in data.get("tasks", []):
         if "outcomes" in task_data:
             task_data["progress"] = task_data.pop("outcomes")
@@ -107,7 +110,7 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
 
 
 class _BlockStyleDumper(yaml.SafeDumper):
-    """Custom YAML dumper that forces multiline strings to use block style (|)."""
+    """YAML dumper that forces multiline strings to use block style (|)."""
 
     def represent_scalar(self, tag, value, style=None):
         if tag == "tag:yaml.org,2002:str" and "\n" in value:
