@@ -1,5 +1,6 @@
 import signal
 import subprocess
+import sys
 import time
 import unittest.mock
 
@@ -376,3 +377,105 @@ def test_run_with_heartbeat_no_timeout(tmp_path):
     )
 
     assert returncode == 0
+
+
+def test_kill_process_tree_escalates_to_sigkill():
+    """Verifies SIGKILL escalation when SIGTERM does not stop the process."""
+    process = unittest.mock.MagicMock(spec=subprocess.Popen)
+    process.pid = 12345
+    process.wait.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=1)
+
+    with (
+        unittest.mock.patch("os.killpg") as mock_killpg,
+        unittest.mock.patch("os.getpgid", return_value=54321),
+    ):
+        runner._kill_process_tree(process)
+
+    assert mock_killpg.call_args_list == [
+        unittest.mock.call(54321, signal.SIGTERM),
+        unittest.mock.call(54321, signal.SIGKILL),
+    ]
+
+
+def test_run_with_heartbeat_timeout_kills_sigterm_immune_runner(tmp_path):
+    """Verifies a runner that ignores SIGTERM is still killed on timeout."""
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "sigterm_immune"
+
+    roadmap = tasks.Roadmap(
+        tasks=[tasks.Task(id=task_id, description="test escalation")]
+    )
+    tasks.save_tasks(tasks_file, roadmap)
+    tasks.mark_task_in_progress(tasks_file, task_id)
+
+    # The runner ignores SIGTERM and signals readiness via a sentinel file.
+    sentinel = tmp_path / "ready"
+    child_code = (
+        "import pathlib, signal, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"pathlib.Path({str(sentinel)!r}).touch()\n"
+        "time.sleep(300)\n"
+    )
+
+    # Jump the clock past the limit only once the child has installed its
+    # SIGTERM handler, so the kill cannot land before setup completes.
+    real_monotonic = time.monotonic
+
+    def fast_monotonic():
+        return real_monotonic() + (120 if sentinel.exists() else 0)
+
+    start = real_monotonic()
+    with (
+        unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
+        unittest.mock.patch.object(tasks, "STALE_THRESHOLD", 2),
+        unittest.mock.patch.object(runner, "KILL_GRACE_SECONDS", 1),
+    ):
+        returncode, _, _ = runner.run_with_heartbeat(
+            [sys.executable, "-c", child_code],
+            tasks_file,
+            task_id,
+            verbose=False,
+            time_limit=1,
+        )
+
+    assert returncode == runner.RETURNCODE_TIMEOUT
+    assert real_monotonic() - start < 30
+
+
+def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
+    """Verifies return when a detached grandchild keeps the pipe open.
+
+    A process that starts its own session escapes the group kill and
+    inherits the stdout pipe; reading until EOF would block until it
+    exits, long after the runner itself is gone.
+    """
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "detached_grandchild"
+
+    roadmap = tasks.Roadmap(
+        tasks=[tasks.Task(id=task_id, description="test pipe hold")]
+    )
+    tasks.save_tasks(tasks_file, roadmap)
+
+    child_code = (
+        "import subprocess, sys\n"
+        "subprocess.Popen(\n"
+        "    [sys.executable, '-c', 'import time; time.sleep(30)'],\n"
+        "    start_new_session=True,\n"
+        ")\n"
+        "print('runner done', flush=True)\n"
+    )
+
+    start = time.monotonic()
+    with unittest.mock.patch.object(runner, "OUTPUT_DRAIN_SECONDS", 1):
+        returncode, stdout, _ = runner.run_with_heartbeat(
+            [sys.executable, "-c", child_code],
+            tasks_file,
+            task_id,
+            verbose=False,
+            time_limit=0,
+        )
+
+    assert returncode == 0
+    assert "runner done" in stdout
+    assert time.monotonic() - start < 10

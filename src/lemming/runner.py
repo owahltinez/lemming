@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 # Sentinel return codes for non-standard process termination.
 RETURNCODE_TIMEOUT = -14
 
+# Grace period after SIGTERM before escalating to SIGKILL.
+KILL_GRACE_SECONDS = 5
+
+# How long to wait for EOF on the runner's stdout after it exits. A process
+# that escaped the process group (e.g. by starting its own session) can
+# inherit the pipe and hold it open indefinitely.
+OUTPUT_DRAIN_SECONDS = 5
+
 
 def _pretty_quote(s: str) -> str:
     """Quotes a string for shell execution, preferring readable quoting.
@@ -177,17 +185,36 @@ def build_runner_command(
 def _kill_process_tree(process: subprocess.Popen) -> None:
     """Kills a process and its entire process group.
 
-    Tries SIGTERM on the process group first, falls back to killing the
-    process directly if the group signal fails.
+    Sends SIGTERM to the process group first so the runner can clean up,
+    then escalates to SIGKILL if the process is still alive after a grace
+    period. Falls back to killing the process directly if the group signal
+    fails.
 
     Args:
         process: The subprocess to kill.
     """
+    # Ask the whole group to terminate gracefully.
     try:
-        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        pgid = os.getpgid(process.pid)
+        os.killpg(pgid, signal.SIGTERM)
     except OSError:
         try:
             process.kill()
+        except OSError:
+            pass
+        return
+
+    # Escalate to SIGKILL if the process ignored SIGTERM.
+    try:
+        process.wait(timeout=KILL_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "Process %d survived SIGTERM for %ss; sending SIGKILL.",
+            process.pid,
+            KILL_GRACE_SECONDS,
+        )
+        try:
+            os.killpg(pgid, signal.SIGKILL)
         except OSError:
             pass
 
@@ -264,6 +291,23 @@ def run_with_heartbeat(
 
     timed_out = False
 
+    def stream_output():
+        """Streams runner output to the log file and optionally the console."""
+        if not process.stdout:
+            return
+        with open(log_file, "a", encoding="utf-8") as f:
+            for line in process.stdout:
+                full_log.append(line)
+                f.write(line)
+                f.flush()
+                if verbose:
+                    echo_fn(line)
+
+    # Read stdout on a separate thread so the main thread can wait on the
+    # process itself: reading until EOF can block long after the runner
+    # exits if an escaped child still holds the pipe open.
+    reader_thread = threading.Thread(target=stream_output, daemon=True)
+
     try:
         # Heartbeat and cancellation management
         is_claimed = tasks.update_heartbeat(
@@ -302,26 +346,35 @@ def run_with_heartbeat(
             )
             heartbeat_thread.start()
 
-        # Stream output to log file and optionally to console
-        try:
-            if process.stdout:
-                with open(log_file, "a", encoding="utf-8") as f:
-                    for line in process.stdout:
-                        full_log.append(line)
-                        f.write(line)
-                        f.flush()
-                        if verbose:
-                            echo_fn(line)
+        reader_thread.start()
 
+        try:
             process.wait()
         except BaseException:
             _kill_process_tree(process)
             raise
+
+        # Drain remaining output, but don't wait forever: an escaped child
+        # holding the pipe open must not wedge the attempt.
+        reader_thread.join(timeout=OUTPUT_DRAIN_SECONDS)
+        if reader_thread.is_alive():
+            logger.warning(
+                "Runner stdout still open %ss after exit for task %s; "
+                "abandoning output reader.",
+                OUTPUT_DRAIN_SECONDS,
+                task_id,
+            )
 
         returncode = process.returncode
         if timed_out:
             returncode = RETURNCODE_TIMEOUT
         return returncode, "".join(full_log), ""
     finally:
-        if process.stdout and hasattr(process.stdout, "close"):
+        # Closing the stream while the reader is blocked on it can deadlock
+        # on the stream's internal lock, so only close it after EOF.
+        if (
+            process.stdout
+            and not reader_thread.is_alive()
+            and hasattr(process.stdout, "close")
+        ):
             process.stdout.close()
