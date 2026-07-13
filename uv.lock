@@ -221,7 +221,7 @@ wheels = [
 ]
 
 [[package]]
-name = "lemming"
+name = "lemming-cli"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -231,7 +231,7 @@ dependencies = [
     { name = "markdownify" },
     { name = "pydantic" },
     { name = "pyyaml" },
-    { name = "readability" },
+    { name = "readability-cli" },
     { name = "requests" },
     { name = "uvicorn" },
 ]
@@ -251,7 +251,7 @@ requires-dist = [
     { name = "markdownify", specifier = ">=0.14.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "readability", git = "https://github.com/owahltinez/readability.git" },
+    { name = "readability-cli", specifier = ">=0.4.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "uvicorn", specifier = ">=0.33.0" },
 ]
@@ -452,14 +452,18 @@ wheels = [
 ]
 
 [[package]]
-name = "readability"
+name = "readability-cli"
 version = "0.4.0"
-source = { git = "https://github.com/owahltinez/readability.git#23f72d70d3966509c34620d1200eb087dfea8cb1" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "click" },
     { name = "markdownify" },
     { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/7e/44ce2386e89a586e5b63f18abce7a3ea3b9cea33e501ef2a9cdbcab71fae/readability_cli-0.4.0.tar.gz", hash = "sha256:89580dbf36b6ec07d0649716f4d865650457e453f918f8b1158ed609b1689137", size = 312120, upload-time = "2026-07-13T00:55:10.035Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/0c/686d26a870e27e9682a9a28df5c7cbddcfa50d923ea68439e0f8d95834f4/readability_cli-0.4.0-py3-none-any.whl", hash = "sha256:120b021f7beedd1aa36936098c77c6602af6d2cd786de2197769fdb3f248c026", size = 305900, upload-time = "2026-07-13T00:55:08.77Z" },
 ]
 
 [[package]]

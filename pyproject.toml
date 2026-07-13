@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lemming"
+name = "lemming-cli"
 version = "0.1.0"
 description = "An autonomous, iterative task runner for AI coding agents."
 readme = "README.md"
@@ -20,7 +20,7 @@ dependencies = [
     "markdownify>=0.14.1",
     "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
-    "readability>=0.4.0",
+    "readability-cli>=0.4.0",
     "requests>=2.32.3",
     "uvicorn>=0.33.0",
 ]
@@ -32,19 +32,23 @@ dev = [
     "pytest",
 ]
 
-[tool.uv.sources]
-readability = { git = "https://github.com/owahltinez/readability.git" }
-
 [[tool.uv.index]]
 name = "pypi"
 url = "https://pypi.org/simple"
 default = true
+
+[project.urls]
+Homepage = "https://github.com/owahltinez/lemming"
+Repository = "https://github.com/owahltinez/lemming"
 
 [project.scripts]
 lemming = "lemming.main:cli"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lemming"]
 
 [tool.ruff]
 line-length = 80
