@@ -168,7 +168,10 @@ def test_cancel_task(tmp_path):
     )
     persistence.save_tasks(tasks_file, data)
 
-    with patch("lemming.tasks.lifecycle.os.killpg"):
+    with (
+        patch("lemming.tasks.lifecycle.os.killpg"),
+        patch("lemming.tasks.lifecycle.is_pid_alive", return_value=False),
+    ):
         success = lifecycle.cancel_task(tasks_file, "1")
         assert success is True
 
@@ -197,6 +200,7 @@ def test_cancel_task_kills_loop_pid(tmp_path):
         patch("lemming.tasks.lifecycle.os.getpgid", return_value=123),
         patch("lemming.tasks.lifecycle.os.kill") as mock_kill,
         patch("lemming.tasks.lifecycle.os.killpg") as mock_killpg,
+        patch("lemming.tasks.lifecycle.is_pid_alive", return_value=False),
     ):
         success = lifecycle.cancel_task(tasks_file, "1")
         assert success is True
@@ -209,6 +213,78 @@ def test_cancel_task_kills_loop_pid(tmp_path):
         # Verify task is marked as cancelled
         updated_data = persistence.load_tasks(tasks_file)
         assert updated_data.tasks[0].status == models.TaskStatus.CANCELLED
+
+
+def test_kill_pid_tree_escalates_to_sigkill():
+    """Verifies SIGKILL escalation when SIGTERM does not stop the process."""
+    with (
+        patch("lemming.tasks.lifecycle.os.getpgid", return_value=54321),
+        patch("lemming.tasks.lifecycle.os.killpg") as mock_killpg,
+        patch("lemming.tasks.lifecycle.is_pid_alive", return_value=True),
+        patch.object(lifecycle, "KILL_GRACE_SECONDS", 0),
+    ):
+        lifecycle._kill_pid_tree(12345)
+
+    assert mock_killpg.call_args_list == [
+        ((54321, signal.SIGTERM),),
+        ((54321, signal.SIGKILL),),
+    ]
+
+
+def test_kill_pid_tree_no_escalation_when_process_exits():
+    """Verifies no SIGKILL is sent when the process exits on SIGTERM."""
+    with (
+        patch("lemming.tasks.lifecycle.os.getpgid", return_value=54321),
+        patch("lemming.tasks.lifecycle.os.killpg") as mock_killpg,
+        patch("lemming.tasks.lifecycle.is_pid_alive", return_value=False),
+    ):
+        lifecycle._kill_pid_tree(12345)
+
+    mock_killpg.assert_called_once_with(54321, signal.SIGTERM)
+
+
+def test_cancel_task_escalates_sigterm_immune_process(tmp_path):
+    """Verifies cancellation kills a process that ignores SIGTERM.
+
+    Also verifies the task state is saved as CANCELLED before any signal
+    is sent, since the kill (which can wait out a grace period) must
+    happen outside the tasks-file lock.
+    """
+    tasks_file = tmp_path / "tasks.yml"
+    data = models.Roadmap(
+        tasks=[
+            models.Task(
+                id="1",
+                description="Task 1",
+                status=models.TaskStatus.IN_PROGRESS,
+                pid=12345,
+            )
+        ],
+    )
+    persistence.save_tasks(tasks_file, data)
+
+    status_at_first_signal = []
+
+    def record_status(*args):
+        saved = persistence.load_tasks(tasks_file)
+        status_at_first_signal.append(saved.tasks[0].status)
+
+    with (
+        patch("lemming.tasks.lifecycle.os.getpgid", return_value=54321),
+        patch(
+            "lemming.tasks.lifecycle.os.killpg", side_effect=record_status
+        ) as mock_killpg,
+        patch("lemming.tasks.lifecycle.is_pid_alive", return_value=True),
+        patch.object(lifecycle, "KILL_GRACE_SECONDS", 0),
+    ):
+        success = lifecycle.cancel_task(tasks_file, "1")
+
+    assert success is True
+    assert mock_killpg.call_args_list == [
+        ((54321, signal.SIGTERM),),
+        ((54321, signal.SIGKILL),),
+    ]
+    assert status_at_first_signal[0] == models.TaskStatus.CANCELLED
 
 
 def test_reset_task(tmp_path):

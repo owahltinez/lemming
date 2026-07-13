@@ -1,5 +1,6 @@
 """Task lifecycle management: claiming, heartbeats, cancellation, resets."""
 
+import logging
 import os
 import pathlib
 import secrets
@@ -8,8 +9,13 @@ import time
 
 from .. import models, paths, persistence
 
+logger = logging.getLogger(__name__)
+
 # Re-export constants for internal/external use
 STALE_THRESHOLD = persistence.STALE_THRESHOLD
+
+# Grace period after SIGTERM before escalating to SIGKILL.
+KILL_GRACE_SECONDS = 5
 
 
 def generate_task_id() -> str:
@@ -252,6 +258,49 @@ def reset_task_logs(tasks_file: pathlib.Path, task_id: str) -> None:
         log_file.unlink()
 
 
+def _kill_pid_tree(pid: int) -> None:
+    """Kills a process and its entire process group by PID.
+
+    Sends SIGTERM to the process group first so it can clean up, then
+    escalates to SIGKILL if the process is still alive after a grace
+    period. Unlike runner._kill_process_tree, this works from a bare PID
+    (no subprocess handle), so exit is detected by polling.
+
+    Args:
+        pid: The process ID to kill.
+    """
+    # Ask the whole group to terminate gracefully.
+    pgid = None
+    try:
+        pgid = os.getpgid(pid)
+        os.killpg(pgid, signal.SIGTERM)
+    except OSError:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return
+
+    # Poll for exit, then escalate to SIGKILL if SIGTERM was ignored.
+    deadline = time.monotonic() + KILL_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        if not is_pid_alive(pid):
+            return
+        time.sleep(0.1)
+
+    logger.warning(
+        "Process %d survived SIGTERM for %ss; sending SIGKILL.",
+        pid,
+        KILL_GRACE_SECONDS,
+    )
+    try:
+        if pgid is not None:
+            os.killpg(pgid, signal.SIGKILL)
+        else:
+            os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
     """Kill the task process AND the orchestrator loop, then mark cancelled.
 
@@ -263,39 +312,39 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
         True if the task was found and cancellation was attempted, False
         otherwise.
     """
+    # Update the task state first and release the lock: the kill below can
+    # wait out a grace period and must not stall heartbeats or readers.
+    task_pid = None
+    loop_pid = None
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
+        task = next((t for t in data.tasks if t.id == task_id), None)
+        if not task:
+            return False
 
-        for task in data.tasks:
-            if task.id == task_id:
-                # First kill the task itself
-                if task.pid:
-                    try:
-                        # Try to kill the whole process group if possible
-                        os.killpg(os.getpgid(task.pid), signal.SIGTERM)
-                    except OSError:
-                        try:
-                            os.kill(task.pid, signal.SIGTERM)
-                        except OSError:
-                            pass
+        task_pid = task.pid
+        loop_pid = persistence.get_loop_pid(tasks_file)
 
-                # Also kill the orchestrator loop if it's running
-                loop_pid = persistence.get_loop_pid(tasks_file)
-                if loop_pid:
-                    try:
-                        os.kill(loop_pid, signal.SIGTERM)
-                    except OSError:
-                        pass
+        update_run_time(task)
+        task.status = models.TaskStatus.CANCELLED
+        task.pid = None
+        task.last_heartbeat = None
+        task.requested_status = None
 
-                update_run_time(task)
-                task.status = models.TaskStatus.CANCELLED
-                task.pid = None
-                task.last_heartbeat = None
-                task.requested_status = None
+        persistence.save_tasks(tasks_file, data)
 
-                persistence.save_tasks(tasks_file, data)
-                return True
-    return False
+    # Kill the orchestrator loop first so it cannot pick up the next task
+    # while we wait for the task process tree to die.
+    if loop_pid:
+        try:
+            os.kill(loop_pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+    if task_pid:
+        _kill_pid_tree(task_pid)
+
+    return True
 
 
 def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
