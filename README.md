@@ -281,6 +281,22 @@ prompt text and skips all default flag injection.
 
 ---
 
+## Releasing
+
+Releases are published to PyPI as
+[`lemming-cli`](https://pypi.org/project/lemming-cli/) via trusted publishing:
+pushing a `v*` tag triggers the `publish.yml` GitHub Actions workflow, which
+builds the package with `uv build` and uploads it.
+
+```bash
+# 1. Bump the version in pyproject.toml, commit, and push
+# 2. Tag the release and push the tag
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+---
+
 ## Screenshots
 
 ### Dashboard
