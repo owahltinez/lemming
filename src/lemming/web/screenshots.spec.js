@@ -236,7 +236,12 @@ test.describe('Screenshot Generation', () => {
               loop_running: true,
               tasks: mockTasks,
               goal: 'Ship a multi-tenant SaaS billing platform: REST API with authentication, subscription management, usage-based invoicing, and a customer-facing dashboard.',
-              config: { retries: 3, runner: 'agy', hooks: null, time_limit: 60 },
+              config: {
+                retries: 3,
+                runner: 'agy',
+                hooks: null,
+                time_limit: 60,
+              },
             },
           });
         });
