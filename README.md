@@ -178,7 +178,7 @@ by replacing its symlink with a file, or **disable** a global override by
 deleting the symlink.
 
 Hooks follow a specific discovery precedence: **Project > Global > Built-in**.
-See [DOCS/HOOKS.md](docs/HOOKS.md) for more details.
+See [docs/HOOKS.md](docs/HOOKS.md) for more details.
 
 ### Managing Hooks and Configuration
 
