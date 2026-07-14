@@ -11,7 +11,7 @@ from .. import paths
 from . import auth, config, directories, files, hooks, tasks
 from . import logging as lemming_logging
 
-# Re-export for backward compatibility and tests
+# Re-exported so logging configs can reference lemming.api.QuietPollFilter
 QuietPollFilter = lemming_logging.QuietPollFilter
 
 

@@ -57,7 +57,7 @@ from .queries import (
     get_project_data as get_project_data,
 )
 
-# Re-export persistence functions for backward compatibility
+# Re-export persistence functions as part of the package facade
 save_tasks = persistence.save_tasks
 load_tasks = persistence.load_tasks
 lock_tasks = persistence.lock_tasks
@@ -66,7 +66,7 @@ release_loop_lock = persistence.release_loop_lock
 get_loop_pid = persistence.get_loop_pid
 LOOP_LOCK_FILENAME = persistence.LOOP_LOCK_FILENAME
 
-# Re-export models for compatibility
+# Re-export models as part of the package facade
 TaskNotFoundError = models.TaskNotFoundError
 Task = models.Task
 TaskStatus = models.TaskStatus
