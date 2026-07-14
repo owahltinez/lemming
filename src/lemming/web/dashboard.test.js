@@ -10,7 +10,7 @@ const createInitialState = (overrides = {}) => {
   const hideCompleted = overrides.hideCompleted || false;
   return {
     tasks,
-    context: '',
+    goal: '',
     cwd: '/test/cwd',
     newTask: '',
     loading: true,
@@ -263,7 +263,7 @@ describe('Lemming Web Dashboard', () => {
     const renderer = new Renderer(
       createInitialState({
         tasks,
-        context: 'Test context',
+        goal: 'Test goal',
         loading: false,
         filteredTasks: tasks,
       }),
@@ -745,10 +745,10 @@ describe('Lemming Web Dashboard', () => {
     assert.ok(taskActionsButton, 'Task Actions button should be present');
   });
 
-  test('project context textarea attributes', async () => {
+  test('long-term goal textarea attributes', async () => {
     const renderer = new Renderer(
       createInitialState({
-        context: 'Initial context',
+        goal: 'Initial goal',
         loading: false,
       }),
     );
@@ -756,16 +756,16 @@ describe('Lemming Web Dashboard', () => {
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
 
     const textarea = fragment.querySelector(
-      'textarea[aria-label="Project context and guidelines"]',
+      'textarea[aria-label="Long-term goal"]',
     );
-    assert.ok(textarea, 'Project context textarea should exist');
-    assert.strictEqual(textarea.getAttribute(':on:input'), 'updateContext()');
+    assert.ok(textarea, 'Long-term goal textarea should exist');
+    assert.strictEqual(textarea.getAttribute(':on:input'), 'updateGoal()');
 
     const root =
       fragment.querySelector('body') || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
-    assert.strictEqual(textarea.value, 'Initial context');
+    assert.strictEqual(textarea.value, 'Initial goal');
   });
 
   test('status chip colors and labels', async () => {

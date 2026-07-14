@@ -8,7 +8,7 @@ from . import lifecycle
 
 
 def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
-    """Consolidated logic to get project state (tasks, context, loop status).
+    """Consolidated logic to get project state (tasks, goal, loop status).
 
     Args:
         tasks_file: Path to the tasks YAML file.
@@ -70,7 +70,7 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
     unique_tasks.sort(key=sort_key)
 
     return models.ProjectData(
-        context=data.context,
+        goal=data.goal,
         tasks=unique_tasks,
         config=data.config,
         cwd=str(paths.get_working_dir(tasks_file)),

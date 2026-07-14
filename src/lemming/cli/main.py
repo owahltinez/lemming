@@ -27,8 +27,8 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     """Lemming: An autonomous, iterative task runner for AI agents.
 
     Lemming orchestrates AI coding agents by walking through a structured
-    `tasks.yml` file. It manages the context, tracks task attempts, and
-    records progress.
+    `tasks.yml` file. It maintains the long-term goal, tracks task attempts,
+    and records progress.
     """
     ctx.ensure_object(dict)
     if tasks_file is None:

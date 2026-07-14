@@ -11,7 +11,7 @@ router = fastapi.APIRouter()
 
 @router.get("/api/data", response_model=tasks.ProjectData)
 def get_data(request: fastapi.Request, project: str | None = None):
-    """Get the full project data: context, config, tasks, and status."""
+    """Get the full project data: goal, config, tasks, and status."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     data = tasks.get_project_data(tasks_file)
     data.cwd = str(context.resolve_project_dir(request.app.state, project))

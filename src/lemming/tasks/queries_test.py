@@ -12,7 +12,7 @@ def test_get_project_data_deduplication(tmp_path):
 
     # Create a corrupted roadmap with duplicate task IDs
     data = models.Roadmap(
-        context="test",
+        goal="test",
         tasks=[
             models.Task(
                 id="1", description="Task 1", status=models.TaskStatus.PENDING

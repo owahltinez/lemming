@@ -44,7 +44,7 @@ from .operations import (
     delete_tasks as delete_tasks,
 )
 from .operations import (
-    update_context as update_context,
+    update_goal as update_goal,
 )
 from .operations import (
     update_task as update_task,

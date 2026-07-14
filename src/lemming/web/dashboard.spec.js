@@ -49,7 +49,7 @@ test.describe('Dashboard E2E', () => {
             cwd: '/mock/cwd',
             loop_running: false,
             tasks: [],
-            context: 'Mock context',
+            goal: 'Mock goal',
           },
         });
       } else if (url.includes('/api/runners')) {

@@ -8,7 +8,7 @@ import click.testing
 from lemming import cli, tasks
 
 
-class TestCLIContext(unittest.TestCase):
+class TestCLIGoal(unittest.TestCase):
     def setUp(self):
         self.cli_runner = click.testing.CliRunner()
         self.test_dir = tempfile.mkdtemp()
@@ -21,7 +21,7 @@ class TestCLIContext(unittest.TestCase):
 
         # Scaffold a valid file
         data = tasks.Roadmap(
-            context="Initial context",
+            goal="Initial goal",
             tasks=[],
         )
         tasks.save_tasks(self.test_tasks_file, data)
@@ -29,20 +29,20 @@ class TestCLIContext(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir)
 
-    def test_context_no_args(self):
-        result = self.cli_runner.invoke(cli.cli, self.base_args + ["context"])
+    def test_goal_no_args(self):
+        result = self.cli_runner.invoke(cli.cli, self.base_args + ["goal"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Initial context", result.output)
+        self.assertIn("Initial goal", result.output)
 
-    def test_set_context(self):
+    def test_set_goal(self):
         result = self.cli_runner.invoke(
-            cli.cli, self.base_args + ["context", "Updated context via CLI"]
+            cli.cli, self.base_args + ["goal", "Updated goal via CLI"]
         )
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Project context updated.", result.output)
+        self.assertIn("Long-term goal updated.", result.output)
 
         data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.context, "Updated context via CLI")
+        self.assertEqual(data.goal, "Updated goal via CLI")
 
 
 if __name__ == "__main__":

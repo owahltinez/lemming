@@ -21,7 +21,7 @@ def setup_env(tmp_path):
 
     # Scaffold a valid file with one task
     initial_data = tasks.Roadmap(
-        context="Initial context",
+        goal="Initial goal",
         tasks=[
             tasks.Task(
                 id="task1",

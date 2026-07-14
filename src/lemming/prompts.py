@@ -137,9 +137,7 @@ def _format_roadmap(
     Returns:
         A formatted roadmap string.
     """
-    roadmap_str = (
-        f"## Project Context\n{data.context or 'No context provided.'}\n\n"
-    )
+    roadmap_str = f"## Long-Term Goal\n{data.goal or 'No goal provided.'}\n\n"
     roadmap_str += "## Roadmap\n"
 
     completed_tasks = [

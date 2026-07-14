@@ -16,7 +16,7 @@ class TestIntegration(unittest.TestCase):
 
         # Scaffold a valid file with one task
         self.initial_data = models.Roadmap(
-            context="Initial context",
+            goal="Initial goal",
             tasks=[
                 models.Task(
                     id="task1",

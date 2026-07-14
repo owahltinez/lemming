@@ -1,4 +1,4 @@
-"""Task CRUD operations: add, update, delete, and context updates."""
+"""Task CRUD operations: add, update, delete, and goal updates."""
 
 import os
 import pathlib
@@ -71,7 +71,7 @@ def delete_tasks(
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: Optional ID of a specific task to delete.
-        all_tasks: If True, deletes all tasks and clears context.
+        all_tasks: If True, deletes all tasks and clears the goal.
         completed_only: If True, deletes only completed tasks.
 
     Returns:
@@ -85,7 +85,7 @@ def delete_tasks(
             for t in data.tasks:
                 lifecycle.reset_task_logs(tasks_file, t.id)
             data.tasks = []
-            data.context = ""
+            data.goal = ""
         elif completed_only:
             completed_tasks = [
                 t
@@ -245,14 +245,14 @@ def update_task(
     return target
 
 
-def update_context(tasks_file: pathlib.Path, context: str) -> None:
-    """Updates the project context.
+def update_goal(tasks_file: pathlib.Path, goal: str) -> None:
+    """Updates the project's long-term goal.
 
     Args:
         tasks_file: Path to the tasks YAML file.
-        context: The new project context string.
+        goal: The new long-term goal string.
     """
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
-        data.context = context
+        data.goal = goal
         persistence.save_tasks(tasks_file, data)

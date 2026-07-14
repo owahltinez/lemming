@@ -37,7 +37,7 @@
 
       // --- Initial State ---
       $.tasks = [];
-      $.context = '';
+      $.goal = '';
       $.config = {
         retries: 3,
         runner: 'agy',
@@ -336,12 +336,9 @@
         $.updateTitle();
         $.updateFaviconStatus();
 
-        const contextElem = document.querySelector('textarea');
-        if (
-          $.loading ||
-          (contextElem && document.activeElement !== contextElem)
-        ) {
-          $.context = data.context || '';
+        const goalElem = document.querySelector('textarea');
+        if ($.loading || (goalElem && document.activeElement !== goalElem)) {
+          $.goal = data.goal || '';
         }
         $.loading = false;
       };
@@ -595,16 +592,16 @@
         }
       };
 
-      $.ctxSaveTimeout = null;
-      $.updateContext = () => {
-        clearTimeout($.ctxSaveTimeout);
-        $.ctxSaveTimeout = setTimeout(async () => {
-          const res = await fetch(apiUrl('/api/context'), {
+      $.goalSaveTimeout = null;
+      $.updateGoal = () => {
+        clearTimeout($.goalSaveTimeout);
+        $.goalSaveTimeout = setTimeout(async () => {
+          const res = await fetch(apiUrl('/api/goal'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ context: $.context }),
+            body: JSON.stringify({ goal: $.goal }),
           });
-          if (res.ok) $.addToast('Context saved', 'info');
+          if (res.ok) $.addToast('Goal saved', 'info');
         }, 1000);
       };
 

@@ -177,7 +177,7 @@ def edit(
     "--all",
     "delete_all",
     is_flag=True,
-    help="Delete all tasks and clear context.",
+    help="Delete all tasks and clear the goal.",
 )
 @click.option("--completed", is_flag=True, help="Delete completed tasks only.")
 @click.pass_context
@@ -189,7 +189,7 @@ def delete_task(
     Args:
         ctx: The click context.
         task_id: The ID of the specific task to delete.
-        delete_all: If set, clears the entire roadmap and project context.
+        delete_all: If set, clears the entire roadmap and long-term goal.
         completed: If set, deletes all tasks marked as 'completed'.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -214,7 +214,7 @@ def delete_task(
 
     if delete_all:
         click.echo(
-            "Deleted all tasks, progress, and logs, and cleared context."
+            "Deleted all tasks, progress, and logs, and cleared the goal."
         )
     elif completed:
         click.echo(f"Deleted {removed} completed task(s) and their logs.")
@@ -225,7 +225,7 @@ def delete_task(
             click.echo(f"Error: Task {task_id} not found.")
 
 
-@cli.command(short_help="<taskid> Show context and task details")
+@cli.command(short_help="<taskid> Show the goal and task details")
 @click.argument("task_id", required=False)
 @click.pass_context
 def status(ctx: click.Context, task_id: str | None):
@@ -251,8 +251,8 @@ def status(ctx: click.Context, task_id: str | None):
         click.echo()
 
         if verbose:
-            click.secho("=== Project Context ===", fg="cyan", bold=True)
-            click.echo(project_data.context or "No context set.")
+            click.secho("=== Long-Term Goal ===", fg="cyan", bold=True)
+            click.echo(project_data.goal or "No goal set.")
             click.secho("\n=== Tasks ===", fg="cyan", bold=True)
 
         if not project_data.tasks:

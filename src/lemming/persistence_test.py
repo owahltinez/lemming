@@ -18,7 +18,7 @@ def test_lock_tasks(tmp_path):
 def test_load_save_tasks(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(
-        context="test",
+        goal="test",
         tasks=[
             models.Task(
                 id="1",
@@ -31,7 +31,7 @@ def test_load_save_tasks(tmp_path):
     persistence.save_tasks(tasks_file, data)
 
     loaded = persistence.load_tasks(tasks_file)
-    assert loaded.context == "test"
+    assert loaded.goal == "test"
     assert len(loaded.tasks) == 1
     assert loaded.tasks[0].id == "1"
 

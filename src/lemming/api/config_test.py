@@ -23,29 +23,29 @@ def test_get_runners(client):
     assert response.json() == ["agy", "aider", "claude", "codex"]
 
 
-def test_project_context_isolation(client, test_tasks):
-    """Context is isolated per project."""
+def test_project_goal_isolation(client, test_tasks):
+    """The goal is isolated per project."""
     root = api.app.state.root
-    subdir = root / "ctx_test"
+    subdir = root / "goal_test"
     subdir.mkdir(exist_ok=True)
 
-    # Set context for sub-project
+    # Set the goal for the sub-project
     response = client.post(
-        "/api/context",
-        json={"context": "Sub-project context"},
-        params={"project": "ctx_test"},
+        "/api/goal",
+        json={"goal": "Sub-project goal"},
+        params={"project": "goal_test"},
     )
     assert response.status_code == 200
 
-    # Root context should be unchanged
+    # Root goal should be unchanged
     res = client.get("/api/data")
     assert res.status_code == 200
-    assert res.json()["context"] == "Initial context"
+    assert res.json()["goal"] == "Initial goal"
 
-    # Sub-project context should be set
-    res = client.get("/api/data", params={"project": "ctx_test"})
+    # Sub-project goal should be set
+    res = client.get("/api/data", params={"project": "goal_test"})
     assert res.status_code == 200
-    assert res.json()["context"] == "Sub-project context"
+    assert res.json()["goal"] == "Sub-project goal"
 
 
 def test_run_loop_with_project(client, test_tasks):

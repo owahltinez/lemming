@@ -19,13 +19,13 @@ def get_runners():
     return list(models.KNOWN_RUNNERS)
 
 
-@router.post("/api/context")
-def update_context(
+@router.post("/api/goal")
+def update_goal(
     request: fastapi.Request, update: dict, project: str | None = None
 ):
-    """Update the shared project context passed to task runners."""
+    """Update the long-term goal shared with all task runners."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
-    tasks.update_context(tasks_file, update.get("context", ""))
+    tasks.update_goal(tasks_file, update.get("goal", ""))
     return {"status": "ok"}
 
 

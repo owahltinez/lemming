@@ -21,7 +21,7 @@ class TestCLIHooks(unittest.TestCase):
 
         # Scaffold a valid file
         data = tasks.Roadmap(
-            context="Initial context",
+            goal="Initial goal",
             tasks=[],
         )
         tasks.save_tasks(self.test_tasks_file, data)

@@ -22,7 +22,7 @@ class TestCLITasks(unittest.TestCase):
 
         # Scaffold a valid file
         data = tasks.Roadmap(
-            context="Initial context",
+            goal="Initial goal",
             tasks=[
                 tasks.Task(
                     id="12345678",

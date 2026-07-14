@@ -7,7 +7,7 @@ def test_get_data(client, test_tasks):
     response = client.get("/api/data")
     assert response.status_code == 200
     data = response.json()
-    assert data["context"] == "Initial context"
+    assert data["goal"] == "Initial goal"
     assert len(data["tasks"]) == 3
     # Check that task1 is in the list
     task1 = next(t for t in data["tasks"] if t["id"] == "task1")

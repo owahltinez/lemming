@@ -73,7 +73,7 @@ class RoadmapConfig(pydantic.BaseModel):
 class Roadmap(pydantic.BaseModel):
     """Represents the entire roadmap state."""
 
-    context: str = ""
+    goal: str = ""
     tasks: list[Task] = pydantic.Field(default_factory=list)
     config: RoadmapConfig = pydantic.Field(default_factory=RoadmapConfig)
 
@@ -81,7 +81,7 @@ class Roadmap(pydantic.BaseModel):
 class ProjectData(pydantic.BaseModel):
     """Represents the project data returned by the API."""
 
-    context: str
+    goal: str
     tasks: list[Task]
     config: RoadmapConfig
     cwd: str

@@ -12,7 +12,7 @@ def setup_env(tmp_path):
     runner = CliRunner()
 
     data = tasks.Roadmap(
-        context="Initial context",
+        goal="Initial goal",
         tasks=[
             tasks.Task(
                 id="12345678",

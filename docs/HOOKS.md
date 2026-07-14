@@ -122,7 +122,7 @@ is running, and the next task execution will respect the updated settings.
 
 Your hook template can use the following placeholders:
 
-- `{{roadmap}}`: A structured summary of the entire project context and all
+- `{{roadmap}}`: A structured summary of the long-term goal and all
   tasks.
 - `{{finished_task}}`: Details about the task that just finished (ID,
   description, progress, and the last 100 lines of its execution log).

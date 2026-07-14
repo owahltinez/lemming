@@ -10,7 +10,7 @@ def test_load_prompt():
 def test_prepare_prompt(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = tasks.Roadmap(
-        context="My context",
+        goal="My goal",
         tasks=[
             tasks.Task(
                 id="1",
@@ -25,7 +25,7 @@ def test_prepare_prompt(tmp_path):
     )
     task = data.tasks[1]
     prompt = prompts.prepare_prompt(data, task, tasks_file)
-    assert "My context" in prompt
+    assert "My goal" in prompt
     assert "T2" in prompt
     assert "T1" in prompt
     assert "O1" in prompt
@@ -102,7 +102,7 @@ def test_prepare_hook_prompt_substitution(tmp_path, monkeypatch):
 
     tasks_file = tmp_path / "tasks.yml"
     data = tasks.Roadmap(
-        context="Project Context",
+        goal="The Long-Term Goal",
         tasks=[
             tasks.Task(
                 id="task1",
@@ -141,7 +141,7 @@ File Path: {{tasks_file_path}}
     )
 
     # Verify roadmap substitution
-    assert "Roadmap: ## Project Context" in prompt
+    assert "Roadmap: ## Long-Term Goal" in prompt
     assert "**[COMPLETED] (task1) Task 1**" in prompt
     assert "  - Done" in prompt
     assert "- [IN PROGRESS] (task2) Task 2" in prompt
@@ -183,7 +183,7 @@ def test_prepare_hook_prompt_filters_command_noise(tmp_path, monkeypatch):
 
     tasks_file = tmp_path / "tasks.yml"
     data = tasks.Roadmap(
-        context="Project Context",
+        goal="The Long-Term Goal",
         tasks=[
             tasks.Task(
                 id="task1",
@@ -352,7 +352,7 @@ def test_prepare_hook_prompt_shows_failed_for_exhausted_task(
         progress=["Task killed: time limit of 60 minutes reached."],
     )
     data = tasks.Roadmap(
-        context="Test",
+        goal="Test",
         tasks=[
             failed_task,
             tasks.Task(id="task2", description="Next task"),

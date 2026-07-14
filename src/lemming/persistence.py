@@ -65,11 +65,12 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
         tasks_file: Path to the tasks YAML file.
 
     Returns:
-        A Roadmap containing the context and list of tasks.
+        A Roadmap containing the goal and list of tasks.
     """
     if not tasks_file.exists():
         return models.Roadmap(
-            context="# Project Context\n\nAdd your guidelines here.",
+            goal="# Long-Term Goal\n\nDescribe what 'done' looks like for "
+            "this project.",
             tasks=[],
         )
 
@@ -82,7 +83,7 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
         # In a real-world scenario, we might want to back up the corrupted file.
         print(f"Warning: Failed to load corrupted tasks file: {e}")
         return models.Roadmap(
-            context="# Project Context (Corrupted File Recovery)\n\n"
+            goal="# Long-Term Goal (Corrupted File Recovery)\n\n"
             "The tasks file was corrupted and could not be fully loaded.\n"
             "Check the server logs or the original file for details.",
             tasks=[],

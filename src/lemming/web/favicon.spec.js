@@ -41,7 +41,7 @@ test.describe('Favicon Status Synchronization', () => {
     await page.route('**/api/data**', async (route) => {
       await route.fulfill({
         contentType: 'application/json',
-        json: { loop_running: loopRunning, tasks: tasks, context: '', cwd: '' },
+        json: { loop_running: loopRunning, tasks: tasks, goal: '', cwd: '' },
       });
     });
     await page.route('**/api/runners', async (route) => {
@@ -134,7 +134,7 @@ test.describe('Favicon Status Synchronization', () => {
     await page.route('**/api/data**', async (route) => {
       await route.fulfill({
         contentType: 'application/json',
-        json: { loop_running: loopRunning, tasks: tasks, context: '', cwd: '' },
+        json: { loop_running: loopRunning, tasks: tasks, goal: '', cwd: '' },
       });
     });
     await page.route('**/api/files/**', async (route) => {

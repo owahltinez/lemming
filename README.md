@@ -10,7 +10,7 @@ human-readable `tasks.yml` file.
 ## Why Lemming?
 
 - **Zero Context Drift**: By breaking projects into discrete tasks, Lemming
-  ensures agents stay focused. They only see the project context, relevant
+  ensures agents stay focused. They only see the long-term goal, relevant
   history, and the specific task at hand.
 - **Transparency & Control**: Every decision, technical finding, and progress
   update is recorded in a human-readable `tasks.yml` file. You can step in,
@@ -39,17 +39,22 @@ uv tool install lemming-cli
 
 ### 1. Scaffold the Roadmap
 
-Initialize your project context and define your goals.
+Set the long-term goal and define the first tasks.
 
 ```bash
-# Set project-wide rules (e.g. tech stack, style guides)
-lemming context "Use React, TypeScript, and Tailwind. Follow TDD."
+# Set the long-term goal that every task works toward
+lemming goal "Build a habit-tracking web app with auth, offline support, and tests"
 
 # Add tasks to the queue
 lemming add "Initialize the project with Vite"
 lemming add "Create the Button component"
 lemming add "Implement the authentication flow"
 ```
+
+The goal is the one piece of state every task sees, no matter how far into the
+roadmap it runs — describe what "done" looks like for the project. Durable
+coding rules (tech stack, style guides) belong in your repo's agent files
+(e.g. `AGENTS.md`, `CLAUDE.md`), which your agent already reads on its own.
 
 ### 2. Review and Refine
 
@@ -92,19 +97,19 @@ lemming serve --tunnel cloudflare
   folders directly from the UI.
 - **Browse Files**: Quickly open your workspace in a separate window to inspect
   files and directory structure alongside the roadmap.
-- **Interactive Controls**: Add tasks, edit context, and manage the execution
+- **Interactive Controls**: Add tasks, edit the goal, and manage the execution
   loop from your browser.
 
 ---
 
 ## How it Works
 
-Lemming maintains a human-readable `tasks.yml` file containing your project
-context, a queue of tasks, and recorded progress. When you run `lemming run`, it
+Lemming maintains a human-readable `tasks.yml` file containing your long-term
+goal, a queue of tasks, and recorded progress. When you run `lemming run`, it
 loops through each pending task:
 
 1.  **Build a scoped prompt**: Lemming assembles a prompt containing only the
-    project context, a summary of completed tasks and their progress, and the
+    long-term goal, a summary of completed tasks and their progress, and the
     current task description.
 2.  **Invoke the agent**: It launches your chosen agent CLI with that prompt,
     monitors it with heartbeats, and streams output to a log file.
@@ -201,8 +206,8 @@ lemming hooks set roadmap lint
 ### Roadmap Management
 
 - **`status [<id>]`**: Roadmap overview or deep-dive into a specific task.
-- **`context [<text>]`**: Set or view project-wide instructions. Supports
-  `-f/--file`.
+- **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
+  Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index` and `--runner`.
 - **`edit <id>`**: Modify a task's description, runner, or position.
 - **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk

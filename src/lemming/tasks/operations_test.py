@@ -165,8 +165,8 @@ def test_delete_tasks(tmp_path):
     assert data.tasks[0].description == "Task 1"
 
 
-def test_update_context(tmp_path):
+def test_update_goal(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
-    operations.update_context(tasks_file, "new context")
+    operations.update_goal(tasks_file, "new goal")
     data = persistence.load_tasks(tasks_file)
-    assert data.context == "new context"
+    assert data.goal == "new goal"

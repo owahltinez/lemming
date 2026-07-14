@@ -32,7 +32,7 @@ def test_task_model_validation():
 
 def test_roadmap_defaults():
     roadmap = models.Roadmap()
-    assert roadmap.context == ""
+    assert roadmap.goal == ""
     assert roadmap.tasks == []
     assert isinstance(roadmap.config, models.RoadmapConfig)
 

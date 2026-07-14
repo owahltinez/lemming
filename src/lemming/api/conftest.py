@@ -28,7 +28,7 @@ def test_tasks():
 
     # Scaffold a valid file
     data = tasks.Roadmap(
-        context="Initial context",
+        goal="Initial goal",
         tasks=[
             tasks.Task(
                 id="task1",
@@ -175,7 +175,7 @@ def test_workspace():
     # Set up some tasks in the subproject
     sub_tasks_file = subproject_dir / "tasks.yml"
     data = tasks.Roadmap(
-        context="Subproject context",
+        goal="Subproject goal",
         tasks=[
             tasks.Task(
                 id="sub1",

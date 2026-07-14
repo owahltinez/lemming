@@ -226,8 +226,7 @@ test.describe('Screenshot Generation', () => {
               cwd: '/home/dev/projects/acme-saas-platform',
               loop_running: true,
               tasks: mockTasks,
-              context:
-                'Use TypeScript with strict mode. Follow REST API conventions. Write tests for all new endpoints. Use Prisma as the ORM with PostgreSQL.',
+              goal: 'Ship a multi-tenant SaaS billing platform: REST API with authentication, subscription management, usage-based invoicing, and a customer-facing dashboard.',
             },
           });
         });
