@@ -16,24 +16,6 @@ const FIXED_CONTEXT = { timezoneId: 'America/Los_Angeles', locale: 'en-US' };
 // Realistic mock data with anonymized content
 const mockTasks = [
   {
-    id: 'a1b2c3',
-    description:
-      'Set up CI/CD pipeline with GitHub Actions for automated testing and deployment',
-    status: 'completed',
-    attempts: 1,
-    has_runner_log: true,
-    pid: null,
-    runner: null,
-    parent: null,
-    completed_at: 1711324800,
-    run_time: 142.3,
-    started_at: null,
-    progress: [
-      'Created .github/workflows/ci.yml with build, test, and deploy stages',
-      'Added caching for node_modules to speed up builds',
-    ],
-  },
-  {
     id: 'd4e5f6',
     description:
       'Implement user authentication with JWT tokens and refresh token rotation',
@@ -63,37 +45,9 @@ const mockTasks = [
     completed_at: null,
     run_time: 45.2,
     started_at: FIXED_TIME.getTime() / 1000 - 63,
-    progress: [],
-  },
-  {
-    id: 'j0k1l2',
-    description:
-      'Add rate limiting middleware with Redis-backed sliding window',
-    status: 'pending',
-    attempts: 0,
-    has_runner_log: false,
-    pid: null,
-    runner: null,
-    parent: null,
-    completed_at: null,
-    run_time: null,
-    started_at: null,
-    progress: [],
-  },
-  {
-    id: 'm3n4o5',
-    description: 'Write integration tests for the payment processing module',
-    status: 'pending',
-    attempts: 2,
-    has_runner_log: true,
-    pid: null,
-    runner: null,
-    parent: null,
-    completed_at: null,
-    run_time: 98.1,
-    started_at: null,
     progress: [
-      'Stripe webhook signature verification failing in test environment',
+      'Added tenant_id columns and indexes to the User, Project, and ApiKey models',
+      'Migration applied cleanly; updating the repository layer with tenant scoping next',
     ],
   },
   {
