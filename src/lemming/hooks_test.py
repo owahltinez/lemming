@@ -65,6 +65,53 @@ class TestHooks(unittest.TestCase):
         self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
 
     @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    @unittest.mock.patch("lemming.prompts.prepare_hook_prompt")
+    def test_run_hooks_returns_exit_codes(self, mock_prepare, mock_run):
+        mock_prepare.return_value = "Hook Prompt"
+        mock_run.return_value = (1, "", "runner crashed")
+
+        tasks.update_task(
+            self.test_tasks_file,
+            "12345678",
+            status=tasks.TaskStatus.IN_PROGRESS,
+        )
+
+        exit_codes = run_hooks(
+            self.test_tasks_file,
+            "12345678",
+            "agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            hooks=["roadmap"],
+            final_status=tasks.TaskStatus.COMPLETED,
+        )
+
+        self.assertEqual(exit_codes, {"roadmap": 1})
+
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
+    @unittest.mock.patch("lemming.prompts.prepare_hook_prompt")
+    def test_run_hooks_returns_sentinel_on_runner_error(
+        self, mock_prepare, mock_run
+    ):
+        mock_prepare.return_value = "Hook Prompt"
+        mock_run.side_effect = OSError("no such binary")
+
+        exit_codes = run_hooks(
+            self.test_tasks_file,
+            "12345678",
+            "agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            hooks=["roadmap"],
+        )
+
+        self.assertEqual(exit_codes, {"roadmap": -1})
+
+    @unittest.mock.patch("lemming.runner.run_with_heartbeat")
     def test_run_hooks_no_hooks(self, mock_run):
         run_hooks(
             self.test_tasks_file,

@@ -20,7 +20,7 @@ def run_hooks(
     working_dir: pathlib.Path | None = None,
     final_status: tasks.TaskStatus | None = None,
     time_limit: int = 0,
-) -> None:
+) -> dict[str, int]:
     """Discovers and executes orchestrator hooks for a finished task.
 
     Args:
@@ -35,11 +35,16 @@ def run_hooks(
         working_dir: Working directory for the hook runner processes.
         final_status: If provided, mark the task with this status after hooks.
         time_limit: Time limit in minutes for each hook run (0 disables it).
+
+    Returns:
+        Mapping of each executed hook name to its runner exit code (-1 when
+        the runner failed to launch). Skipped hooks are absent.
     """
+    exit_codes: dict[str, int] = {}
     data = tasks.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
     if not task:
-        return
+        return exit_codes
 
     # Use provided hooks or fall back to configuration
     active_hooks = hooks if hooks is not None else data.config.hooks
@@ -57,7 +62,7 @@ def run_hooks(
             tasks.update_task(
                 tasks_file, task_id, status=final_status, force=True
             )
-        return
+        return exit_codes
 
     for hook_name in active_hooks:
         # Reload tasks every time to ensure each hook sees progress from
@@ -109,12 +114,14 @@ def run_hooks(
                 cwd=working_dir,
                 time_limit=time_limit,
             )
+            exit_codes[hook_name] = returncode
             if verbose:
                 if returncode != 0:
                     click.echo(
                         f"Hook '{hook_name}' exited with code {returncode}."
                     )
         except Exception as e:
+            exit_codes[hook_name] = -1
             click.echo(f"Hook '{hook_name}' error: {e}")
 
     # Finally mark the task as completed or failed if requested.
@@ -127,7 +134,7 @@ def run_hooks(
             data = tasks.load_tasks(tasks_file)
             current = next((t for t in data.tasks if t.id == task_id), None)
             if current and current.status != tasks.TaskStatus.IN_PROGRESS:
-                return
+                return exit_codes
             tasks.update_task(
                 tasks_file, task_id, status=final_status, force=True
             )
@@ -143,3 +150,5 @@ def run_hooks(
         except Exception as e:
             click.echo(f"Error finalizing task {task_id}: {e}")
             traceback.print_exc()
+
+    return exit_codes
