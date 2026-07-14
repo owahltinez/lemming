@@ -1,44 +1,8 @@
 """Prompt template loading and rendering for runners and orchestrator hooks."""
 
-import logging
 import pathlib
 
 from . import paths, runner, tasks
-
-logger = logging.getLogger(__name__)
-
-
-def ensure_hooks_symlinked():
-    """Ensures built-in hooks are symlinked in the global hooks directory.
-
-    If a hook already exists (as a file or symlink), it is not overwritten.
-    This allows users to override them by replacing the symlink with their
-    own file.
-    """
-    global_hooks_dir = paths.get_global_hooks_dir()
-    global_hooks_dir.mkdir(parents=True, exist_ok=True)
-
-    base_path = pathlib.Path(__file__).parent / "prompts" / "hooks"
-    if not base_path.exists():
-        return
-
-    for f in base_path.glob("*.md"):
-        target = global_hooks_dir / f.name
-        # We only create the symlink if NOTHING exists there yet.
-        # This respects manual deletion as a way to "disable" the global
-        # symlink, but the hook will still be available as a built-in
-        # fallback unless disabled in the project's tasks.yml.
-        if not target.exists() and not target.is_symlink():
-            try:
-                target.symlink_to(f.absolute())
-            except (OSError, PermissionError) as e:
-                logger.error(
-                    "Failed to create symlink for hook %s: %s", target, e
-                )
-                # If we hit permission issues, we want to know, not just
-                # skip silently
-                if isinstance(e, PermissionError):
-                    raise e
 
 
 def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:

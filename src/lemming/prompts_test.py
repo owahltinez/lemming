@@ -218,29 +218,6 @@ def test_prepare_hook_prompt_filters_command_noise(tmp_path, monkeypatch):
     assert "Execution log of THIS task" in prompt
 
 
-def test_ensure_hooks_symlinked(tmp_path, monkeypatch):
-    # Setup mock lemming home
-    lemming_home = tmp_path / "lemming_home"
-    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
-
-    global_hooks_dir = paths.get_global_hooks_dir()
-    assert not global_hooks_dir.exists()
-
-    # Run ensure_hooks_symlinked
-    prompts.ensure_hooks_symlinked()
-
-    assert global_hooks_dir.exists()
-    assert (global_hooks_dir / "roadmap.md").is_symlink()
-    assert (global_hooks_dir / "readability.md").is_symlink()
-
-    # Check if we can load it
-    content = prompts.load_prompt("roadmap")
-    assert "roadmap orchestrator" in content.lower()
-
-    content = prompts.load_prompt("readability")
-    assert "google style guide" in content.lower()
-
-
 def test_list_hooks_includes_all(tmp_path, monkeypatch):
     # Setup mock lemming home
     lemming_home = tmp_path / "lemming_home"

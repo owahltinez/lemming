@@ -133,15 +133,3 @@ def hooks_reset(ctx: click.Context):
     data.config.hooks = None
     tasks.save_tasks(tasks_file, data)
     click.echo("Hooks reset to default (all available).")
-
-
-@hooks_group.command(name="install")
-@click.pass_context
-def hooks_install(ctx: click.Context):
-    """Installs (symlinks) built-in hooks into the global hooks directory.
-
-    This makes them easily discoverable and overridable in
-    ~/.local/lemming/hooks/.
-    """
-    prompts.ensure_hooks_symlinked()
-    click.echo("Built-in hooks installed to ~/.local/lemming/hooks/")
