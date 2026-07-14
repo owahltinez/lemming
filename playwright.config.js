@@ -10,6 +10,13 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: /screenshots\.spec\.js/,
+    },
+    // Regenerates docs/screenshots; run via `npm run screenshots`.
+    {
+      name: 'screenshots',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /screenshots\.spec\.js/,
     },
   ],
 });

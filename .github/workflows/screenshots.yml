@@ -1,0 +1,51 @@
+name: Screenshots
+
+# Regenerates the dashboard screenshots in docs/ whenever the web UI changes,
+# so they can never go stale. Generation is deterministic (frozen clock and
+# animations disabled), so this only commits when the UI actually changed.
+# The commit touches only docs/screenshots, which is outside the paths filter
+# below, so it cannot re-trigger this workflow.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lemming/web/**'
+      - 'playwright.config.js'
+      - '.github/workflows/screenshots.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install Node.js dependencies
+        run: npm install
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Regenerate screenshots
+        run: npm run screenshots
+
+      - name: Commit updated screenshots
+        run: |
+          if git diff --quiet docs/screenshots; then
+            echo "Screenshots are up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          git commit -m "Regenerate dashboard screenshots"
+          git pull --rebase --autostash origin main
+          git push

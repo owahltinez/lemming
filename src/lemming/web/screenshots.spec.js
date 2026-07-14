@@ -8,6 +8,11 @@ const manchaJsPath = path.resolve(process.cwd(), 'src/lemming/web/mancha.js');
 const indexJsPath = path.resolve(process.cwd(), 'src/lemming/web/index.js');
 const screenshotsDir = path.resolve(process.cwd(), 'docs/screenshots');
 
+// Freeze the rendered clock so regenerating screenshots is deterministic:
+// unchanged UI must produce byte-identical images in a given environment.
+const FIXED_TIME = new Date('2024-03-25T20:02:59Z');
+const FIXED_CONTEXT = { timezoneId: 'America/Los_Angeles', locale: 'en-US' };
+
 // Realistic mock data with anonymized content
 const mockTasks = [
   {
@@ -18,7 +23,7 @@ const mockTasks = [
     attempts: 1,
     has_runner_log: true,
     pid: null,
-    agent: null,
+    runner: null,
     parent: null,
     completed_at: 1711324800,
     run_time: 142.3,
@@ -36,7 +41,7 @@ const mockTasks = [
     attempts: 2,
     has_runner_log: true,
     pid: null,
-    agent: null,
+    runner: null,
     parent: null,
     completed_at: 1711328400,
     run_time: 287.6,
@@ -53,11 +58,11 @@ const mockTasks = [
     attempts: 0,
     has_runner_log: true,
     pid: 48291,
-    agent: null,
+    runner: 'claude',
     parent: null,
     completed_at: null,
     run_time: 45.2,
-    started_at: Date.now() / 1000 - 63,
+    started_at: FIXED_TIME.getTime() / 1000 - 63,
     progress: [],
   },
   {
@@ -68,7 +73,7 @@ const mockTasks = [
     attempts: 0,
     has_runner_log: false,
     pid: null,
-    agent: null,
+    runner: null,
     parent: null,
     completed_at: null,
     run_time: null,
@@ -82,7 +87,7 @@ const mockTasks = [
     attempts: 2,
     has_runner_log: true,
     pid: null,
-    agent: null,
+    runner: null,
     parent: null,
     completed_at: null,
     run_time: 98.1,
@@ -99,7 +104,7 @@ const mockTasks = [
     attempts: 0,
     has_runner_log: false,
     pid: null,
-    agent: 'aider',
+    runner: 'aider',
     parent: 'd4e5f6',
     completed_at: null,
     run_time: null,
@@ -169,7 +174,7 @@ Seeded 8 projects across 2 tenants
 
 All 29 tests passed.
 
-> Recording outcome: Schema migration complete with tenant isolation verified.`;
+> Recording progress: Schema migration complete with tenant isolation verified.`;
 
 const cleanLog = mockLogContent;
 
@@ -188,8 +193,12 @@ test.describe('Screenshot Generation', () => {
   for (const [device, viewport] of Object.entries(viewports)) {
     test.describe(`${device} (${viewport.width}x${viewport.height})`, () => {
       test('dashboard screenshot', async ({ browser }) => {
-        const context = await browser.newContext({ viewport });
+        const context = await browser.newContext({
+          viewport,
+          ...FIXED_CONTEXT,
+        });
         const page = await context.newPage();
+        await page.clock.setFixedTime(FIXED_TIME);
 
         // Serve static files
         await page.route('http://localhost:8000/', async (route) => {
@@ -262,14 +271,19 @@ test.describe('Screenshot Generation', () => {
         await page.screenshot({
           path: path.join(screenshotsDir, `dashboard-${device}.png`),
           fullPage: true,
+          animations: 'disabled',
         });
 
         await context.close();
       });
 
       test('task log screenshot', async ({ browser }) => {
-        const context = await browser.newContext({ viewport });
+        const context = await browser.newContext({
+          viewport,
+          ...FIXED_CONTEXT,
+        });
         const page = await context.newPage();
+        await page.clock.setFixedTime(FIXED_TIME);
 
         const taskId = 'g7h8i9';
 
@@ -318,6 +332,7 @@ test.describe('Screenshot Generation', () => {
         await page.screenshot({
           path: path.join(screenshotsDir, `task-log-${device}.png`),
           fullPage: false,
+          animations: 'disabled',
         });
 
         await context.close();

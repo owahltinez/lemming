@@ -304,6 +304,10 @@ git push origin v0.1.1
 
 ## Screenshots
 
+These are regenerated automatically by CI whenever the web UI changes
+(see `.github/workflows/screenshots.yml`); run `npm run screenshots` to
+preview them locally.
+
 ### Dashboard
 
 ![Dashboard](docs/screenshots/dashboard-desktop.png)
