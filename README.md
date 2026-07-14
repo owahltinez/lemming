@@ -53,8 +53,8 @@ lemming add "Implement the authentication flow"
 
 The goal is the one piece of state every task sees, no matter how far into the
 roadmap it runs — describe what "done" looks like for the project. Durable
-coding rules (tech stack, style guides) belong in your repo's agent files
-(e.g. `AGENTS.md`, `CLAUDE.md`), which your agent already reads on its own.
+coding rules (tech stack, style guides) belong in your repo's agent files (e.g.
+`AGENTS.md`, `CLAUDE.md`), which your agent already reads on its own.
 
 ### 2. Review and Refine
 
@@ -199,6 +199,18 @@ lemming config set runner aider
 lemming hooks set roadmap lint
 ```
 
+### Evaluating Prompt Changes
+
+Editing a hook prompt can regress behavior without any test failing. The
+containerized eval harness replays realistic scenarios against the real hook
+execution path and grades the outcome mechanically:
+
+```bash
+uv run python -m lemming.evals run --suite roadmap
+```
+
+See [docs/EVALS.md](docs/EVALS.md) for details.
+
 ---
 
 ## Command Reference
@@ -304,9 +316,9 @@ git push origin v0.1.1
 
 ## Screenshots
 
-These are regenerated automatically by CI whenever the web UI changes
-(see `.github/workflows/screenshots.yml`); run `npm run screenshots` to
-preview them locally.
+These are regenerated automatically by CI whenever the web UI changes (see
+`.github/workflows/screenshots.yml`); run `npm run screenshots` to preview them
+locally.
 
 ### Dashboard
 

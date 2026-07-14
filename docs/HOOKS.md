@@ -34,6 +34,19 @@ A code quality hook that reviews changes for adherence to the Google Style Guide
 and general readability using the bundled `lemming readability` tool. It
 provides feedback via task progress or suggests follow-up refactoring tasks.
 
+### Editing Built-in Hook Prompts
+
+The built-in hook prompts are load-bearing: a wording change can regress
+orchestration behavior without any unit test failing. When you edit a prompt
+under `src/lemming/prompts/hooks/`, run its eval suite before shipping:
+
+```bash
+uv run python -m lemming.evals run --suite roadmap
+uv run python -m lemming.evals run --suite readability
+```
+
+See [EVALS.md](EVALS.md) for how the suites work and how to interpret results.
+
 ## Custom Hooks
 
 You can define your own hooks by creating Markdown files in the following
@@ -122,8 +135,7 @@ is running, and the next task execution will respect the updated settings.
 
 Your hook template can use the following placeholders:
 
-- `{{roadmap}}`: A structured summary of the long-term goal and all
-  tasks.
+- `{{roadmap}}`: A structured summary of the long-term goal and all tasks.
 - `{{finished_task}}`: Details about the task that just finished (ID,
   description, progress, and the last 100 lines of its execution log).
 - `{{finished_task_id}}`: The ID of the task that just finished.
