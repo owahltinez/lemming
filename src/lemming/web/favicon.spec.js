@@ -54,7 +54,15 @@ test.describe('Favicon Status Synchronization', () => {
     await page.route('**/api/hooks', async (route) => {
       await route.fulfill({
         contentType: 'application/json',
-        json: ['roadmap'],
+        json: [
+          {
+            name: 'roadmap',
+            priority: 90,
+            source: 'built-in',
+            masked: false,
+            runs_on_failure: true,
+          },
+        ],
       });
     });
 

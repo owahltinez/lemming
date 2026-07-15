@@ -66,7 +66,6 @@ class RoadmapConfig(pydantic.BaseModel):
 
     retries: int = 3
     runner: str = pydantic.Field(default_factory=detect_default_runner)
-    hooks: list[str] | None = None
     time_limit: int = 60
 
 

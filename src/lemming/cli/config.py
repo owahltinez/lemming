@@ -2,7 +2,7 @@
 
 import click
 
-from .. import tasks
+from .. import hooks, tasks
 from ..orchestrator import format_duration, parse_timeout
 from .main import cli
 
@@ -25,9 +25,12 @@ def config_list(ctx: click.Context):
     click.echo(f"  Runner:        {c.runner}")
     click.echo(f"  Retries:       {c.retries}")
     click.echo(f"  Time limit:    {format_duration(c.time_limit)}")
+
+    # Hooks are discovered from the filesystem, not stored in config
+    active_hooks = hooks.list_hooks(tasks_file)
     click.echo(
         "  Hooks:         "
-        f"{', '.join(c.hooks) if c.hooks is not None else '(all)'}"
+        f"{', '.join(active_hooks) if active_hooks else '(none)'}"
     )
 
 

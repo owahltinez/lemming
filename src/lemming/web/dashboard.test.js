@@ -22,7 +22,6 @@ const createInitialState = (overrides = {}) => {
     config: {
       retries: 3,
       runner: 'agy',
-      hooks: ['roadmap'],
     },
     folderPickerBreadcrumbs: [],
     folderPickerDirs: [],

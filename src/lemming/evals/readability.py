@@ -127,7 +127,6 @@ def _save_finished_task(workspace: pathlib.Path, progress: list[str]) -> None:
             config=models.RoadmapConfig(
                 retries=3,
                 runner="claude",
-                hooks=["readability"],
                 time_limit=15,
             ),
             tasks=[

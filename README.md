@@ -136,19 +136,24 @@ tasks may not fully achieve the stated goal. **Orchestrator Hooks** address this
 by running custom agents or scripts after each task execution to evaluate
 results and adapt the roadmap.
 
-By default, Lemming runs all available hooks (including the built-in `roadmap`
-hook). You can customize this behavior via the `hooks` subcommand:
+Lemming runs every hook it discovers on the filesystem (including the
+built-in `roadmap` hook). Hooks are plain Markdown files, and udev-style
+filename conventions control their behavior:
+
+- **Ordering**: A numeric prefix sets the execution order (e.g.
+  `10-lint.md` runs before `90-roadmap.md`); files without a prefix
+  default to priority 50.
+- **Failure hooks**: Hooks at priority 90 and above also run when a task
+  fails; all others only run on success.
+- **Disabling**: An empty file masks (disables) the hook of the same name
+  from a lower-precedence layer.
 
 ```bash
-# Enable or disable hooks for the project
+# Disable a hook for this project (writes an empty .lemming/hooks/50-lint.md)
+lemming hooks disable lint
+
+# Re-enable it (removes the mask file)
 lemming hooks enable lint
-lemming hooks disable roadmap
-
-# Set the exact list of active hooks
-lemming hooks set roadmap lint
-
-# Reset to default (run all available hooks)
-lemming hooks reset
 ```
 
 ### Built-in Hooks ⚓️
@@ -172,8 +177,10 @@ You can create your own hooks by adding Markdown files to:
 1.  **Project-specific**: `.lemming/hooks/*.md`
 2.  **Global**: `~/.local/lemming/hooks/*.md`
 
-To **override** a built-in hook, create a file with the same name in either
-directory; delete the file to restore the built-in version.
+To **override** a built-in hook, create a file with the same logical name
+(the numeric prefix is not part of the name, so `20-roadmap.md` overrides
+the built-in `90-roadmap.md` and also moves it to priority 20); delete the
+file to restore the built-in version.
 
 Hooks follow a specific discovery precedence: **Project > Global > Built-in**.
 See [docs/HOOKS.md](docs/HOOKS.md) for more details.
@@ -183,15 +190,14 @@ See [docs/HOOKS.md](docs/HOOKS.md) for more details.
 Use the `config` and `hooks` commands to manage your project's execution loop:
 
 ```bash
-# List all available hooks (built-in and local)
+# List all hooks in execution order, with source and status
 lemming hooks list
 
-# View current project configuration
+# View current project configuration (includes the active hooks)
 lemming config list
 
 # Persist configuration to tasks.yml
 lemming config set runner aider
-lemming hooks set roadmap lint
 ```
 
 ### Evaluating Prompt Changes

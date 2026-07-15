@@ -11,7 +11,7 @@ import pathlib
 import click
 
 from .. import models, tasks
-from ..hooks import run_hooks
+from ..orchestrator import run_hooks
 
 
 @click.command()

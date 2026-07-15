@@ -86,7 +86,7 @@ _REDUNDANT_DESCRIPTION = (
 def _config() -> models.RoadmapConfig:
     """Returns a deterministic roadmap config for fixtures."""
     return models.RoadmapConfig(
-        retries=_RETRIES, runner="claude", hooks=["roadmap"], time_limit=15
+        retries=_RETRIES, runner="claude", time_limit=15
     )
 
 

@@ -2,91 +2,39 @@
 
 import pathlib
 
-from . import paths, runner, tasks
+from . import hooks, paths, runner, tasks
 
 
 def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
-    """Loads a prompt template from the project, global, or built-in hooks.
+    """Loads a prompt template by logical name.
+
+    Hooks resolve through the layered hook discovery (see
+    hooks.resolve_hooks); other prompts (e.g. "taskrunner") fall back to
+    the built-in prompts directory.
 
     Args:
-        name: Name of the prompt template (without .md extension).
+        name: Logical name of the prompt template (without .md extension).
         tasks_file: Optional path to the tasks file to look for local hooks.
 
     Returns:
         The content of the prompt template.
 
     Raises:
-        FileNotFoundError: If the prompt template does not exist.
+        FileNotFoundError: If the prompt does not exist or is masked.
     """
-    # 1. Look for local hooks in the project directory
-    if tasks_file:
-        working_dir = paths.get_working_dir(tasks_file)
-        local_hook_path = working_dir / ".lemming" / "hooks" / f"{name}.md"
-        if local_hook_path.exists():
-            return local_hook_path.read_text(encoding="utf-8")
+    # Hooks (and their overrides) resolve by logical name across layers
+    for hook in hooks.resolve_hooks(tasks_file):
+        if hook.name == name:
+            if hook.masked:
+                raise FileNotFoundError(f"Hook {name} is masked (disabled)")
+            return hook.path.read_text(encoding="utf-8")
 
-    # 2. Look in global hooks directory (~/.local/lemming/hooks)
-    global_hooks_dir = paths.get_global_hooks_dir()
-    global_hook_path = global_hooks_dir / f"{name}.md"
-    if global_hook_path.exists():
-        content = global_hook_path.read_text(encoding="utf-8")
-        if content.strip():
-            return content
-
-    # 3. Look in built-in prompts directory (fallback)
-    base_path = pathlib.Path(__file__).parent / "prompts"
-
-    # Try exact name first (e.g. taskrunner)
-    path = base_path / f"{name}.md"
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-
-    # Try hooks subdirectory
-    path = base_path / "hooks" / f"{name}.md"
+    # Non-hook prompts ship at the root of the built-in prompts directory
+    path = pathlib.Path(__file__).parent / "prompts" / f"{name}.md"
     if path.exists():
         return path.read_text(encoding="utf-8")
 
     raise FileNotFoundError(f"Prompt template {name} not found")
-
-
-def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
-    """Lists available orchestrator hooks.
-
-    Args:
-        tasks_file: Optional path to the tasks file to look for local hooks.
-
-    Returns:
-        A list of hook names.
-    """
-    hooks = set()
-
-    # 1. Look for local hooks in the project directory
-    if tasks_file:
-        working_dir = paths.get_working_dir(tasks_file)
-        local_hooks_dir = working_dir / ".lemming" / "hooks"
-        if local_hooks_dir.exists():
-            for f in local_hooks_dir.glob("*.md"):
-                hooks.add(f.stem)
-
-    # 2. Look in global hooks directory
-    global_hooks_dir = paths.get_global_hooks_dir()
-    if global_hooks_dir.exists():
-        for f in global_hooks_dir.glob("*.md"):
-            hooks.add(f.stem)
-
-    # 3. Look in built-in prompts directory (always included)
-    base_path = pathlib.Path(__file__).parent / "prompts" / "hooks"
-    if base_path.exists():
-        for f in base_path.glob("*.md"):
-            hooks.add(f.stem)
-
-    # Ensure 'roadmap' is always last
-    hooks_list = sorted(list(hooks))
-    if "roadmap" in hooks_list:
-        hooks_list.remove("roadmap")
-        hooks_list.append("roadmap")
-
-    return hooks_list
 
 
 def _format_roadmap(

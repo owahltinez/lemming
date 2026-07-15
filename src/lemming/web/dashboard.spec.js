@@ -60,7 +60,15 @@ test.describe('Dashboard E2E', () => {
       } else if (url.includes('/api/hooks')) {
         await route.fulfill({
           contentType: 'application/json',
-          json: ['roadmap'],
+          json: [
+            {
+              name: 'roadmap',
+              priority: 90,
+              source: 'built-in',
+              masked: false,
+              runs_on_failure: true,
+            },
+          ],
         });
       } else if (
         url.includes('/api/directories') &&

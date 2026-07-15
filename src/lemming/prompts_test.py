@@ -1,3 +1,5 @@
+import pytest
+
 from lemming import models, paths, prompts, tasks
 
 
@@ -218,29 +220,6 @@ def test_prepare_hook_prompt_filters_command_noise(tmp_path, monkeypatch):
     assert "Execution log of THIS task" in prompt
 
 
-def test_list_hooks_includes_all(tmp_path, monkeypatch):
-    # Setup mock lemming home
-    lemming_home = tmp_path / "lemming_home"
-    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
-
-    # Project hooks
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-    local_hooks_dir = project_dir / ".lemming" / "hooks"
-    local_hooks_dir.mkdir(parents=True)
-    (local_hooks_dir / "custom_hook.md").write_text("custom", encoding="utf-8")
-
-    tasks_file = project_dir / "tasks.yml"
-    tasks_file.touch()
-
-    # Run list_hooks
-    hooks = prompts.list_hooks(tasks_file)
-
-    assert "roadmap" in hooks
-    assert "readability" in hooks
-    assert "custom_hook" in hooks
-
-
 def test_hook_override_precedence(tmp_path, monkeypatch):
     # Setup mock lemming home
     lemming_home = tmp_path / "lemming_home"
@@ -353,25 +332,31 @@ def test_prepare_hook_prompt_shows_failed_for_exhausted_task(
     assert "[PENDING]" in prompt
 
 
-def test_list_hooks_roadmap_is_last(tmp_path):
+def test_load_prompt_masked_hook_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
     tasks_file = tmp_path / "tasks.yml"
     tasks_file.touch()
 
-    # Create project hooks that would alphabetically come before and after
-    # 'roadmap'
+    # An empty project file masks (disables) the built-in hook
     local_hooks_dir = tmp_path / ".lemming" / "hooks"
     local_hooks_dir.mkdir(parents=True)
-    (local_hooks_dir / "z_hook.md").write_text("z", encoding="utf-8")
-    (local_hooks_dir / "a_hook.md").write_text("a", encoding="utf-8")
+    (local_hooks_dir / "roadmap.md").write_text("", encoding="utf-8")
 
-    hooks = prompts.list_hooks(tasks_file)
+    with pytest.raises(FileNotFoundError):
+        prompts.load_prompt("roadmap", tasks_file)
 
-    assert "roadmap" in hooks
-    assert "z_hook" in hooks
-    assert "a_hook" in hooks
-    # Even though z_hook is alphabetically last, roadmap should be moved to
-    # the end
-    assert hooks[-1] == "roadmap"
+
+def test_load_prompt_prefixed_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.touch()
+
+    # Overrides resolve by logical name regardless of the numeric prefix
+    local_hooks_dir = tmp_path / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    (local_hooks_dir / "10-roadmap.md").write_text("custom", encoding="utf-8")
+
+    assert prompts.load_prompt("roadmap", tasks_file) == "custom"
 
 
 def test_format_roadmap_with_finalizing_task():

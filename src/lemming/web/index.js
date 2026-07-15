@@ -41,7 +41,6 @@
       $.config = {
         retries: 3,
         runner: 'agy',
-        hooks: ['roadmap'],
       };
       $.cwd = '';
       $.newTask = '';
@@ -361,7 +360,6 @@
         const config = {
           retries: Number.parseInt($.retries, 10) || 3,
           runner: $.selectedRunner,
-          hooks: $.config.hooks,
           time_limit: Number.parseInt($.timeLimit, 10) || 0,
         };
         await fetch(apiUrl('/api/config'), {
@@ -383,21 +381,21 @@
       $.saveHideCompletedPreference = () => {
         Storage.set('hide_completed', $.hideCompleted);
       };
-      $.toggleHook = (name) => {
-        let hooks = $.config.hooks;
-        if (hooks === null || hooks === undefined) {
-          hooks = [...$.availableHooks];
-        }
-        if (hooks.includes(name)) {
-          $.config.hooks = hooks.filter((h) => h !== name);
+      $.toggleHook = async (hook) => {
+        // Enabling removes the project mask file; disabling creates it
+        const response = await fetch(apiUrl('/api/hooks'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: hook.name, enabled: hook.masked }),
+        });
+        if (response.ok) {
+          $.availableHooks = await response.json();
         } else {
-          $.config.hooks = [...hooks, name];
+          const error = await response.json().catch(() => ({}));
+          $.addToast(error.detail || 'Failed to toggle hook', 'error');
+          // Re-fetch so the checkbox reverts to the server state
+          await $.fetchHooks();
         }
-        $.saveConfigToServer();
-      };
-      $.resetHooks = () => {
-        $.config.hooks = null;
-        $.saveConfigToServer();
       };
 
       let envSaveTimeout;
@@ -734,6 +732,7 @@
         if (document.visibilityState === 'visible') {
           // Force an immediate fetch when returning to the tab.
           $.fetchData();
+          $.fetchHooks();
 
           const state = $.faviconState;
           if (state === 'success' || state === 'error') {
@@ -745,6 +744,8 @@
       });
 
       setInterval(() => $.fetchData(), 1000);
+      // Hooks change rarely (CLI toggles, other tabs); poll them slowly
+      setInterval(() => $.fetchHooks(), 5000);
     },
   });
 })();

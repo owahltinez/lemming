@@ -35,6 +35,9 @@ class TestCLIConfig(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Runner:", result.output)
+        # Active hooks are discovered from the filesystem and displayed
+        self.assertIn("Hooks:", result.output)
+        self.assertIn("roadmap", result.output)
 
     def test_config_set(self):
         result = self.cli_runner.invoke(

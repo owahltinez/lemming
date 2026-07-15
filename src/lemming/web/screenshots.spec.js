@@ -193,7 +193,6 @@ test.describe('Screenshot Generation', () => {
               config: {
                 retries: 3,
                 runner: 'agy',
-                hooks: null,
                 time_limit: 60,
               },
             },
@@ -208,7 +207,29 @@ test.describe('Screenshot Generation', () => {
         await page.route('**/api/hooks', async (route) => {
           await route.fulfill({
             contentType: 'application/json',
-            json: ['readability', 'testing', 'roadmap'],
+            json: [
+              {
+                name: 'readability',
+                priority: 50,
+                source: 'built-in',
+                masked: false,
+                runs_on_failure: false,
+              },
+              {
+                name: 'testing',
+                priority: 60,
+                source: 'built-in',
+                masked: false,
+                runs_on_failure: false,
+              },
+              {
+                name: 'roadmap',
+                priority: 90,
+                source: 'built-in',
+                masked: false,
+                runs_on_failure: true,
+              },
+            ],
           });
         });
 

@@ -2,134 +2,84 @@
 
 import click
 
-from .. import prompts, tasks
+from .. import hooks
 from .main import cli
 
 
 @cli.group(name="hooks", short_help="Manage orchestrator hooks")
 def hooks_group():
-    """Manages orchestrator hooks."""
+    """Manages orchestrator hooks.
+
+    Hooks are Markdown prompt files discovered from the project
+    (.lemming/hooks/), global (~/.local/lemming/hooks/), and built-in
+    layers, with the project layer taking precedence. A numeric filename
+    prefix (e.g. 90-roadmap.md) sets the execution order; hooks at 90 and
+    above also run when a task fails. An empty file disables (masks) the
+    hook of the same name.
+    """
     pass
 
 
 @hooks_group.command(name="list")
 @click.pass_context
 def hooks_list(ctx: click.Context):
-    """Lists available orchestrator hooks."""
+    """Lists hooks in execution order with source and status."""
     tasks_file = ctx.obj["TASKS_FILE"]
-    available = prompts.list_hooks(tasks_file)
 
-    data = tasks.load_tasks(tasks_file)
-    active = (
-        set(data.config.hooks)
-        if data.config.hooks is not None
-        else set(available)
-    )
-
-    click.secho("Available orchestrator hooks:", bold=True)
-    for h in available:
-        status = "[active]" if h in active else ""
-        click.echo(f"  - {h:20} {status}")
-
-
-@hooks_group.command(name="enable")
-@click.argument("names", nargs=-1, required=True)
-@click.pass_context
-def hooks_enable(ctx: click.Context, names: tuple[str, ...]):
-    """Enables one or more orchestrator hooks."""
-    tasks_file = ctx.obj["TASKS_FILE"]
-    available = prompts.list_hooks(tasks_file)
-
-    data = tasks.load_tasks(tasks_file)
-    for name in names:
-        if name not in available:
-            click.echo(f"Error: Hook '{name}' not found.")
-            ctx.exit(1)
-
-        if data.config.hooks is None:
-            # If currently "all", it's already enabled. We don't transition
-            # to an explicit list here to keep the default behavior.
-            click.echo(
-                f"Hook '{name}' is already active "
-                "(all available hooks are enabled)."
-            )
-            continue
-
-        if name not in data.config.hooks:
-            data.config.hooks.append(name)
-            click.echo(f"Enabled hook: {name}")
-        else:
-            click.echo(f"Hook '{name}' is already enabled.")
-
-    tasks.save_tasks(tasks_file, data)
+    click.secho("Orchestrator hooks (in execution order):", bold=True)
+    for hook in hooks.resolve_hooks(tasks_file):
+        notes = []
+        if hook.priority >= hooks.FAILURE_HOOK_PRIORITY:
+            notes.append("runs on failure")
+        if hook.masked:
+            notes.append("disabled")
+        suffix = f" ({', '.join(notes)})" if notes else ""
+        click.echo(
+            f"  {hook.priority:>3}  {hook.name:20} {hook.source}{suffix}"
+        )
 
 
 @hooks_group.command(name="disable")
 @click.argument("names", nargs=-1, required=True)
 @click.pass_context
 def hooks_disable(ctx: click.Context, names: tuple[str, ...]):
-    """Disables one or more orchestrator hooks."""
-    tasks_file = ctx.obj["TASKS_FILE"]
-    available = prompts.list_hooks(tasks_file)
+    """Disables hooks for this project.
 
-    data = tasks.load_tasks(tasks_file)
-    for name in names:
-        if name not in available:
-            click.echo(f"Error: Hook '{name}' not found.")
-            ctx.exit(1)
-
-        if data.config.hooks is None:
-            # If currently "all", we transition to an explicit list minus
-            # the disabled one
-            data.config.hooks = [h for h in available if h != name]
-        else:
-            data.config.hooks = [h for h in data.config.hooks if h != name]
-
-        click.echo(f"Disabled hook: {name}")
-
-    tasks.save_tasks(tasks_file, data)
-
-
-@hooks_group.command(name="set")
-@click.argument("names", nargs=-1)
-@click.pass_context
-def hooks_set(ctx: click.Context, names: tuple[str, ...]):
-    """Sets the specific list of active orchestrator hooks.
-
-    Provide a space-separated list of hook names. If no names are provided,
-    all hooks will be disabled.
-
-    Examples:
-      lemming hooks set roadmap lint
-      lemming hooks set roadmap
-      lemming hooks set  # Disables all hooks
+    Writes an empty mask file to .lemming/hooks/, which shadows the hook of
+    the same name. An empty file created by hand works just as well; the
+    command additionally validates the names and keeps the hook's priority
+    in the mask filename so listings stay accurate.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
-    available = prompts.list_hooks(tasks_file)
 
-    data = tasks.load_tasks(tasks_file)
-    new_hooks = []
-    for name in names:
-        if name not in available:
-            click.echo(f"Error: Hook '{name}' not found.")
-            ctx.exit(1)
-        new_hooks.append(name)
+    try:
+        results = hooks.disable_hooks(list(names), tasks_file)
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
 
-    data.config.hooks = new_hooks
-    tasks.save_tasks(tasks_file, data)
-
-    if not new_hooks:
-        click.echo("All hooks disabled.")
-    else:
-        click.echo(f"Active hooks set to: {', '.join(new_hooks)}")
+    for name, mask in results.items():
+        if mask is None:
+            click.echo(f"Hook '{name}' is already disabled.")
+        else:
+            click.echo(f"Disabled hook: {name} (masked by {mask})")
 
 
-@hooks_group.command(name="reset")
+@hooks_group.command(name="enable")
+@click.argument("names", nargs=-1, required=True)
 @click.pass_context
-def hooks_reset(ctx: click.Context):
-    """Resets hooks to run all available hooks by default."""
+def hooks_enable(ctx: click.Context, names: tuple[str, ...]):
+    """Re-enables hooks by removing their project mask files."""
     tasks_file = ctx.obj["TASKS_FILE"]
-    data = tasks.load_tasks(tasks_file)
-    data.config.hooks = None
-    tasks.save_tasks(tasks_file, data)
-    click.echo("Hooks reset to default (all available).")
+
+    try:
+        results = hooks.enable_hooks(list(names), tasks_file)
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
+
+    for name, removed in results.items():
+        if removed:
+            click.echo(f"Enabled hook: {name}")
+        else:
+            click.echo(f"Hook '{name}' is already enabled.")
