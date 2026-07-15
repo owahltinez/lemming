@@ -19,8 +19,7 @@ def _hook_payload(tasks_file: pathlib.Path) -> list[dict]:
             "priority": h.priority,
             "source": h.source,
             "masked": h.masked,
-            "runs_on_failure": h.priority
-            >= hooks.FAILURE_HOOK_PRIORITY,
+            "runs_on_failure": h.priority >= hooks.FAILURE_HOOK_PRIORITY,
         }
         for h in hooks.resolve_hooks(tasks_file)
     ]

@@ -68,9 +68,7 @@ class TestCLIHooks(unittest.TestCase):
         mask = self.local_hooks_dir / "90-roadmap.md"
         self.assertTrue(mask.exists())
         self.assertEqual(mask.read_text(encoding="utf-8"), "")
-        self.assertNotIn(
-            "roadmap", hooks.list_hooks(self.test_tasks_file)
-        )
+        self.assertNotIn("roadmap", hooks.list_hooks(self.test_tasks_file))
 
     def test_hooks_disable_unknown_hook(self):
         result = self._invoke("disable", "does-not-exist")
@@ -81,9 +79,7 @@ class TestCLIHooks(unittest.TestCase):
         """A bad name anywhere in the list disables nothing."""
         result = self._invoke("disable", "readability", "does-not-exist")
         self.assertEqual(result.exit_code, 1)
-        self.assertIn(
-            "readability", hooks.list_hooks(self.test_tasks_file)
-        )
+        self.assertIn("readability", hooks.list_hooks(self.test_tasks_file))
 
     def test_hooks_disable_refuses_project_override(self):
         self.local_hooks_dir.mkdir(parents=True)
@@ -93,9 +89,7 @@ class TestCLIHooks(unittest.TestCase):
         result = self._invoke("disable", "roadmap")
         self.assertEqual(result.exit_code, 1)
         # The override must not be clobbered
-        self.assertEqual(
-            override.read_text(encoding="utf-8"), "custom prompt"
-        )
+        self.assertEqual(override.read_text(encoding="utf-8"), "custom prompt")
 
     def test_hooks_enable_removes_mask(self):
         self.local_hooks_dir.mkdir(parents=True)
@@ -105,9 +99,7 @@ class TestCLIHooks(unittest.TestCase):
         result = self._invoke("enable", "roadmap")
         self.assertEqual(result.exit_code, 0)
         self.assertFalse(mask.exists())
-        self.assertIn(
-            "roadmap", hooks.list_hooks(self.test_tasks_file)
-        )
+        self.assertIn("roadmap", hooks.list_hooks(self.test_tasks_file))
 
     def test_hooks_enable_already_enabled(self):
         result = self._invoke("enable", "roadmap")

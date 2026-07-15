@@ -103,9 +103,7 @@ def list_hooks(tasks_file: pathlib.Path | None = None) -> list[str]:
     return [h.name for h in resolve_hooks(tasks_file) if not h.masked]
 
 
-def get_hook_priority(
-    name: str, tasks_file: pathlib.Path | None = None
-) -> int:
+def get_hook_priority(name: str, tasks_file: pathlib.Path | None = None) -> int:
     """Returns the execution priority of a hook by logical name."""
     for hook in resolve_hooks(tasks_file):
         if hook.name == name:
@@ -168,9 +166,7 @@ def disable_hooks(
     return results
 
 
-def enable_hooks(
-    names: list[str], tasks_file: pathlib.Path
-) -> dict[str, bool]:
+def enable_hooks(names: list[str], tasks_file: pathlib.Path) -> dict[str, bool]:
     """Re-enables hooks by removing their project mask files.
 
     All names are validated before any file is removed, so a bad name never
