@@ -97,10 +97,12 @@ def get_lemming_home() -> pathlib.Path:
     Returns:
         A pathlib.Path representing the Lemming home directory.
     """
+    # Resolve symlinks (e.g. /var -> /private/var on macOS) so comparisons
+    # against resolved tasks file paths are consistent
     home_override = os.environ.get("LEMMING_HOME")
     if home_override:
-        return pathlib.Path(home_override)
-    return pathlib.Path.home() / ".local" / "lemming"
+        return pathlib.Path(home_override).resolve()
+    return (pathlib.Path.home() / ".local" / "lemming").resolve()
 
 
 def get_global_hooks_dir() -> pathlib.Path:

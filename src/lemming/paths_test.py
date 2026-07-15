@@ -17,8 +17,41 @@ def test_get_lemming_home_default():
 
 def test_get_lemming_home_override(tmp_path):
     os.environ["LEMMING_HOME"] = str(tmp_path)
-    assert paths.get_lemming_home() == tmp_path
+    assert paths.get_lemming_home() == tmp_path.resolve()
     del os.environ["LEMMING_HOME"]
+
+
+def test_get_working_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+
+    # A local tasks file: its parent is the working directory
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    tasks_file = project_dir / "tasks.yml"
+    tasks_file.touch()
+    assert paths.get_working_dir(tasks_file) == project_dir.resolve()
+
+    # An isolated tasks file inside lemming home: fall back to the CWD
+    isolated = tmp_path / "home" / "abc123" / "tasks.yml"
+    isolated.parent.mkdir(parents=True)
+    isolated.touch()
+    assert paths.get_working_dir(isolated) == pathlib.Path.cwd().resolve()
+
+
+def test_get_working_dir_resolves_home_symlink(tmp_path, monkeypatch):
+    """A symlinked LEMMING_HOME (e.g. /var -> /private/var on macOS) must
+    still recognize tasks files inside the home directory as isolated."""
+    real_home = tmp_path / "real_home"
+    real_home.mkdir()
+    link_home = tmp_path / "link_home"
+    link_home.symlink_to(real_home)
+    monkeypatch.setenv("LEMMING_HOME", str(link_home))
+
+    isolated = real_home / "abc123" / "tasks.yml"
+    isolated.parent.mkdir(parents=True)
+    isolated.touch()
+
+    assert paths.get_working_dir(isolated) == pathlib.Path.cwd().resolve()
 
 
 def test_get_project_dir(tmp_path):
