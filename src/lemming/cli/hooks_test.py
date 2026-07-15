@@ -23,9 +23,12 @@ class TestCLIHooks(unittest.TestCase):
             str(self.test_tasks_file),
         ]
 
-        # Isolate hook discovery from the developer's real global hooks
+        # Isolate hook discovery from the developer's real global hooks.
+        # Must be a directory that does NOT contain the tasks file, or
+        # get_working_dir falls back to the CWD instead of the test dir.
         self.env_patch = unittest.mock.patch.dict(
-            "os.environ", {"LEMMING_HOME": self.test_dir}
+            "os.environ",
+            {"LEMMING_HOME": str(pathlib.Path(self.test_dir) / "home")},
         )
         self.env_patch.start()
 
