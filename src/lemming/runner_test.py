@@ -14,11 +14,12 @@ def test_build_runner_command_agy():
     assert "my prompt" in cmd
 
 
-def test_build_runner_command_agy_streams_internal_log():
-    # agy print mode buffers stdout until the end, so its internal log is
-    # redirected to stdout to give live visibility in the task log.
+def test_build_runner_command_agy_streams_json_events():
+    # agy print mode buffers the response until the end, so stream-json is
+    # used to surface agent messages and tool calls live in the task log.
     cmd = runner.build_runner_command("agy", "my prompt", yolo=True)
-    assert cmd[cmd.index("--log-file") + 1] == "/dev/stdout"
+    assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+    assert "--log-file" not in cmd
 
 
 def test_build_runner_command_agy_print_timeout_matches_time_limit():

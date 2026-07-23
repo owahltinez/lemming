@@ -143,9 +143,11 @@ def build_runner_command(
             if yolo:
                 cmd.append("--dangerously-skip-permissions")
 
-            # Print mode buffers stdout until the run completes, so stream the
-            # internal log to stdout for live visibility in the task log.
-            cmd.extend(["--log-file", "/dev/stdout"])
+            # Print mode buffers the response until the run completes, so
+            # stream JSON events (agent messages, tool calls and their
+            # output) for live visibility in the task log. The flag is
+            # undocumented but mirrors claude's stream-json format.
+            cmd.extend(["--output-format", "stream-json"])
 
             # agy caps print mode at 5 minutes by default; extend it to the
             # task time limit (or effectively unlimited when there is none).
