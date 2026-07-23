@@ -32,6 +32,9 @@ from .lifecycle import (
     reset_task_logs as reset_task_logs,
 )
 from .lifecycle import (
+    revert_task_to_pending as revert_task_to_pending,
+)
+from .lifecycle import (
     update_heartbeat as update_heartbeat,
 )
 from .lifecycle import (

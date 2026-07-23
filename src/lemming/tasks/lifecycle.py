@@ -218,6 +218,37 @@ def finish_task_attempt(
         return task
 
 
+def revert_task_to_pending(
+    tasks_file: pathlib.Path, task_id: str
+) -> models.Task | None:
+    """Reverts an in-progress or finalizing task to pending for a retry.
+
+    Unlike reset_task, this preserves the attempt count and progress so
+    retry accounting still applies.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task to revert.
+
+    Returns:
+        The updated Task, or None if not found.
+    """
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        task = next((t for t in data.tasks if t.id == task_id), None)
+        if not task:
+            return None
+
+        update_run_time(task)
+        task.status = models.TaskStatus.PENDING
+        task.requested_status = None
+        task.pid = None
+        task.last_heartbeat = None
+
+        persistence.save_tasks(tasks_file, data)
+        return task
+
+
 def update_heartbeat(
     tasks_file: pathlib.Path, task_id: str, pid: int | None = None
 ) -> bool:

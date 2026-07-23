@@ -140,6 +140,30 @@ def run_hooks(
             current = next((t for t in data.tasks if t.id == task_id), None)
             if current and current.status != tasks.TaskStatus.IN_PROGRESS:
                 return exit_codes
+
+            # If any hook run was killed or crashed (e.g. the model became
+            # unavailable mid-finalization), the completion is unverified.
+            # Revert the task to pending — keeping its attempt count — so
+            # the whole task is retried instead of being silently marked
+            # completed. Failure finalization proceeds regardless: those
+            # tasks have already exhausted their attempts.
+            failed_hooks = [h for h, code in exit_codes.items() if code != 0]
+            if final_status == tasks.TaskStatus.COMPLETED and failed_hooks:
+                tasks.add_progress(
+                    tasks_file,
+                    task_id,
+                    "Finalization hooks failed "
+                    f"({', '.join(failed_hooks)}); task reverted to "
+                    "pending for retry.",
+                )
+                tasks.revert_task_to_pending(tasks_file, task_id)
+                click.echo(
+                    f"Task {task_id} finalization hooks failed "
+                    f"({', '.join(failed_hooks)}). Reverting to pending "
+                    "for retry."
+                )
+                return exit_codes
+
             tasks.update_task(
                 tasks_file, task_id, status=final_status, force=True
             )

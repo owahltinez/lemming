@@ -1,3 +1,4 @@
+import os
 import time
 from unittest import mock
 
@@ -687,6 +688,74 @@ def test_run_hooks_skips_finalization_when_healed(
     data = tasks.load_tasks(hooks_env)
     assert data.tasks[0].status == tasks.TaskStatus.PENDING
     assert data.tasks[0].attempts == 0
+
+
+@mock.patch("lemming.prompts.prepare_hook_prompt")
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_hooks_reverts_to_pending_when_hook_killed(
+    mock_run, mock_prepare, hooks_env
+):
+    """A killed/failed finalization hook must not mark the task completed."""
+    mock_prepare.return_value = "Mock Prompt"
+    # Simulate the hook runner being killed (e.g. model became unavailable).
+    mock_run.return_value = (-15, "", "")
+
+    # Put the task in the finalizing state: in progress with a requested
+    # completion, as if the agent had called `lemming complete`.
+    tasks.update_task(
+        hooks_env, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+    )
+    tasks.claim_task(hooks_env, "12345678", pid=os.getpid())
+    tasks.update_task(hooks_env, "12345678", status=tasks.TaskStatus.COMPLETED)
+
+    run_hooks(
+        hooks_env,
+        "12345678",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        hooks=["roadmap"],
+        final_status=tasks.TaskStatus.COMPLETED,
+    )
+
+    # The task should be retried from scratch, keeping its attempt count.
+    data = tasks.load_tasks(hooks_env)
+    task = data.tasks[0]
+    assert task.status == tasks.TaskStatus.PENDING
+    assert task.requested_status is None
+    assert task.attempts == 1
+    assert any("hook" in p.lower() for p in task.progress)
+
+
+@mock.patch("lemming.prompts.prepare_hook_prompt")
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_hooks_failure_finalization_ignores_hook_errors(
+    mock_run, mock_prepare, hooks_env
+):
+    """Failed hooks must not revert a task that is being marked FAILED."""
+    mock_prepare.return_value = "Mock Prompt"
+    mock_run.return_value = (1, "", "")
+
+    tasks.update_task(
+        hooks_env, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+    )
+
+    run_hooks(
+        hooks_env,
+        "12345678",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        hooks=["roadmap"],
+        final_status=tasks.TaskStatus.FAILED,
+    )
+
+    data = tasks.load_tasks(hooks_env)
+    assert data.tasks[0].status == tasks.TaskStatus.FAILED
 
 
 @mock.patch("lemming.prompts.prepare_hook_prompt")
