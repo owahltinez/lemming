@@ -7,7 +7,7 @@ import pytest
 from lemming import tasks
 from lemming.orchestrator import (
     _handle_runner_exit,
-    _parse_rate_limit_reset,
+    _is_rate_limited,
     _process_exhausted_retries,
     _process_finalizing_task,
     format_duration,
@@ -58,7 +58,7 @@ def test_format_duration():
     assert format_duration(120) == "2h"
 
 
-def test_parse_rate_limit_reset():
+def test_is_rate_limited():
     output = "\n".join(
         [
             "not json",
@@ -69,8 +69,8 @@ def test_parse_rate_limit_reset():
         ]
     )
 
-    assert _parse_rate_limit_reset(output) == 2000
-    assert _parse_rate_limit_reset('{"type":"result"}') is None
+    assert _is_rate_limited(output)
+    assert not _is_rate_limited('{"type":"result"}')
 
 
 @mock.patch("subprocess.Popen")
@@ -489,10 +489,7 @@ def test_handle_runner_exit_cancelled(mock_run_hooks, setup_env):
 
 
 @mock.patch("lemming.orchestrator.time.sleep")
-@mock.patch("lemming.orchestrator.time.time", return_value=1000)
-def test_handle_runner_exit_defers_rate_limit(
-    mock_time, mock_sleep, setup_env, capsys
-):
+def test_handle_runner_exit_stops_on_rate_limit(mock_sleep, setup_env, capsys):
     test_tasks_file, initial_data = setup_env
     task = tasks.claim_task(test_tasks_file, "task1", pid=os.getpid())
     assert task is not None
@@ -520,12 +517,12 @@ def test_handle_runner_exit_defers_rate_limit(
         time_limit=1,
     )
 
-    assert not should_abort
-    mock_sleep.assert_called_once_with(105)
+    assert should_abort
+    mock_sleep.assert_not_called()
     updated = tasks.load_tasks(test_tasks_file).tasks[0]
     assert updated.status == tasks.TaskStatus.PENDING
     assert updated.attempts == 0
-    assert "Attempt was not counted" in capsys.readouterr().out
+    assert "switch runners or retry later" in capsys.readouterr().out
 
 
 @pytest.fixture
