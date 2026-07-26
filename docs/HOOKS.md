@@ -55,11 +55,24 @@ A code quality hook that reviews changes for adherence to the Google Style Guide
 and general readability using the bundled `lemming readability` tool. It
 provides feedback via task progress or suggests follow-up refactoring tasks.
 
+### `testing`
+
+Checks that changed behavior has focused test coverage and runs the relevant
+tests. It records larger testing gaps as task progress for the roadmap hook.
+
+### `ux`
+
+A lightweight journey-continuity review for user-visible changes. It considers
+at most one affected critical journey, reports only concrete and reproducible
+gaps, and exits immediately when the task did not change user-facing behavior.
+It runs after `testing` and before `roadmap`.
+
 ### Editing Built-in Hook Prompts
 
 The built-in hook prompts are load-bearing: a wording change can regress
 orchestration behavior without any unit test failing. When you edit a prompt
-under `src/lemming/prompts/hooks/`, run its eval suite before shipping:
+under `src/lemming/prompts/hooks/` that has an eval suite, run it before
+shipping:
 
 ```bash
 uv run python -m lemming.evals run --suite roadmap

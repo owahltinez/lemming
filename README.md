@@ -169,6 +169,11 @@ Lemming comes with several built-in hooks to help manage your project:
   [readability](https://github.com/owahltinez/readability) tool (exposed as
   `lemming readability`). It can record findings as task progress or suggest
   follow-up refactoring tasks.
+- **`testing`**: Verifies that changed behavior has focused test coverage and
+  that the relevant tests pass.
+- **`ux`**: Reviews at most one critical user journey affected by a
+  user-visible change. It reports only concrete, reproducible continuity gaps
+  and exits immediately for non-user-facing tasks.
 
 ### Custom and Global Hooks
 

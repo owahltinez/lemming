@@ -9,6 +9,15 @@ def test_load_prompt():
     assert "description" in prompt
 
 
+def test_load_builtin_ux_prompt():
+    prompt = prompts.load_prompt("ux")
+
+    assert "Applicability Gate" in prompt
+    assert "Review One Journey" in prompt
+    assert "{{finished_task}}" in prompt
+    assert "{{finished_task_id}}" in prompt
+
+
 def test_prepare_prompt(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = tasks.Roadmap(

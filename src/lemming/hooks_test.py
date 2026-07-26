@@ -30,6 +30,8 @@ def test_list_hooks_includes_all(tmp_path, monkeypatch):
 
     assert "roadmap" in active
     assert "readability" in active
+    assert "testing" in active
+    assert "ux" in active
     assert "custom_hook" in active
 
 
@@ -47,6 +49,9 @@ def test_list_hooks_orders_by_priority(tmp_path, monkeypatch):
     # Numeric prefix orders execution; built-in roadmap (90) runs last
     assert active[0] == "early"
     assert active[-1] == "roadmap"
+    assert active.index("readability") < active.index("testing")
+    assert active.index("testing") < active.index("ux")
+    assert active.index("ux") < active.index("roadmap")
     assert active.index("zz_hook") < active.index("roadmap")
 
 

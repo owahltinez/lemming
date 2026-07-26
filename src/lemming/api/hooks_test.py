@@ -15,6 +15,9 @@ def test_list_hooks(client, test_tasks, monkeypatch, tmp_path):
     assert hooks["roadmap"]["masked"] is False
     assert hooks["readability"]["source"] == "built-in"
     assert hooks["readability"]["runs_on_failure"] is False
+    assert hooks["ux"]["priority"] == 70
+    assert hooks["ux"]["source"] == "built-in"
+    assert hooks["ux"]["runs_on_failure"] is False
 
     # Hooks are sorted by ascending priority
     priorities = [h["priority"] for h in payload]
