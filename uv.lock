@@ -222,7 +222,7 @@ wheels = [
 
 [[package]]
 name = "lemming-cli"
-version = "0.1.4"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -251,7 +251,7 @@ requires-dist = [
     { name = "markdownify", specifier = ">=0.14.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "readability-cli", specifier = ">=0.4.0" },
+    { name = "readability-cli", specifier = ">=0.5.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "uvicorn", specifier = ">=0.33.0" },
 ]
