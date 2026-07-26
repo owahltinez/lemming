@@ -16,6 +16,14 @@ class TestCLIMain(unittest.TestCase):
             "Lemming: An autonomous, iterative task runner", result.output
         )
 
+    def test_command_help_hides_internal_docstrings(self):
+        for command_name in cli.commands:
+            with self.subTest(command=command_name):
+                result = self.cli_runner.invoke(cli, [command_name, "--help"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertNotIn("Args:", result.output)
+                self.assertNotIn("ctx: The click context", result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

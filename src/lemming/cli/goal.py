@@ -18,13 +18,7 @@ from .main import cli
 )
 @click.pass_context
 def goal(ctx: click.Context, goal_text: str | None, file: pathlib.Path | None):
-    """Sets or displays the long-term goal shared across all tasks.
-
-    Args:
-        ctx: The click context holding shared CLI state.
-        goal_text: The goal string to set (optional).
-        file: A file path to read the goal from (optional).
-    """
+    """Sets or displays the long-term goal shared across all tasks."""
     tasks_file = ctx.obj["TASKS_FILE"]
 
     if file:

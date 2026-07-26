@@ -47,18 +47,7 @@ def add(
     parent: str | None,
     parent_tasks_file: str | None,
 ):
-    """Adds a new task to the roadmap queue.
-
-    Args:
-        ctx: The click context.
-        description: A text description of the task to perform (optional if
-            --file is used).
-        file: An optional file to read the description from.
-        index: The position in the roadmap to insert the task.
-        runner_name: An optional custom runner to use for this specific task.
-        parent: Optional parent task ID.
-        parent_tasks_file: Optional parent tasks file path.
-    """
+    """Adds a new task to the roadmap queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 
@@ -128,18 +117,7 @@ def edit(
     parent: str | None,
     parent_tasks_file: str | None,
 ):
-    """Edits an existing task's description, runner, position, or parent.
-
-    Args:
-        ctx: The click context.
-        task_id: The ID of the task to update.
-        description: The new description (optional).
-        file: An optional file to read the new description from.
-        runner_name: The new preferred runner (optional).
-        index: The new position in the roadmap (optional).
-        parent: The new parent task ID (optional).
-        parent_tasks_file: The new parent tasks file path (optional).
-    """
+    """Edits an existing task's description, runner, position, or parent."""
     if file:
         if description:
             click.echo("Error: Cannot provide both description and --file.")
@@ -192,14 +170,7 @@ def edit(
 def delete_task(
     ctx: click.Context, task_id: str | None, delete_all: bool, completed: bool
 ):
-    """Deletes one or more tasks from the roadmap.
-
-    Args:
-        ctx: The click context.
-        task_id: The ID of the specific task to delete.
-        delete_all: If set, clears the entire roadmap and long-term goal.
-        completed: If set, deletes all tasks marked as 'completed'.
-    """
+    """Deletes one or more tasks from the roadmap."""
     tasks_file = ctx.obj["TASKS_FILE"]
 
     # Validate argument combinations
@@ -241,12 +212,7 @@ def delete_task(
 @click.argument("task_id", required=False)
 @click.pass_context
 def status(ctx: click.Context, task_id: str | None):
-    """Displays the roadmap status or details for a specific task.
-
-    Args:
-        ctx: The click context.
-        task_id: Optional ID of the task to inspect in detail.
-    """
+    """Displays the roadmap status or details for a specific task."""
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
     project_data = tasks.get_project_data(tasks_file)
@@ -441,13 +407,7 @@ def logs(ctx: click.Context, task_id: str | None):
 )
 @click.pass_context
 def complete(ctx: click.Context, task_id: str, force: bool):
-    """Marks a task as completed (requires at least one progress entry).
-
-    Args:
-        ctx: The click context.
-        task_id: The ID of the task to mark as completed.
-        force: Finalize immediately instead of waiting for orchestrator hooks.
-    """
+    """Marks a task as completed (requires at least one progress entry)."""
     tasks_file = ctx.obj["TASKS_FILE"]
 
     try:
@@ -490,12 +450,7 @@ def complete(ctx: click.Context, task_id: str, force: bool):
 @click.argument("task_id")
 @click.pass_context
 def uncomplete(ctx: click.Context, task_id: str):
-    """Unmarks a completed task, moving it back to 'pending' status.
-
-    Args:
-        ctx: The click context.
-        task_id: The ID of the task to uncomplete.
-    """
+    """Unmarks a completed task, moving it back to 'pending' status."""
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(
@@ -511,12 +466,7 @@ def uncomplete(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def fail(ctx: click.Context, task_id: str):
-    """Marks a task as failed (requires at least one recorded progress entry).
-
-    Args:
-        ctx: The click context.
-        task_id: The ID of the task to mark as failed.
-    """
+    """Marks a task as failed (requires recorded progress)."""
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.update_task(
@@ -535,12 +485,7 @@ def fail(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def cancel(ctx: click.Context, task_id: str):
-    """Kills the runner for an in-progress task and marks it as cancelled.
-
-    Args:
-        ctx: The click context.
-        task_id: The ID of the task to cancel.
-    """
+    """Kills the runner and cancels an in-progress task."""
     tasks_file = ctx.obj["TASKS_FILE"]
     if tasks.cancel_task(tasks_file, task_id):
         click.echo(f"Task {task_id} cancelled.")
@@ -553,12 +498,7 @@ def cancel(ctx: click.Context, task_id: str):
 @click.argument("task_id")
 @click.pass_context
 def reset(ctx: click.Context, task_id: str):
-    """Clears all history (attempts, progress, and logs) for a specific task.
-
-    Args:
-        ctx: The click context.
-        task_id: The ID of the task to reset.
-    """
+    """Clears a task's attempts, progress, and logs."""
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
         target_task = tasks.reset_task(tasks_file, task_id)

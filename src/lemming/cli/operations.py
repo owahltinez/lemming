@@ -21,9 +21,7 @@ from .main import cli
 @click.option(
     "--retry-delay",
     default=10,
-    help=(
-        "Seconds to wait before retrying a failed task (to handle rate limits)."
-    ),
+    help="Seconds to wait before retrying an incomplete task.",
 )
 @click.option(
     "--yolo/--no-yolo",
@@ -50,16 +48,7 @@ def run(
     no_defaults: bool,
     runner_args: tuple,
 ) -> None:
-    """Starts the orchestrator loop to autonomously execute pending tasks.
-
-    Args:
-        ctx: The click context.
-        retry_delay: Delay between retries.
-        yolo: If True, skip runner confirmations.
-        env: Environment variables to inject.
-        no_defaults: Skip default flag injection.
-        runner_args: Raw arguments passed directly to the runner.
-    """
+    """Starts the orchestrator loop to autonomously execute pending tasks."""
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
 

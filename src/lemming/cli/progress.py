@@ -24,14 +24,7 @@ def progress(
     text: typing.Optional[str],
     file: typing.Optional[typing.TextIO],
 ):
-    """Records a progress entry or finding for a specific task.
-
-    Args:
-        ctx: The click context holding shared CLI state.
-        task_id: The ID of the task.
-        text: The progress to record (optional if --file is used).
-        file: An optional file to read the progress from.
-    """
+    """Records a progress entry or finding for a specific task."""
     tasks_file = ctx.obj["TASKS_FILE"]
 
     if file:
