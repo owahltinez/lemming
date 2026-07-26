@@ -1,6 +1,5 @@
 """Orchestrator loop that executes pending tasks via runners and hooks."""
 
-import json
 import os
 import pathlib
 import random
@@ -11,24 +10,6 @@ import click
 
 from . import prompts, runner, tasks
 from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
-
-
-def _is_rate_limited(output: str) -> bool:
-    """Return whether output contains a rejected rate-limit event."""
-    for line in output.splitlines():
-        try:
-            event = json.loads(line)
-        except (json.JSONDecodeError, TypeError):
-            continue
-        if (
-            not isinstance(event, dict)
-            or event.get("type") != "rate_limit_event"
-        ):
-            continue
-        info = event.get("rate_limit_info")
-        if isinstance(info, dict) and info.get("status") == "rejected":
-            return True
-    return False
 
 
 def run_hooks(
@@ -312,12 +293,16 @@ def _handle_runner_exit(
 
     Returns True to abort the run loop, False to continue.
     """
-    rate_limited = _is_rate_limited(f"{stdout}\n{stderr}")
+    runner_failed = returncode not in (
+        0,
+        -15,
+        runner.RETURNCODE_TIMEOUT,
+    )
 
     # Post-execution validation and heartbeat cleanup
     # This will mark the task as COMPLETED or PENDING based on whether
     # the agent called 'lemming complete'.
-    if not rate_limited:
+    if not runner_failed:
         post_task = tasks.finish_task_attempt(tasks_file, task_id)
     else:
         post_task = tasks.finish_task_attempt(
@@ -326,13 +311,6 @@ def _handle_runner_exit(
 
     if not post_task:
         click.echo("Error: Task disappeared from roadmap during execution.")
-        return True
-
-    if rate_limited:
-        click.echo(
-            "Runner rate limited. Task left pending and attempt not counted; "
-            "switch runners or retry later."
-        )
         return True
 
     # Run orchestrator hooks synchronously if the task requested a status
@@ -368,6 +346,13 @@ def _handle_runner_exit(
         if returncode == -15:
             if verbose:
                 click.echo("Task was cancelled. Stopping orchestrator loop.")
+            return True
+
+        if runner_failed and not post_task.requested_status:
+            click.echo(
+                "Runner exited unsuccessfully. Task left pending and attempt "
+                "not counted; switch runners or retry later."
+            )
             return True
 
         if verbose:

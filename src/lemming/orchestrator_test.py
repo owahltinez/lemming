@@ -7,7 +7,6 @@ import pytest
 from lemming import tasks
 from lemming.orchestrator import (
     _handle_runner_exit,
-    _is_rate_limited,
     _process_exhausted_retries,
     _process_finalizing_task,
     format_duration,
@@ -56,21 +55,6 @@ def test_format_duration():
     assert format_duration(60) == "1h"
     assert format_duration(90) == "90m"
     assert format_duration(120) == "2h"
-
-
-def test_is_rate_limited():
-    output = "\n".join(
-        [
-            "not json",
-            '{"type":"rate_limit_event","rate_limit_info":'
-            '{"status":"allowed","resetsAt":1000}}',
-            '{"type":"rate_limit_event","rate_limit_info":'
-            '{"status":"rejected","resetsAt":2000}}',
-        ]
-    )
-
-    assert _is_rate_limited(output)
-    assert not _is_rate_limited('{"type":"result"}')
 
 
 @mock.patch("subprocess.Popen")
@@ -489,25 +473,23 @@ def test_handle_runner_exit_cancelled(mock_run_hooks, setup_env):
 
 
 @mock.patch("lemming.orchestrator.time.sleep")
-def test_handle_runner_exit_stops_on_rate_limit(mock_sleep, setup_env, capsys):
+def test_handle_runner_exit_stops_on_runner_failure(
+    mock_sleep, setup_env, capsys
+):
     test_tasks_file, initial_data = setup_env
     task = tasks.claim_task(test_tasks_file, "task1", pid=os.getpid())
     assert task is not None
     assert task.attempts == 1
 
-    output = (
-        '{"type":"rate_limit_event","rate_limit_info":'
-        '{"status":"rejected","resetsAt":1100}}'
-    )
     should_abort = _handle_runner_exit(
         test_tasks_file,
         task.id,
         returncode=1,
-        stdout=output,
+        stdout="provider unavailable",
         stderr="",
         retries=3,
         retry_delay=10,
-        runner_name="claude",
+        runner_name="agy",
         yolo=True,
         runner_args=(),
         no_defaults=False,
@@ -522,7 +504,9 @@ def test_handle_runner_exit_stops_on_rate_limit(mock_sleep, setup_env, capsys):
     updated = tasks.load_tasks(test_tasks_file).tasks[0]
     assert updated.status == tasks.TaskStatus.PENDING
     assert updated.attempts == 0
-    assert "switch runners or retry later" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "provider unavailable" in output
+    assert "switch runners or retry later" in output
 
 
 @pytest.fixture

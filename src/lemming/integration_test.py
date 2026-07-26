@@ -185,15 +185,15 @@ class TestIntegration(unittest.TestCase):
                 "marked COMPLETED",
             )
 
-    def test_orchestrator_retries_on_runner_crash(self):
-        """Verify the orchestrator retries if the runner exits non-zero."""
+    def test_orchestrator_stops_on_runner_crash(self):
+        """Verify a non-zero runner exit stops without consuming an attempt."""
         with unittest.mock.patch("time.sleep", return_value=None):
             data = tasks.load_tasks(self.test_tasks_file)
             data.config.retries = 3
             data.config.runner = "false"  # 'false' command exits with 1
             tasks.save_tasks(self.test_tasks_file, data)
 
-            orchestrator.run_loop(
+            completed = orchestrator.run_loop(
                 self.test_tasks_file,
                 verbose=False,
                 retry_delay=0,
@@ -203,9 +203,9 @@ class TestIntegration(unittest.TestCase):
             )
 
             data = tasks.load_tasks(self.test_tasks_file)
-            # It should have attempted 3 times and then failed
-            self.assertEqual(data.tasks[0].attempts, 3)
-            self.assertEqual(data.tasks[0].status, models.TaskStatus.FAILED)
+            self.assertFalse(completed)
+            self.assertEqual(data.tasks[0].attempts, 0)
+            self.assertEqual(data.tasks[0].status, models.TaskStatus.PENDING)
 
     def test_orchestrator_stops_on_cancellation(self):
         """Verify the orchestrator stops if the runner exits with SIGTERM."""
