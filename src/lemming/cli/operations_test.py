@@ -1,7 +1,9 @@
 import pathlib
 import shutil
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 import click.testing
 
@@ -33,6 +35,43 @@ class TestCLIOperations(unittest.TestCase):
         result = self.cli_runner.invoke(cli.cli, ["run", "--help"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starts the orchestrator loop", result.output)
+
+    def test_run_empty_queue_reports_completion(self):
+        result = self.cli_runner.invoke(cli.cli, self.base_args + ["run"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("All tasks completed!", result.output)
+
+    def test_run_blocked_queue_exits_nonzero(self):
+        tasks.save_tasks(
+            self.test_tasks_file,
+            tasks.Roadmap(
+                tasks=[
+                    tasks.Task(
+                        id="active123",
+                        description="Active task",
+                        status=tasks.TaskStatus.IN_PROGRESS,
+                        pid=1234,
+                        last_heartbeat=time.time(),
+                    ),
+                    tasks.Task(
+                        id="pending456",
+                        description="Pending task",
+                        status=tasks.TaskStatus.PENDING,
+                    ),
+                ]
+            ),
+        )
+
+        with mock.patch(
+            "lemming.tasks.lifecycle.is_pid_alive", return_value=True
+        ):
+            result = self.cli_runner.invoke(cli.cli, self.base_args + ["run"])
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Queue blocked by active task active123", result.output)
+        self.assertIn("1 pending task remains", result.output)
+        self.assertNotIn("All tasks completed!", result.output)
 
     def test_serve_help(self):
         result = self.cli_runner.invoke(cli.cli, ["serve", "--help"])

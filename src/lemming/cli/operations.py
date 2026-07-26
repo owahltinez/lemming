@@ -78,9 +78,10 @@ def run(
     if env_overrides:
         os.environ.update(env_overrides)
 
+    completed = False
     tasks.acquire_loop_lock(tasks_file)
     try:
-        run_loop(
+        completed = run_loop(
             tasks_file,
             verbose,
             retry_delay,
@@ -91,6 +92,8 @@ def run(
         )
     finally:
         tasks.release_loop_lock(tasks_file)
+    if not completed:
+        ctx.exit(1)
 
 
 @cli.command(short_help="Launch the web interface")

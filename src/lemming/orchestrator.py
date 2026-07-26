@@ -369,8 +369,8 @@ def run_loop(
     no_defaults: bool,
     runner_args: tuple,
     working_dir: pathlib.Path | None = None,
-) -> None:
-    """Starts the orchestrator loop to autonomously execute pending tasks."""
+) -> bool:
+    """Runs pending tasks, returning True only when the roadmap is complete."""
     while True:
         returncode = 0
 
@@ -386,8 +386,43 @@ def run_loop(
         current_task = tasks.get_pending_task(data)
 
         if not current_task:
+            unfinished_tasks = [
+                task
+                for task in data.tasks
+                if task.status
+                in (tasks.TaskStatus.PENDING, tasks.TaskStatus.IN_PROGRESS)
+            ]
+            if unfinished_tasks:
+                now = time.time()
+                active_task = next(
+                    (
+                        task
+                        for task in unfinished_tasks
+                        if tasks.is_task_active(task, now)
+                    ),
+                    None,
+                )
+                pending_count = sum(
+                    task.status == tasks.TaskStatus.PENDING
+                    for task in unfinished_tasks
+                )
+                if active_task:
+                    pending_label = (
+                        "task remains" if pending_count == 1 else "tasks remain"
+                    )
+                    click.echo(
+                        f"Queue blocked by active task {active_task.id}; "
+                        f"{pending_count} pending {pending_label}."
+                    )
+                else:
+                    click.echo(
+                        f"Queue blocked: {len(unfinished_tasks)} unfinished "
+                        "task(s) remain, but none can be claimed."
+                    )
+                return False
+
             click.echo("All tasks completed!")
-            break
+            return True
 
         task_id = current_task.id
 
@@ -406,7 +441,7 @@ def run_loop(
                 time_limit=time_limit,
             )
             if should_abort:
-                break
+                return False
             continue
 
         # Add a small random jitter to avoid race conditions between
@@ -529,7 +564,7 @@ def run_loop(
             time_limit=time_limit,
         )
         if should_abort:
-            break
+            return False
 
 
 def format_duration(minutes: int) -> str:
