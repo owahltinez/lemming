@@ -160,13 +160,16 @@ def claim_task(
 
 
 def finish_task_attempt(
-    tasks_file: pathlib.Path, task_id: str
+    tasks_file: pathlib.Path,
+    task_id: str,
+    count_attempt: bool = True,
 ) -> models.Task | None:
     """Handles post-execution cleanup for a task attempt.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task that finished.
+        count_attempt: Whether the attempt should consume the retry budget.
 
     Returns:
         The updated Task, or None if not found.
@@ -184,6 +187,8 @@ def finish_task_attempt(
                 update_run_time(task)
                 task.status = models.TaskStatus.PENDING
                 task.last_heartbeat = None
+                if not count_attempt:
+                    task.attempts = max(0, task.attempts - 1)
             else:
                 task.last_heartbeat = time.time()
 

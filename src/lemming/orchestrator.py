@@ -1,5 +1,6 @@
 """Orchestrator loop that executes pending tasks via runners and hooks."""
 
+import json
 import os
 import pathlib
 import random
@@ -10,6 +11,33 @@ import click
 
 from . import prompts, runner, tasks
 from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
+
+RATE_LIMIT_MARGIN_SECONDS = 5
+
+
+def _parse_rate_limit_reset(output: str) -> float | None:
+    """Return the latest reset timestamp from a rejected rate-limit event."""
+    reset_times = []
+    for line in output.splitlines():
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if (
+            not isinstance(event, dict)
+            or event.get("type") != "rate_limit_event"
+        ):
+            continue
+        info = event.get("rate_limit_info")
+        if not isinstance(info, dict) or info.get("status") != "rejected":
+            continue
+        resets_at = info.get("resetsAt")
+        if isinstance(resets_at, (int, float)) and not isinstance(
+            resets_at, bool
+        ):
+            reset_times.append(float(resets_at))
+
+    return max(reset_times, default=None)
 
 
 def run_hooks(
@@ -293,14 +321,38 @@ def _handle_runner_exit(
 
     Returns True to abort the run loop, False to continue.
     """
+    rate_limit_reset = _parse_rate_limit_reset(f"{stdout}\n{stderr}")
+
     # Post-execution validation and heartbeat cleanup
     # This will mark the task as COMPLETED or PENDING based on whether
     # the agent called 'lemming complete'.
-    post_task = tasks.finish_task_attempt(tasks_file, task_id)
+    if rate_limit_reset is None:
+        post_task = tasks.finish_task_attempt(tasks_file, task_id)
+    else:
+        post_task = tasks.finish_task_attempt(
+            tasks_file, task_id, count_attempt=False
+        )
 
     if not post_task:
         click.echo("Error: Task disappeared from roadmap during execution.")
         return True
+
+    if rate_limit_reset is not None:
+        wait_seconds = max(
+            1,
+            retry_delay,
+            rate_limit_reset - time.time() + RATE_LIMIT_MARGIN_SECONDS,
+        )
+        retry_at = time.strftime(
+            "%Y-%m-%d %H:%M:%S %Z",
+            time.localtime(time.time() + wait_seconds),
+        )
+        click.echo(
+            f"Runner rate limited; retrying at {retry_at}. "
+            "Attempt was not counted."
+        )
+        time.sleep(wait_seconds)
+        return False
 
     # Run orchestrator hooks synchronously if the task requested a status
     # change (completion or failure). This ensures the roadmap is updated

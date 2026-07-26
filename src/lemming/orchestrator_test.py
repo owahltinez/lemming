@@ -7,6 +7,7 @@ import pytest
 from lemming import tasks
 from lemming.orchestrator import (
     _handle_runner_exit,
+    _parse_rate_limit_reset,
     _process_exhausted_retries,
     _process_finalizing_task,
     format_duration,
@@ -55,6 +56,21 @@ def test_format_duration():
     assert format_duration(60) == "1h"
     assert format_duration(90) == "90m"
     assert format_duration(120) == "2h"
+
+
+def test_parse_rate_limit_reset():
+    output = "\n".join(
+        [
+            "not json",
+            '{"type":"rate_limit_event","rate_limit_info":'
+            '{"status":"allowed","resetsAt":1000}}',
+            '{"type":"rate_limit_event","rate_limit_info":'
+            '{"status":"rejected","resetsAt":2000}}',
+        ]
+    )
+
+    assert _parse_rate_limit_reset(output) == 2000
+    assert _parse_rate_limit_reset('{"type":"result"}') is None
 
 
 @mock.patch("subprocess.Popen")
@@ -470,6 +486,46 @@ def test_handle_runner_exit_cancelled(mock_run_hooks, setup_env):
         time_limit=1,
     )
     assert should_abort, "Cancellation (-15) should abort the loop"
+
+
+@mock.patch("lemming.orchestrator.time.sleep")
+@mock.patch("lemming.orchestrator.time.time", return_value=1000)
+def test_handle_runner_exit_defers_rate_limit(
+    mock_time, mock_sleep, setup_env, capsys
+):
+    test_tasks_file, initial_data = setup_env
+    task = tasks.claim_task(test_tasks_file, "task1", pid=os.getpid())
+    assert task is not None
+    assert task.attempts == 1
+
+    output = (
+        '{"type":"rate_limit_event","rate_limit_info":'
+        '{"status":"rejected","resetsAt":1100}}'
+    )
+    should_abort = _handle_runner_exit(
+        test_tasks_file,
+        task.id,
+        returncode=1,
+        stdout=output,
+        stderr="",
+        retries=3,
+        retry_delay=10,
+        runner_name="claude",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        active_hooks=[],
+        working_dir=None,
+        time_limit=1,
+    )
+
+    assert not should_abort
+    mock_sleep.assert_called_once_with(105)
+    updated = tasks.load_tasks(test_tasks_file).tasks[0]
+    assert updated.status == tasks.TaskStatus.PENDING
+    assert updated.attempts == 0
+    assert "Attempt was not counted" in capsys.readouterr().out
 
 
 @pytest.fixture
