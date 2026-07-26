@@ -78,6 +78,7 @@ LOOP_LOCK_FILENAME = persistence.LOOP_LOCK_FILENAME
 # Re-export models as part of the package facade
 TaskNotFoundError = models.TaskNotFoundError
 AmbiguousTaskIdError = models.AmbiguousTaskIdError
+LoopAlreadyRunningError = persistence.LoopAlreadyRunningError
 Task = models.Task
 TaskStatus = models.TaskStatus
 ProjectData = models.ProjectData

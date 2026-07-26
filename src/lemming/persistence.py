@@ -13,6 +13,10 @@ STALE_THRESHOLD = 30  # seconds
 LOOP_LOCK_FILENAME = ".lemming_loop.lock"
 
 
+class LoopAlreadyRunningError(RuntimeError):
+    """Raised when another process owns the orchestrator loop lock."""
+
+
 @contextlib.contextmanager
 def lock_tasks(tasks_file: pathlib.Path):
     """Context manager for cross-platform file locking.
@@ -144,13 +148,21 @@ def _get_loop_lock_path(tasks_file: pathlib.Path) -> pathlib.Path:
 
 
 def acquire_loop_lock(tasks_file: pathlib.Path) -> None:
-    """Write a loop lock file with the current PID."""
-    _get_loop_lock_path(tasks_file).write_text(str(os.getpid()))
+    """Acquire the loop lock unless another live process owns it."""
+    with lock_tasks(tasks_file):
+        existing_pid = get_loop_pid(tasks_file)
+        if existing_pid is not None and is_pid_alive(existing_pid):
+            raise LoopAlreadyRunningError(
+                f"Another loop is already running (pid {existing_pid})."
+            )
+        _get_loop_lock_path(tasks_file).write_text(str(os.getpid()))
 
 
 def release_loop_lock(tasks_file: pathlib.Path) -> None:
-    """Remove the loop lock file."""
-    _get_loop_lock_path(tasks_file).unlink(missing_ok=True)
+    """Release the loop lock if the current process owns it."""
+    with lock_tasks(tasks_file):
+        if get_loop_pid(tasks_file) == os.getpid():
+            _get_loop_lock_path(tasks_file).unlink(missing_ok=True)
 
 
 def get_loop_pid(tasks_file: pathlib.Path) -> int | None:
@@ -162,3 +174,32 @@ def get_loop_pid(tasks_file: pathlib.Path) -> int | None:
         return int(lock_path.read_text().strip())
     except (ValueError, OSError):
         return None
+
+
+def is_pid_alive(pid: int) -> bool:
+    """Return whether a process is alive and is not a zombie."""
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+
+    try:
+        status_path = pathlib.Path(f"/proc/{pid}/status")
+        if status_path.exists():
+            for line in status_path.read_text().splitlines():
+                if line.startswith("State:") and line.split()[1] == "Z":
+                    return False
+    except OSError:
+        pass
+
+    return True
+
+
+def is_loop_running(tasks_file: pathlib.Path) -> bool:
+    """Return whether a live process owns the lock, clearing stale locks."""
+    with lock_tasks(tasks_file):
+        pid = get_loop_pid(tasks_file)
+        if pid is not None and is_pid_alive(pid):
+            return True
+        _get_loop_lock_path(tasks_file).unlink(missing_ok=True)
+        return False

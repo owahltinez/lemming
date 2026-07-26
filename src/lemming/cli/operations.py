@@ -79,7 +79,11 @@ def run(
         os.environ.update(env_overrides)
 
     completed = False
-    tasks.acquire_loop_lock(tasks_file)
+    try:
+        tasks.acquire_loop_lock(tasks_file)
+    except tasks.LoopAlreadyRunningError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
     try:
         completed = run_loop(
             tasks_file,

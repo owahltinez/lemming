@@ -32,6 +32,7 @@ def test_is_loop_running_stale_pid(tmp_path):
     )
     lock_path.write_text("999999")
     assert lifecycle.is_loop_running(tasks_file) is False
+    assert not lock_path.exists()
 
 
 def test_update_run_time():

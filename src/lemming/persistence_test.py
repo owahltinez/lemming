@@ -1,5 +1,6 @@
 import os
 
+import pytest
 import yaml
 
 from lemming import models, persistence
@@ -60,6 +61,27 @@ def test_loop_lock_management(tmp_path):
     assert persistence.get_loop_pid(tasks_file) is None
 
 
+def test_acquire_loop_lock_rejects_live_owner(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.acquire_loop_lock(tasks_file)
+
+    with pytest.raises(
+        persistence.LoopAlreadyRunningError, match=str(os.getpid())
+    ):
+        persistence.acquire_loop_lock(tasks_file)
+
+    persistence.release_loop_lock(tasks_file)
+
+
+def test_is_loop_running_clears_stale_lock(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    lock_path = persistence._get_loop_lock_path(tasks_file)
+    lock_path.write_text("999999")
+
+    assert persistence.is_loop_running(tasks_file) is False
+    assert not lock_path.exists()
+
+
 def test_get_loop_pid_corrupted_lock_file(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     lock_path = persistence._get_loop_lock_path(tasks_file)
@@ -68,6 +90,8 @@ def test_get_loop_pid_corrupted_lock_file(tmp_path):
     # Write "corrupted" content
     lock_path.write_text("not-a-pid")
     assert persistence.get_loop_pid(tasks_file) is None
+    assert persistence.is_loop_running(tasks_file) is False
+    assert not lock_path.exists()
 
 
 def test_save_tasks_excludes_computed_fields(tmp_path):

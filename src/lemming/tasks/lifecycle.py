@@ -28,38 +28,13 @@ def generate_task_id() -> str:
 
 
 def is_pid_alive(pid: int) -> bool:
-    """Check if a process is still running.
-
-    Args:
-        pid: The process ID to check.
-
-    Returns:
-        True if the process is alive, False otherwise.
-    """
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-
-    # Check for zombie state on Linux
-    try:
-        status_path = pathlib.Path(f"/proc/{pid}/status")
-        if status_path.exists():
-            for line in status_path.read_text().splitlines():
-                if line.startswith("State:"):
-                    state = line.split()[1]
-                    if state == "Z":
-                        return False
-    except OSError:
-        pass
-
-    return True
+    """Check if a process is still running."""
+    return persistence.is_pid_alive(pid)
 
 
 def is_loop_running(tasks_file: pathlib.Path) -> bool:
     """Check if an orchestrator loop is actively running."""
-    pid = persistence.get_loop_pid(tasks_file)
-    return pid is not None and is_pid_alive(pid)
+    return persistence.is_loop_running(tasks_file)
 
 
 def update_run_time(task: models.Task, end_time: float | None = None) -> None:

@@ -73,6 +73,16 @@ class TestCLIOperations(unittest.TestCase):
         self.assertIn("1 pending task remains", result.output)
         self.assertNotIn("All tasks completed!", result.output)
 
+    def test_run_rejects_live_loop_owner(self):
+        tasks.acquire_loop_lock(self.test_tasks_file)
+        try:
+            result = self.cli_runner.invoke(cli.cli, self.base_args + ["run"])
+        finally:
+            tasks.release_loop_lock(self.test_tasks_file)
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Another loop is already running", result.output)
+
     def test_serve_help(self):
         result = self.cli_runner.invoke(cli.cli, ["serve", "--help"])
         self.assertEqual(result.exit_code, 0)
