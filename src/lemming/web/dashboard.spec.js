@@ -101,6 +101,68 @@ test.describe('Dashboard E2E', () => {
     });
   }
 
+  test('shows proportional runner and hook execution times', async ({
+    page,
+  }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    await page.route('**/api/data', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        json: {
+          cwd: '/mock/cwd',
+          loop_running: false,
+          goal: 'Timed project',
+          tasks: [
+            {
+              id: 'timed',
+              description: 'Task with timing breakdown',
+              status: 'completed',
+              attempts: 1,
+              progress: [],
+              execution_times: {
+                runner: 30,
+                'hook:readability': 10,
+                'hook:testing': 20,
+              },
+            },
+          ],
+          config: { retries: 3, runner: 'agy', time_limit: 60 },
+        },
+      });
+    });
+
+    await gotoAndAwaitMancha(page);
+    await page.getByRole('button', { name: 'Show details' }).click();
+
+    const breakdown = page.getByTestId('execution-breakdown');
+    await expect(breakdown).toBeVisible();
+    await expect(
+      breakdown.getByRole('img', { name: /Runner 30s/ }),
+    ).toBeVisible();
+
+    const measurements = await breakdown
+      .getByRole('img')
+      .locator(':scope > span')
+      .evaluateAll((segments) =>
+        segments.map((segment) => ({
+          width: segment.getBoundingClientRect().width,
+          color: segment.style.backgroundColor,
+        })),
+      );
+    const totalWidth = measurements.reduce(
+      (sum, segment) => sum + segment.width,
+      0,
+    );
+
+    expect(pageErrors).toEqual([]);
+    expect(measurements).toHaveLength(3);
+    expect(measurements[0].width / totalWidth).toBeCloseTo(0.5, 2);
+    expect(measurements[1].width / totalWidth).toBeCloseTo(1 / 6, 2);
+    expect(measurements[2].width / totalWidth).toBeCloseTo(1 / 3, 2);
+    expect(new Set(measurements.map((segment) => segment.color)).size).toBe(3);
+  });
+
   // --- Environment Overrides Tests ---
 
   test('adds an environment override, stores it in localStorage, and sends it on run', async ({

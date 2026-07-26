@@ -251,6 +251,29 @@ def test_run_with_heartbeat_log_header(tmp_path):
     assert "=" * 80 not in content_2
 
 
+def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "timed_task"
+    tasks.save_tasks(
+        tasks_file,
+        tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="timed task")]),
+    )
+
+    runner.run_with_heartbeat(["true"], tasks_file, task_id, verbose=False)
+    runner.run_with_heartbeat(
+        ["true"],
+        tasks_file,
+        task_id,
+        verbose=False,
+        header="Hook: testing",
+    )
+
+    task = tasks.load_tasks(tasks_file).tasks[0]
+    assert task.execution_times is not None
+    assert task.execution_times["runner"] > 0
+    assert task.execution_times["hook:testing"] > 0
+
+
 def test_run_with_heartbeat_interruption_cleanup(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "test_task"

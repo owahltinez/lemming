@@ -180,7 +180,6 @@ test.describe('Screenshot Generation', () => {
             });
           },
         );
-
         // Mock API endpoints
         await page.route('**/api/data', async (route) => {
           await route.fulfill({

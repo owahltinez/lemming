@@ -56,6 +56,7 @@ class Task(pydantic.BaseModel):
     last_started_at: float | None = None
     created_at: float = pydantic.Field(default_factory=time.time)
     run_time: float = 0.0
+    execution_times: dict[str, float] | None = None
     pid: int | None = None
     last_heartbeat: float | None = None
     has_runner_log: bool = False

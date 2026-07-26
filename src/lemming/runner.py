@@ -288,6 +288,12 @@ def run_with_heartbeat(
         start_new_session=True,
         cwd=cwd,
     )
+    execution_started = time.monotonic()
+    component = (
+        f"hook:{header.removeprefix('Hook: ').strip()}"
+        if header and header.startswith("Hook: ")
+        else "runner"
+    )
 
     full_log: list[str] = []
 
@@ -315,7 +321,7 @@ def run_with_heartbeat(
         is_claimed = tasks.update_heartbeat(
             tasks_file, task_id, pid=process.pid
         )
-        start_time = time.monotonic()
+        start_time = execution_started
 
         def heartbeat_loop():
             """Updates the task heartbeat while the process is running."""
@@ -372,6 +378,20 @@ def run_with_heartbeat(
             returncode = RETURNCODE_TIMEOUT
         return returncode, "".join(full_log), ""
     finally:
+        try:
+            tasks.record_execution_time(
+                tasks_file,
+                task_id,
+                component,
+                max(0.0, time.monotonic() - execution_started),
+            )
+        except Exception:
+            logger.warning(
+                "Could not record %s execution time for task %s",
+                component,
+                task_id,
+                exc_info=True,
+            )
         # Closing the stream while the reader is blocked on it can deadlock
         # on the stream's internal lock, so only close it after EOF.
         if (

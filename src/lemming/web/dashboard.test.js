@@ -46,6 +46,73 @@ const createInitialState = (overrides = {}) => {
       }
       return this.formatDuration(total);
     },
+    getExecutionSegments: (task) => {
+      const hookColors = [
+        '#059669',
+        '#d97706',
+        '#db2777',
+        '#0891b2',
+        '#7c3aed',
+        '#dc2626',
+      ];
+      const hookColorClasses = [
+        'bg-green-600',
+        'bg-amber-600',
+        'bg-pink-600',
+        'bg-cyan-600',
+        'bg-purple-600',
+        'bg-red-600',
+      ];
+      const entries = Object.entries(task.execution_times || {}).filter(
+        ([, duration]) => Number.isFinite(Number(duration)) && duration > 0,
+      );
+      entries.sort(([a], [b]) => {
+        if (a === 'runner') return -1;
+        if (b === 'runner') return 1;
+        return 0;
+      });
+      const total = entries.reduce(
+        (sum, [, duration]) => sum + Number(duration),
+        0,
+      );
+      const usedHookColors = new Set();
+
+      return entries.map(([key, duration], index) => {
+        const label = key === 'runner' ? 'Runner' : key.replace(/^hook:/, '');
+        let hash = 0;
+        for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+        let color = '#4f46e5';
+        let colorClass = 'bg-indigo-600';
+        if (key !== 'runner') {
+          let colorIndex = Math.abs(hash || index) % hookColors.length;
+          while (
+            usedHookColors.has(colorIndex) &&
+            usedHookColors.size < hookColors.length
+          ) {
+            colorIndex = (colorIndex + 1) % hookColors.length;
+          }
+          usedHookColors.add(colorIndex);
+          color = hookColors[colorIndex];
+          colorClass = hookColorClasses[colorIndex];
+        }
+        return {
+          key,
+          label,
+          duration: Number(duration),
+          percent: (Number(duration) / total) * 100,
+          color,
+          colorClass,
+        };
+      });
+    },
+    getExecutionSummary: function (task) {
+      return this.getExecutionSegments(task)
+        .map(
+          (segment) =>
+            `${segment.label} ${this.formatDuration(segment.duration)}`,
+        )
+        .join(', ');
+    },
     filteredTasks: $computed(() => {
       const ts = [...tasks];
       ts.sort((a, b) => {
@@ -663,6 +730,99 @@ describe('Lemming Web Dashboard', () => {
     assert.strictEqual(progressItems.length, 2);
     assert.strictEqual(progressItems[0].textContent.trim(), 'Step 1 done');
     assert.strictEqual(progressItems[1].textContent.trim(), 'Step 2 done');
+  });
+
+  test('renders proportional runner and hook execution times', async () => {
+    const tasks = [
+      {
+        id: 'timed',
+        description: 'Task with execution timings',
+        status: 'completed',
+        attempts: 1,
+        progress: [],
+        execution_times: {
+          runner: 30,
+          'hook:readability': 10,
+          'hook:testing': 20,
+        },
+      },
+    ];
+    const initialState = createInitialState({
+      tasks,
+      loading: false,
+      expanded: { timed: true },
+      filteredTasks: tasks,
+    });
+    const calculated = initialState.getExecutionSegments(tasks[0]);
+    assert.deepStrictEqual(
+      calculated.map((segment) => segment.duration),
+      [30, 10, 20],
+    );
+    assert.strictEqual(calculated[0].percent, 50);
+    assert.ok(Math.abs(calculated[1].percent - 100 / 6) < 0.001);
+    assert.ok(Math.abs(calculated[2].percent - 100 / 3) < 0.001);
+    assert.notStrictEqual(calculated[0].color, calculated[1].color);
+    assert.strictEqual(
+      initialState.getExecutionSegments({
+        execution_times: { runner: 0.257 },
+      })[0].percent,
+      100,
+    );
+
+    const renderer = new Renderer(initialState);
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    await renderer.mount(fragment);
+
+    const breakdown = fragment.querySelector(
+      '[data-testid="execution-breakdown"]',
+    );
+    assert.ok(breakdown, 'Execution breakdown should be present');
+
+    const bar = breakdown.querySelector('[role="img"]');
+    assert.strictEqual(
+      bar.getAttribute('aria-label'),
+      'Execution time: Runner 30s, readability 10s, testing 20s',
+    );
+
+    assert.strictEqual(bar.tagName.toLowerCase(), 'div');
+    const segments = bar.querySelectorAll(':scope > span');
+    assert.strictEqual(segments.length, 3);
+    assert.strictEqual(
+      segments[0].getAttribute('style'),
+      'width: 50%; background-color: #4f46e5',
+    );
+    assert.ok(breakdown.textContent.includes('Runner 30s'));
+    assert.ok(breakdown.textContent.includes('readability 10s'));
+    assert.ok(breakdown.textContent.includes('testing 20s'));
+  });
+
+  test('hides execution breakdown when timing data is unavailable', async () => {
+    const tasks = [
+      {
+        id: 'legacy',
+        description: 'Older task without component timings',
+        status: 'completed',
+        attempts: 1,
+        progress: [],
+      },
+    ];
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+        expanded: { legacy: true },
+        filteredTasks: tasks,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    await renderer.mount(fragment);
+
+    assert.strictEqual(
+      fragment.querySelector('[data-testid="execution-breakdown"]'),
+      null,
+    );
   });
 
   test('hides progress section when no progress is present', async () => {

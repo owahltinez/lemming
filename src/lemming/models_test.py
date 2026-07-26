@@ -17,6 +17,7 @@ def test_task_model_defaults():
     assert task.attempts == 0
     assert task.progress == []
     assert task.run_time == 0.0
+    assert task.execution_times is None
     assert task.created_at > 0
 
 

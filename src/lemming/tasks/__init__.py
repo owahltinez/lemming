@@ -29,6 +29,9 @@ from .lifecycle import (
     mark_task_in_progress as mark_task_in_progress,
 )
 from .lifecycle import (
+    record_execution_time as record_execution_time,
+)
+from .lifecycle import (
     reset_task as reset_task,
 )
 from .lifecycle import (

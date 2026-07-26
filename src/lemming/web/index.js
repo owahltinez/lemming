@@ -149,6 +149,72 @@
         }
         return $.formatDuration(total);
       };
+      $.getExecutionSegments = (task) => {
+        const hookColors = [
+          '#059669',
+          '#d97706',
+          '#db2777',
+          '#0891b2',
+          '#7c3aed',
+          '#dc2626',
+        ];
+        const hookColorClasses = [
+          'bg-green-600',
+          'bg-amber-600',
+          'bg-pink-600',
+          'bg-cyan-600',
+          'bg-purple-600',
+          'bg-red-600',
+        ];
+        const entries = Object.entries(task.execution_times || {}).filter(
+          ([, duration]) => Number.isFinite(Number(duration)) && duration > 0,
+        );
+        entries.sort(([a], [b]) => {
+          if (a === 'runner') return -1;
+          if (b === 'runner') return 1;
+          return 0;
+        });
+        const total = entries.reduce(
+          (sum, [, duration]) => sum + Number(duration),
+          0,
+        );
+        const usedHookColors = new Set();
+
+        return entries.map(([key, duration], index) => {
+          const label = key === 'runner' ? 'Runner' : key.replace(/^hook:/, '');
+          let hash = 0;
+          for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+          let color = '#4f46e5';
+          let colorClass = 'bg-indigo-600';
+          if (key !== 'runner') {
+            let colorIndex = Math.abs(hash || index) % hookColors.length;
+            while (
+              usedHookColors.has(colorIndex) &&
+              usedHookColors.size < hookColors.length
+            ) {
+              colorIndex = (colorIndex + 1) % hookColors.length;
+            }
+            usedHookColors.add(colorIndex);
+            color = hookColors[colorIndex];
+            colorClass = hookColorClasses[colorIndex];
+          }
+          return {
+            key,
+            label,
+            duration: Number(duration),
+            percent: (Number(duration) / total) * 100,
+            color,
+            colorClass,
+          };
+        });
+      };
+      $.getExecutionSummary = (task) =>
+        $.getExecutionSegments(task)
+          .map(
+            (segment) =>
+              `${segment.label} ${$.formatDuration(segment.duration)}`,
+          )
+          .join(', ');
 
       $.getParent = (parentId) => {
         return $.tasks.find((t) => t.id === parentId);

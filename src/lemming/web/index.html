@@ -639,6 +639,44 @@
                   </div>
                 </div>
               </div>
+              <div
+                :if="getExecutionSegments(task).length > 0"
+                class="mt-3"
+                data-testid="execution-breakdown"
+              >
+                <span
+                  class="font-semibold uppercase text-gray-400 block mb-1 text-9px"
+                  >Execution Time:</span
+                >
+                <div
+                  class="flex w-full h-3 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700"
+                  role="img"
+                  :attr:aria-label="'Execution time: ' + getExecutionSummary(task)"
+                >
+                  <span
+                    :for="segment in getExecutionSegments(task)"
+                    :key="task.id + '-bar-' + segment.key"
+                    class="block h-full basis-0"
+                    :attr:style="'width: ' + segment.percent + '%; background-color: ' + segment.color"
+                    aria-hidden="true"
+                  ></span>
+                </div>
+                <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  <span
+                    :for="segment in getExecutionSegments(task)"
+                    :key="task.id + '-legend-' + segment.key"
+                    class="inline-flex items-center gap-1 text-10px text-gray-500 dark:text-gray-400"
+                  >
+                    <span
+                      :attr:class="'inline-block w-2 h-2 rounded-full ' + segment.colorClass"
+                      aria-hidden="true"
+                    ></span>
+                    <span
+                      :text="segment.label + ' ' + formatDuration(segment.duration)"
+                    ></span>
+                  </span>
+                </div>
+              </div>
               <div :if="task.parent" class="mt-2">
                 <span
                   class="font-semibold uppercase text-gray-400 block mb-1 text-9px"

@@ -51,6 +51,41 @@ def update_run_time(task: models.Task, end_time: float | None = None) -> None:
         task.last_started_at = None
 
 
+def record_execution_time(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    component: str,
+    duration: float,
+) -> None:
+    """Adds subprocess runtime to a task's per-component breakdown.
+
+    Missing tasks are ignored because a roadmap hook may legitimately delete
+    or replace the task whose runner just exited.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task whose subprocess ran.
+        component: Stable component key, such as ``runner`` or
+            ``hook:readability``.
+        duration: Elapsed subprocess time in seconds.
+    """
+    if duration < 0:
+        return
+
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        task = next((t for t in data.tasks if t.id == task_id), None)
+        if task is None:
+            return
+
+        if task.execution_times is None:
+            task.execution_times = {}
+        task.execution_times[component] = (
+            task.execution_times.get(component, 0.0) + duration
+        )
+        persistence.save_tasks(tasks_file, data)
+
+
 def is_task_active(task: models.Task, now: float) -> bool:
     """Returns True if the task is actively being executed.
 
@@ -378,6 +413,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
         target.attempts = 0
         target.progress = []
         target.run_time = 0.0
+        target.execution_times = None
         target.completed_at = None
         target.started_at = None
         target.last_started_at = None

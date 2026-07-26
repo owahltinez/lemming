@@ -43,6 +43,24 @@ def test_update_run_time():
     assert task.run_time >= 5.0
 
 
+def test_record_execution_time_accumulates_by_component(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id="1", description="test")]),
+    )
+
+    lifecycle.record_execution_time(tasks_file, "1", "runner", 12.5)
+    lifecycle.record_execution_time(tasks_file, "1", "runner", 2.5)
+    lifecycle.record_execution_time(tasks_file, "1", "hook:readability", 4.0)
+
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.execution_times == {
+        "runner": 15.0,
+        "hook:readability": 4.0,
+    }
+
+
 def test_mark_task_in_progress(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(
@@ -298,6 +316,7 @@ def test_reset_task(tmp_path):
                 description="Task 1",
                 status=models.TaskStatus.COMPLETED,
                 progress=["done"],
+                execution_times={"runner": 10.0},
             )
         ],
     )
@@ -311,6 +330,7 @@ def test_reset_task(tmp_path):
     reset_task = lifecycle.reset_task(tasks_file, task_id)
     assert reset_task.status == models.TaskStatus.PENDING
     assert reset_task.progress == []
+    assert reset_task.execution_times is None
     assert not log_file.exists()
 
 
