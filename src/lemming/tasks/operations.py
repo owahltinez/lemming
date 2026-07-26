@@ -5,7 +5,7 @@ import pathlib
 import time
 
 from .. import models, persistence
-from . import lifecycle
+from . import lifecycle, queries
 
 
 def add_task(
@@ -110,12 +110,13 @@ def delete_tasks(
                 )
             ]
         elif task_id:
-            tasks_to_delete = [
-                t for t in data.tasks if t.id.startswith(task_id)
-            ]
-            for t in tasks_to_delete:
-                lifecycle.reset_task_logs(tasks_file, t.id)
-            data.tasks = [t for t in data.tasks if not t.id.startswith(task_id)]
+            try:
+                target = queries.resolve_task(data.tasks, task_id)
+            except models.TaskNotFoundError:
+                target = None
+            if target:
+                lifecycle.reset_task_logs(tasks_file, target.id)
+                data.tasks = [t for t in data.tasks if t.id != target.id]
 
         persistence.save_tasks(tasks_file, data)
         return initial_count - len(data.tasks)
@@ -157,17 +158,8 @@ def update_task(
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
 
-        # Find the task
-        task_idx = -1
-        target = None
-        for i, t in enumerate(data.tasks):
-            if t.id.startswith(task_id):
-                task_idx = i
-                target = t
-                break
-
-        if not target:
-            raise models.TaskNotFoundError(f"Task {task_id} not found")
+        target = queries.resolve_task(data.tasks, task_id)
+        task_idx = data.tasks.index(target)
 
         if target.status == models.TaskStatus.COMPLETED and description:
             raise ValueError("Cannot edit description of a completed task")

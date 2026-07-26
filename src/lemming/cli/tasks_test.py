@@ -1,6 +1,7 @@
 import pathlib
 import shutil
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -114,6 +115,70 @@ class TestCLITasks(unittest.TestCase):
 
         data = tasks.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
+
+    def test_active_task_completion_runs_hooks(self):
+        with tasks.lock_tasks(self.test_tasks_file):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+            data.tasks[0].progress = ["Done"]
+            data.tasks[0].pid = 1234
+            data.tasks[0].last_heartbeat = time.time()
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        with mock.patch(
+            "lemming.tasks.lifecycle.is_pid_alive", return_value=True
+        ):
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["complete", "12345678"]
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("completion requested", result.output)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.IN_PROGRESS)
+        self.assertEqual(
+            data.tasks[0].requested_status, tasks.TaskStatus.COMPLETED
+        )
+
+    def test_stale_task_completion_requires_force(self):
+        with tasks.lock_tasks(self.test_tasks_file):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+            data.tasks[0].progress = ["Done"]
+            data.tasks[0].pid = 999999
+            data.tasks[0].last_heartbeat = 0
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["complete", "12345678"]
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Use --force", result.output)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.IN_PROGRESS)
+        self.assertIsNone(data.tasks[0].requested_status)
+
+    def test_force_completes_stale_task(self):
+        with tasks.lock_tasks(self.test_tasks_file):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+            data.tasks[0].progress = ["Done"]
+            data.tasks[0].pid = 999999
+            data.tasks[0].last_heartbeat = 0
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["complete", "--force", "12345678"]
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("marked as completed", result.output)
+        data = tasks.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
+        self.assertIsNone(data.tasks[0].requested_status)
+        self.assertIsNone(data.tasks[0].pid)
+        self.assertIsNone(data.tasks[0].last_heartbeat)
 
     def test_task_uncomplete(self):
         # First complete it

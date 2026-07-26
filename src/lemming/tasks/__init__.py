@@ -23,6 +23,9 @@ from .lifecycle import (
     is_pid_alive as is_pid_alive,
 )
 from .lifecycle import (
+    is_task_active as is_task_active,
+)
+from .lifecycle import (
     mark_task_in_progress as mark_task_in_progress,
 )
 from .lifecycle import (
@@ -59,6 +62,9 @@ from .queries import (
 from .queries import (
     get_project_data as get_project_data,
 )
+from .queries import (
+    resolve_task as resolve_task,
+)
 
 # Re-export persistence functions as part of the package facade
 save_tasks = persistence.save_tasks
@@ -71,6 +77,7 @@ LOOP_LOCK_FILENAME = persistence.LOOP_LOCK_FILENAME
 
 # Re-export models as part of the package facade
 TaskNotFoundError = models.TaskNotFoundError
+AmbiguousTaskIdError = models.AmbiguousTaskIdError
 Task = models.Task
 TaskStatus = models.TaskStatus
 ProjectData = models.ProjectData

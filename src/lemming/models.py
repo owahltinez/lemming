@@ -28,6 +28,10 @@ class TaskNotFoundError(ValueError):
     """Raised when a task ID cannot be found in the roadmap."""
 
 
+class AmbiguousTaskIdError(ValueError):
+    """Raised when a task ID prefix matches more than one task."""
+
+
 class TaskStatus(enum.StrEnum):
     """Enumeration of possible task statuses."""
 

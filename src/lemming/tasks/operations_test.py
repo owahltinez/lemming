@@ -165,6 +165,41 @@ def test_delete_tasks(tmp_path):
     assert data.tasks[0].description == "Task 1"
 
 
+def test_update_task_rejects_ambiguous_prefix(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(id="abc12345", description="First"),
+                models.Task(id="abc67890", description="Second"),
+            ]
+        ),
+    )
+
+    with pytest.raises(models.AmbiguousTaskIdError, match="abc12345, abc67890"):
+        operations.update_task(tasks_file, "abc", description="Updated")
+
+
+def test_delete_tasks_rejects_ambiguous_prefix(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(id="abc12345", description="First"),
+                models.Task(id="abc67890", description="Second"),
+            ]
+        ),
+    )
+
+    with pytest.raises(models.AmbiguousTaskIdError, match="abc12345, abc67890"):
+        operations.delete_tasks(tasks_file, task_id="abc")
+
+    data = persistence.load_tasks(tasks_file)
+    assert [task.id for task in data.tasks] == ["abc12345", "abc67890"]
+
+
 def test_update_goal(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     operations.update_goal(tasks_file, "new goal")

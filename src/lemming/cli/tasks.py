@@ -205,12 +205,16 @@ def delete_task(
         click.echo("Error: Provide a task ID, or use --all or --completed.")
         ctx.exit(1)
 
-    removed = tasks.delete_tasks(
-        tasks_file,
-        task_id=task_id,
-        all_tasks=delete_all,
-        completed_only=completed,
-    )
+    try:
+        removed = tasks.delete_tasks(
+            tasks_file,
+            task_id=task_id,
+            all_tasks=delete_all,
+            completed_only=completed,
+        )
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
 
     if delete_all:
         click.echo(
@@ -422,24 +426,53 @@ def logs(ctx: click.Context, task_id: str | None):
 
 @cli.command(short_help="<taskid> Mark a task as completed")
 @click.argument("task_id")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Finalize an in-progress task immediately, without running hooks.",
+)
 @click.pass_context
-def complete(ctx: click.Context, task_id: str):
+def complete(ctx: click.Context, task_id: str, force: bool):
     """Marks a task as completed (requires at least one progress entry).
 
     Args:
         ctx: The click context.
         task_id: The ID of the task to mark as completed.
+        force: Finalize immediately instead of waiting for orchestrator hooks.
     """
     tasks_file = ctx.obj["TASKS_FILE"]
 
     try:
+        data = tasks.load_tasks(tasks_file)
+        current_task = tasks.resolve_task(data.tasks, task_id)
+        task_is_active = tasks.is_task_active(current_task, time.time())
+        if (
+            current_task.status == tasks.TaskStatus.IN_PROGRESS
+            and current_task.progress
+            and not force
+            and not task_is_active
+            and not tasks.is_loop_running(tasks_file)
+        ):
+            raise ValueError(
+                f"Task {current_task.id} is in progress, but no active runner "
+                "or loop can finalize it. Use --force to complete it without "
+                "running hooks, or reset it to retry."
+            )
+
         target_task = tasks.update_task(
             tasks_file,
             task_id,
             status=tasks.TaskStatus.COMPLETED,
             require_progress=True,
+            force=force,
         )
-        click.echo(f"Task {target_task.id} marked as completed.")
+        if target_task.requested_status == tasks.TaskStatus.COMPLETED:
+            click.echo(
+                f"Task {target_task.id} completion requested; "
+                "finalization hooks are pending."
+            )
+        else:
+            click.echo(f"Task {target_task.id} marked as completed.")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)

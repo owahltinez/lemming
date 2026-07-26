@@ -7,6 +7,23 @@ from .. import models, paths, persistence
 from . import lifecycle
 
 
+def resolve_task(tasks: list[models.Task], task_id: str) -> models.Task:
+    """Resolves an exact task ID or an unambiguous task ID prefix."""
+    exact_matches = [task for task in tasks if task.id == task_id]
+    if exact_matches:
+        return exact_matches[0]
+
+    prefix_matches = [task for task in tasks if task.id.startswith(task_id)]
+    if not prefix_matches:
+        raise models.TaskNotFoundError(f"Task {task_id} not found")
+    if len(prefix_matches) > 1:
+        matching_ids = ", ".join(task.id for task in prefix_matches)
+        raise models.AmbiguousTaskIdError(
+            f"Task ID {task_id} is ambiguous; matches: {matching_ids}"
+        )
+    return prefix_matches[0]
+
+
 def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
     """Consolidated logic to get project state (tasks, goal, loop status).
 
