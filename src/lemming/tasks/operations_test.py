@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from .. import models, persistence
-from . import operations
+from . import lifecycle, operations, queries
 
 
 def test_add_task_captures_parent_project(tmp_path):
@@ -99,6 +99,64 @@ def test_update_task_index(tmp_path):
     operations.update_task(tasks_file, task_id, index=-1)
     data = persistence.load_tasks(tasks_file)
     assert [t.description for t in data.tasks] == ["Task 0", "Task 1", "Task 2"]
+
+
+def test_index_matches_displayed_queue_order(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(id="p1", description="Pending 1"),
+                models.Task(id="done", description="Done", status="completed"),
+                models.Task(id="p2", description="Pending 2"),
+                models.Task(
+                    id="active", description="Active", status="in_progress"
+                ),
+                models.Task(id="p3", description="Pending 3"),
+            ]
+        ),
+    )
+
+    with patch.object(lifecycle, "generate_task_id", return_value="new"):
+        operations.add_task(tasks_file, "New", index=3)
+
+    project = queries.get_project_data(tasks_file)
+    queue_ids = [
+        task.id
+        for task in project.tasks
+        if task.status not in operations._DONE_STATUSES
+    ]
+    assert queue_ids == ["active", "p1", "p2", "new", "p3"]
+
+    operations.update_task(tasks_file, "new", index=2)
+    project = queries.get_project_data(tasks_file)
+    queue_ids = [
+        task.id
+        for task in project.tasks
+        if task.status not in operations._DONE_STATUSES
+    ]
+    assert queue_ids == ["active", "p1", "new", "p2", "p3"]
+
+
+def test_index_rejects_positions_that_cannot_be_displayed(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="active", description="Active", status="in_progress"
+                ),
+                models.Task(id="pending", description="Pending"),
+            ]
+        ),
+    )
+
+    with pytest.raises(ValueError, match="before 1 in-progress"):
+        operations.update_task(tasks_file, "pending", index=0)
+    with pytest.raises(ValueError, match="maximum 2"):
+        operations.add_task(tasks_file, "Too far", index=3)
 
 
 def test_update_task_status_lifecycle(tmp_path):

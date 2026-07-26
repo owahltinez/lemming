@@ -20,7 +20,7 @@ from .main import cli
 @click.option(
     "--index",
     default=-1,
-    help="Index to insert the task at (defaults to -1, the end).",
+    help="Zero-based displayed queue position (-1 appends).",
 )
 @click.option(
     "--runner",
@@ -74,14 +74,18 @@ def add(
         click.echo("Error: Must provide either description or --file.")
         ctx.exit(1)
 
-    new_task = tasks.add_task(
-        tasks_file,
-        description,
-        runner_name,
-        index=index,
-        parent=parent,
-        parent_tasks_file=parent_tasks_file,
-    )
+    try:
+        new_task = tasks.add_task(
+            tasks_file,
+            description,
+            runner_name,
+            index=index,
+            parent=parent,
+            parent_tasks_file=parent_tasks_file,
+        )
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
     task_id = new_task.id
 
     if verbose:
@@ -100,7 +104,11 @@ def add(
     help="Read new description from a file (or - for stdin).",
 )
 @click.option("--runner", "runner_name", help="New custom runner for the task.")
-@click.option("--index", type=int, help="New index in the task queue.")
+@click.option(
+    "--index",
+    type=int,
+    help="New zero-based position in the displayed task queue.",
+)
 @click.option(
     "--parent",
     help="New parent task ID (use empty string to remove).",

@@ -34,14 +34,17 @@ def add_task(
 ):
     """Add a new task and start the orchestrator loop if needed."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
-    new_task = tasks.add_task(
-        tasks_file,
-        task.description,
-        task.runner,
-        index=task.index,
-        parent=task.parent,
-        parent_tasks_file=task.parent_tasks_file,
-    )
+    try:
+        new_task = tasks.add_task(
+            tasks_file,
+            task.description,
+            task.runner,
+            index=task.index,
+            parent=task.parent,
+            parent_tasks_file=task.parent_tasks_file,
+        )
+    except ValueError as e:
+        raise fastapi.HTTPException(400, str(e))
     loop.start_loop_if_needed(
         request.app.state,
         tasks_file,

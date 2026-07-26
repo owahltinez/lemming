@@ -7,6 +7,40 @@ import time
 from .. import models, persistence
 from . import lifecycle, queries
 
+_DONE_STATUSES = (
+    models.TaskStatus.COMPLETED,
+    models.TaskStatus.FAILED,
+    models.TaskStatus.CANCELLED,
+)
+
+
+def _insert_at_queue_index(
+    tasks: list[models.Task],
+    task: models.Task,
+    index: int,
+) -> list[models.Task]:
+    """Insert a task at a displayed queue index, before completed history."""
+    queue = [item for item in tasks if item.status not in _DONE_STATUSES]
+    completed = [item for item in tasks if item.status in _DONE_STATUSES]
+    active_count = sum(
+        item.status == models.TaskStatus.IN_PROGRESS for item in queue
+    )
+    queue.sort(key=lambda item: item.status != models.TaskStatus.IN_PROGRESS)
+
+    if index == -1:
+        index = len(queue)
+    if index < active_count:
+        raise ValueError(
+            f"Index {index} is before {active_count} in-progress task(s)"
+        )
+    if index > len(queue):
+        raise ValueError(
+            f"Index {index} is outside the queue (maximum {len(queue)})"
+        )
+
+    queue.insert(index, task)
+    return queue + completed
+
 
 def add_task(
     tasks_file: pathlib.Path,
@@ -51,10 +85,7 @@ def add_task(
             parent_tasks_file=parent_tasks_file,
         )
 
-        if index == -1:
-            data.tasks.append(new_task)
-        else:
-            data.tasks.insert(index, new_task)
+        data.tasks = _insert_at_queue_index(data.tasks, new_task, index)
 
         persistence.save_tasks(tasks_file, data)
     return new_task
@@ -227,11 +258,12 @@ def update_task(
                     target.completed_at = None
 
         if index is not None:
-            task_to_move = data.tasks.pop(task_idx)
-            if index == -1:
-                data.tasks.append(task_to_move)
-            else:
-                data.tasks.insert(index, task_to_move)
+            if target.status in _DONE_STATUSES:
+                raise ValueError("Cannot move a finished task")
+            if target.status == models.TaskStatus.IN_PROGRESS:
+                raise ValueError("Cannot move an in-progress task")
+            data.tasks.pop(task_idx)
+            data.tasks = _insert_at_queue_index(data.tasks, target, index)
 
         persistence.save_tasks(tasks_file, data)
     return target
