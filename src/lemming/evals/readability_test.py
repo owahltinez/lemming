@@ -38,7 +38,7 @@ class TestSuiteRegistry(ScenarioTestCase):
         self.assertIn("readability", registry)
         names = [s.name for s in registry["readability"]]
         self.assertEqual(len(names), len(set(names)))
-        self.assertEqual(len(names), 4)
+        self.assertEqual(len(names), 5)
 
 
 class TestFastExitScenario(ScenarioTestCase):
@@ -115,6 +115,85 @@ class TestDeadCodeScenario(ScenarioTestCase):
 
         checks = self.scenario.grade(self.workspace)
         self.assertIn("interface-preserved", self.failed_names(checks))
+
+
+class TestDuplicatedBehaviorScenario(ScenarioTestCase):
+    def test_ignoring_live_duplication_fails(self):
+        self.build("consolidate-or-report-live-duplication")
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(
+            self.failed_names(checks),
+            {"acted-on-live-duplication"},
+        )
+
+    def test_consolidating_live_duplication_passes(self):
+        self.build("consolidate-or-report-live-duplication")
+        ops = self.workspace / "calc" / "ops.py"
+        source = ops.read_text()
+        source = source.replace(
+            '''def add_for_receipt(a: float, b: float) -> float:
+    """Returns a validated, receipt-ready sum."""
+    total = a + b
+    if not math.isfinite(total):
+        raise ValueError("Receipt totals must be finite.")
+    return round(total, 2)
+
+
+def subtract_for_receipt(a: float, b: float) -> float:
+    """Returns a validated, receipt-ready difference."""
+    total = a - b
+    if not math.isfinite(total):
+        raise ValueError("Receipt totals must be finite.")
+    return round(total, 2)
+''',
+            '''def _for_receipt(total: float) -> float:
+    """Validates and rounds a receipt total."""
+    if not math.isfinite(total):
+        raise ValueError("Receipt totals must be finite.")
+    return round(total, 2)
+
+
+def add_for_receipt(a: float, b: float) -> float:
+    """Returns a validated, receipt-ready sum."""
+    return _for_receipt(a + b)
+
+
+def subtract_for_receipt(a: float, b: float) -> float:
+    """Returns a validated, receipt-ready difference."""
+    return _for_receipt(a - b)
+''',
+        )
+        ops.write_text(source)
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.failed_names(checks), set())
+
+    def test_recording_live_duplication_passes(self):
+        self.build("consolidate-or-report-live-duplication")
+        tasks.add_progress(
+            self.tasks_file,
+            "task1",
+            "Readability: add_for_receipt() and subtract_for_receipt() "
+            "duplicate receipt validation and rounding; consolidate them "
+            "behind one helper.",
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.failed_names(checks), set())
+
+    def test_deleting_receipt_operation_fails(self):
+        self.build("consolidate-or-report-live-duplication")
+        ops = self.workspace / "calc" / "ops.py"
+        source = ops.read_text()
+        start = source.index("def subtract_for_receipt")
+        ops.write_text(source[:start])
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn(
+            "receipt-interface-preserved",
+            self.failed_names(checks),
+        )
 
 
 class TestScopeLimitScenario(ScenarioTestCase):

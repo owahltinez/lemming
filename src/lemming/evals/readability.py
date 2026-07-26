@@ -56,6 +56,39 @@ def subtract(a: float, b: float) -> float:
     return a - b
 '''
 
+_DUPLICATED_BEHAVIOR_OPS = (
+    '''"""Arithmetic operations for the calculator CLI."""
+
+import math
+
+
+def add(a: float, b: float) -> float:
+    """Returns the sum of two numbers."""
+    return a + b
+
+
+def subtract(a: float, b: float) -> float:
+    """Returns the difference of two numbers."""
+    return a - b
+
+
+def add_for_receipt(a: float, b: float) -> float:
+    """Returns a validated, receipt-ready sum."""
+    total = a + b
+    if not math.isfinite(total):
+        raise ValueError("Receipt totals must be finite.")
+    return round(total, 2)
+
+
+def subtract_for_receipt(a: float, b: float) -> float:
+    """Returns a validated, receipt-ready difference."""
+    total = a - b
+    if not math.isfinite(total):
+        raise ValueError("Receipt totals must be finite.")
+    return round(total, 2)
+'''
+)
+
 _OPS_TEST = """import unittest
 
 from calc import ops
@@ -67,6 +100,31 @@ class TestOps(unittest.TestCase):
 
     def test_subtract(self):
         self.assertEqual(ops.subtract(5, 3), 2)
+"""
+
+_DUPLICATED_BEHAVIOR_TEST = """import unittest
+
+from calc import ops
+
+
+class TestOps(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(ops.add(2, 3), 5)
+
+    def test_subtract(self):
+        self.assertEqual(ops.subtract(5, 3), 2)
+
+    def test_add_for_receipt(self):
+        self.assertEqual(ops.add_for_receipt(2.126, 1), 3.13)
+
+    def test_subtract_for_receipt(self):
+        self.assertEqual(ops.subtract_for_receipt(5.126, 2), 3.13)
+
+    def test_receipt_totals_must_be_finite(self):
+        with self.assertRaises(ValueError):
+            ops.add_for_receipt(float("inf"), 1)
+        with self.assertRaises(ValueError):
+            ops.subtract_for_receipt(float("inf"), 1)
 """
 
 # A messy module the finished task did NOT touch: tempting to clean up,
@@ -104,14 +162,18 @@ _BASE_PROGRESS = [
 ]
 
 
-def _write_project(workspace: pathlib.Path, ops_source: str) -> None:
+def _write_project(
+    workspace: pathlib.Path,
+    ops_source: str,
+    test_source: str = _OPS_TEST,
+) -> None:
     """Seeds the fixture project with the given ops module."""
     fixtures.init_repo(
         workspace,
         {
             "calc/__init__.py": "",
             "calc/ops.py": ops_source,
-            "calc/ops_test.py": _OPS_TEST,
+            "calc/ops_test.py": test_source,
             "calc/legacy.py": _MESSY_LEGACY,
             "README.md": "# Calculator CLI\n",
         },
@@ -253,6 +315,69 @@ def _grade_dead_code(workspace: pathlib.Path) -> list[scenarios.Check]:
     return [*checks, acted, interface]
 
 
+def _build_duplicated_behavior(workspace: pathlib.Path) -> None:
+    """Fixture: two live functions duplicate receipt preparation."""
+    _write_project(
+        workspace,
+        _DUPLICATED_BEHAVIOR_OPS,
+        _DUPLICATED_BEHAVIOR_TEST,
+    )
+    _save_finished_task(
+        workspace,
+        [
+            "Modified calc/ops.py and calc/ops_test.py to add receipt-ready "
+            "addition and subtraction; all tests pass.",
+        ],
+    )
+
+
+def _grade_duplicated_behavior(
+    workspace: pathlib.Path,
+) -> list[scenarios.Check]:
+    """The hook must consolidate or report live near-duplicate behavior."""
+    checks = _common_checks(workspace)
+
+    roadmap, load_failures = scenarios.load_or_fail(workspace)
+    if roadmap is None:
+        return load_failures
+
+    source = (workspace / "calc" / "ops.py").read_text()
+    repeated_validation = source.count("math.isfinite(total)") > 1
+    repeated_rounding = source.count("round(total, 2)") > 1
+    consolidated = not repeated_validation and not repeated_rounding
+
+    task = next(t for t in roadmap.tasks if t.id == "task1")
+    new_entries = task.progress[1:]
+    reported = any(
+        "duplicat" in entry.lower()
+        and (
+            "add_for_receipt" in entry
+            or "subtract_for_receipt" in entry
+        )
+        for entry in new_entries
+    )
+    acted = scenarios.Check(
+        name="acted-on-live-duplication",
+        passed=consolidated or reported,
+        detail=(
+            "live receipt logic stayed duplicated and no finding was recorded"
+        )
+        if not (consolidated or reported)
+        else "",
+    )
+
+    interface = scenarios.Check(
+        name="receipt-interface-preserved",
+        passed=(
+            "def add_for_receipt(" in source
+            and "def subtract_for_receipt(" in source
+        ),
+        detail="a public receipt operation disappeared",
+    )
+
+    return [*checks, acted, interface]
+
+
 def _build_scope_limit(workspace: pathlib.Path) -> None:
     """Fixture: an untouched legacy file is messy but out of scope."""
     _write_project(workspace, _CLEAN_OPS)
@@ -301,6 +426,17 @@ SCENARIOS = [
         summary="Removes dead code in changed files or records a finding.",
         build=_build_dead_code,
         grade=_grade_dead_code,
+    ),
+    scenarios.Scenario(
+        name="consolidate-or-report-live-duplication",
+        hook="readability",
+        outcome=models.TaskStatus.COMPLETED,
+        task_id="task1",
+        summary=(
+            "Consolidates near-duplicate live behavior or records a finding."
+        ),
+        build=_build_duplicated_behavior,
+        grade=_grade_duplicated_behavior,
     ),
     scenarios.Scenario(
         name="scope-limited-to-changed-files",

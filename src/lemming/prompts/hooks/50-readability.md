@@ -18,7 +18,20 @@ keeps quality from drifting as tasks accumulate.
 1.  **Automate**: Immediately run `lemming readability check <path> --fix` for
     every file modified or created in the last task. This handles standard
     formatting (ruff, biome, prettier) and type checking (pyrefly).
-2.  **Review**: Read the changed files and look for quality drift that automated
+2.  **Challenge the Shape**: Before polishing the implementation, ask whether
+    the same behavior could use fewer concepts, files, branches, dependencies,
+    or abstractions. Prefer removing indirection over adding another layer.
+    In particular, look for:
+    - **Duplication and drift**: parallel implementations of the same behavior
+      or knowledge with only small variations. Reuse or consolidate an existing
+      implementation and parameterize genuine differences so there is one
+      source of truth.
+    - **False reuse**: code that merely looks similar but represents different
+      concepts. Do not force one-off similarities into a premature abstraction
+      just to satisfy DRY.
+    Make only local, behavior-preserving simplifications within the files
+    changed by the task. Record broader redesigns as progress.
+3.  **Review**: Read the changed files and look for quality drift that automated
     tools cannot catch:
     - **Excess complexity**: deep nesting, sprawling functions, needless
       indirection or premature abstraction, dead or duplicated code.
@@ -26,24 +39,24 @@ keeps quality from drifting as tasks accumulate.
       developer of the language would not write.
     - **Inconsistency**: code that diverges from the conventions of the
       surrounding codebase, or comments that no longer match the code.
-3.  **Consult**: Fetch the style guide with
+4.  **Consult**: Fetch the style guide with
     `lemming readability guide <language>` when reviewing and cite the relevant
     rule in your findings. Do not rely on memory for style rules.
-4.  **Fix**: Apply targeted, behavior-preserving fixes for the issues you find.
+5.  **Fix**: Apply targeted, behavior-preserving fixes for the issues you find.
     Keep each fix small and scoped to the files changed in the last task. Do not
     change public interfaces, feature behavior, or unrelated files; record those
     findings as progress instead of fixing them.
-5.  **Verify**: After any manual fix, run the relevant tests and re-run
+6.  **Verify**: After any manual fix, run the relevant tests and re-run
     `lemming readability check <path>`. If verification fails and the fix is not
     trivially repaired, revert your edits and record the finding as progress
     rather than letting changes snowball.
-6.  **Report**: Record meaningful findings and applied fixes as progress using
+7.  **Report**: Record meaningful findings and applied fixes as progress using
     `lemming progress {{finished_task_id}} '<finding>'`.
-7.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify
+8.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify
     significant issues that require follow-up work (e.g. a refactor spanning
     unrelated files), record them as progress so the roadmap hook can decide
     whether to add a new task.
-8.  **Fast Exit**: If the automated checks pass and your review finds no drift,
+9.  **Fast Exit**: If the automated checks pass and your review finds no drift,
     exit immediately.
 
 ## Commands
