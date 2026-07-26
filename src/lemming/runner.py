@@ -137,6 +137,16 @@ def build_runner_command(
     prompt_arg = None
 
     runner_base = os.path.basename(parts[0])
+    is_codex = runner_base.startswith("codex")
+
+    # Codex's non-interactive interface is the ``exec`` subcommand. Accept an
+    # explicitly configured ``codex exec``/``codex e`` without duplicating the
+    # subcommand, while still making a bare ``codex`` suitable for automation.
+    if is_codex:
+        if extra_parts and extra_parts[0] in {"exec", "e"}:
+            cmd.append(extra_parts.pop(0))
+        else:
+            cmd.append("exec")
 
     if not no_defaults:
         if runner_base.startswith("agy"):
@@ -166,10 +176,12 @@ def build_runner_command(
                 cmd.append("--dangerously-skip-permissions")
             cmd.extend(["--output-format=stream-json", "--verbose"])
             prompt_arg = "--print"
-        elif runner_base.startswith("codex"):
+        elif is_codex:
             if yolo:
-                cmd.append("--yolo")
-            prompt_arg = "--instructions"
+                cmd.append("--dangerously-bypass-approvals-and-sandbox")
+            # JSONL events make agent messages and tool activity visible in
+            # Lemming's live task log.
+            cmd.append("--json")
 
     if extra_parts:
         cmd.extend(extra_parts)

@@ -52,6 +52,36 @@ def test_build_runner_command_aider():
     assert "--message" in cmd
 
 
+def test_build_runner_command_codex():
+    cmd = runner.build_runner_command("codex", "my prompt", yolo=True)
+    assert cmd == [
+        "codex",
+        "exec",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--json",
+        "my prompt",
+    ]
+
+
+def test_build_runner_command_codex_without_yolo():
+    cmd = runner.build_runner_command("codex", "my prompt", yolo=False)
+    assert cmd == ["codex", "exec", "--json", "my prompt"]
+
+
+def test_build_runner_command_codex_without_defaults_still_uses_exec():
+    cmd = runner.build_runner_command(
+        "codex", "my prompt", yolo=True, no_defaults=True
+    )
+    assert cmd == ["codex", "exec", "my prompt"]
+
+
+def test_build_runner_command_codex_does_not_duplicate_explicit_exec():
+    cmd = runner.build_runner_command(
+        "codex exec --ephemeral", "my prompt", yolo=False
+    )
+    assert cmd == ["codex", "exec", "--json", "--ephemeral", "my prompt"]
+
+
 def test_build_runner_command_with_flags_in_name():
     cmd = runner.build_runner_command(
         "claude-corp -- --output-format=stream-json", "my prompt", yolo=True

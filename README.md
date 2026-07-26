@@ -291,10 +291,12 @@ Lemming uses **fuzzy matching** to automatically inject the correct "YOLO"
 - **Antigravity (`agy`)**: Adds `--dangerously-skip-permissions`
 - **Aider**: Adds `--yes --quiet`
 - **Claude**: Adds `--dangerously-skip-permissions`
-- **Codex**: Adds `--yolo`
+- **Codex**: Runs non-interactively via `codex exec`, adds `--json`, and, in
+  YOLO mode, adds `--dangerously-bypass-approvals-and-sandbox`
 
-You can disable this behavior with `--no-defaults`, or use a **template** to
-fully control the command layout:
+You can disable default flag injection with `--no-defaults` (`codex exec`
+remains the Codex execution interface), or use a **template** to fully control
+the command layout:
 
 ```bash
 lemming run --runner "my-tool --input={{prompt}} --json"
