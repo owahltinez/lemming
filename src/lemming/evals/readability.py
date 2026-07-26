@@ -57,9 +57,8 @@ def subtract(a: float, b: float) -> float:
 '''
 
 _DUPLICATED_BEHAVIOR_OPS = (
-    '''"""Arithmetic operations for the calculator CLI."""
-
-import math
+    '"""Arithmetic operations for the calculator CLI."""\n\n'
+    '''import math
 
 
 def add(a: float, b: float) -> float:
@@ -350,10 +349,7 @@ def _grade_duplicated_behavior(
     new_entries = task.progress[1:]
     reported = any(
         "duplicat" in entry.lower()
-        and (
-            "add_for_receipt" in entry
-            or "subtract_for_receipt" in entry
-        )
+        and ("add_for_receipt" in entry or "subtract_for_receipt" in entry)
         for entry in new_entries
     )
     acted = scenarios.Check(
