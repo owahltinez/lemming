@@ -162,8 +162,7 @@ File Path: {{tasks_file_path}}
 
     # Verify roadmap substitution
     assert "Roadmap: ## Long-Term Goal" in prompt
-    assert "**[COMPLETED] (task1) Task 1**" in prompt
-    assert "  - Done" in prompt
+    assert "**[COMPLETED] (task1) — current task; details below**" in prompt
     assert "- [IN PROGRESS] (task2) Task 2" in prompt
 
     # Verify finished task substitution
@@ -171,10 +170,99 @@ File Path: {{tasks_file_path}}
     assert "Description: Task 1" in prompt
     assert "Result: completed" in prompt
     assert "Progress recorded during this attempt:\n- Done" in prompt
+    assert prompt.count("Task 1") == 1
+    assert prompt.count("- Done") == 1
 
     # Verify log inclusion
     assert "Execution log of THIS task" in prompt
     assert "line 1\nline 2\nline 3" in prompt
+
+
+def test_prepare_prompt_deduplicates_current_task_and_bounds_progress(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    description = "Unique current assignment"
+    progress = [f"attempt finding {index}" for index in range(5)]
+    task = tasks.Task(id="current", description=description, progress=progress)
+    data = tasks.Roadmap(tasks=[task])
+
+    prompt = prompts.prepare_prompt(data, task, tasks_file)
+
+    assert prompt.count(description) == 1
+    assert "attempt finding 0" not in prompt
+    assert "attempt finding 1" not in prompt
+    assert prompt.count("attempt finding 2") == 1
+    assert prompt.count("attempt finding 3") == 1
+    assert prompt.count("attempt finding 4") == 1
+    assert "2 earlier progress entry(s) omitted" in prompt
+
+
+def test_format_roadmap_has_global_budget_and_prioritizes_active_tasks():
+    completed = [
+        tasks.Task(
+            id=f"done-{index}",
+            description=f"completed {index} " + ("d" * 5_000),
+            status=tasks.TaskStatus.COMPLETED,
+            progress=["p" * 5_000 for _ in range(10)],
+        )
+        for index in range(400)
+    ]
+    active = tasks.Task(
+        id="next",
+        description="ACTIONABLE TASK " + ("a" * 5_000),
+        progress=["important " + ("p" * 5_000) for _ in range(10)],
+    )
+    current = tasks.Task(
+        id="current",
+        description="CURRENT DESCRIPTION MUST NOT BE IN ROADMAP",
+    )
+    data = tasks.Roadmap(tasks=[*completed, active, current])
+
+    roadmap = prompts._format_roadmap(
+        data,
+        current_task_id=current.id,
+        policy=prompts._RUNNER_ROADMAP_POLICY,
+    )
+
+    assert len(roadmap) <= prompts._RUNNER_ROADMAP_POLICY.total_chars
+    assert "task(s) omitted" in roadmap
+    assert "ACTIONABLE TASK" in roadmap
+    assert "CURRENT DESCRIPTION MUST NOT BE IN ROADMAP" not in roadmap
+    assert "current task; details below" in roadmap
+
+
+def test_review_hook_roadmap_uses_smaller_context_budget():
+    data = tasks.Roadmap(
+        goal="g" * 10_000,
+        tasks=[
+            tasks.Task(id=str(index), description="d" * 1_000)
+            for index in range(100)
+        ],
+    )
+
+    roadmap = prompts._format_roadmap(
+        data,
+        policy=prompts._REVIEW_HOOK_POLICY,
+    )
+
+    assert len(roadmap) <= prompts._REVIEW_HOOK_POLICY.total_chars
+    assert "task(s) omitted" in roadmap
+
+
+def test_log_excerpt_is_byte_bounded_for_one_giant_json_line(tmp_path):
+    log_file = tmp_path / "runner.log"
+    log_file.write_text(
+        'Command: runner "old prompt"\n'
+        '{"type":"result","signature":"'
+        + ("🙂" * 30_000)
+        + '","result":"END_SENTINEL"}'
+    )
+
+    excerpt = prompts._read_log_excerpt(log_file)
+
+    assert len(excerpt.encode("utf-8")) <= prompts.MAX_LOG_CONTEXT_BYTES
+    assert "earlier log output omitted" in excerpt
+    assert "old prompt" not in excerpt
+    assert excerpt.endswith('","result":"END_SENTINEL"}')
 
 
 def test_prepare_prompt_local_override(tmp_path):

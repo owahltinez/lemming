@@ -1,8 +1,210 @@
 """Prompt template loading and rendering for runners and orchestrator hooks."""
 
+import dataclasses
 import pathlib
 
 from . import hooks, paths, runner, tasks
+
+MAX_LOG_CONTEXT_BYTES = 16 * 1024
+MAX_DETAILED_PROGRESS_ENTRIES = 3
+MAX_DETAILED_PROGRESS_ENTRY_CHARS = 4_000
+_LOG_SCAN_MULTIPLIER = 4
+_OMISSION_MARKER_RESERVE = 160
+_REVIEW_HOOKS = frozenset({"readability", "testing", "ux"})
+
+
+@dataclasses.dataclass(frozen=True)
+class _RoadmapContextPolicy:
+    """Size and detail limits for one roadmap prompt context."""
+
+    total_chars: int
+    goal_chars: int
+    active_description_chars: int
+    terminal_description_chars: int
+    progress_entries: int
+    progress_entry_chars: int
+    completed_progress_tasks: int
+
+
+_RUNNER_ROADMAP_POLICY = _RoadmapContextPolicy(
+    total_chars=64_000,
+    goal_chars=8_000,
+    active_description_chars=1_000,
+    terminal_description_chars=200,
+    progress_entries=3,
+    progress_entry_chars=1_000,
+    completed_progress_tasks=5,
+)
+_ROADMAP_HOOK_POLICY = _RoadmapContextPolicy(
+    total_chars=64_000,
+    goal_chars=16_000,
+    active_description_chars=2_000,
+    terminal_description_chars=200,
+    progress_entries=3,
+    progress_entry_chars=2_000,
+    completed_progress_tasks=5,
+)
+_REVIEW_HOOK_POLICY = _RoadmapContextPolicy(
+    total_chars=16_000,
+    goal_chars=4_000,
+    active_description_chars=300,
+    terminal_description_chars=160,
+    progress_entries=0,
+    progress_entry_chars=0,
+    completed_progress_tasks=0,
+)
+_TERMINAL_STATUSES = frozenset(
+    {
+        tasks.TaskStatus.COMPLETED,
+        tasks.TaskStatus.CANCELLED,
+        tasks.TaskStatus.SUPERSEDED,
+    }
+)
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    """Truncates text to an exact character ceiling."""
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 1:
+        return text[:max_chars]
+    return f"{text[: max_chars - 1]}…"
+
+
+def _compact_text(text: str, max_chars: int) -> str:
+    """Turns arbitrary task text into a bounded single-line summary."""
+    return _truncate_text(" ".join(text.split()), max_chars)
+
+
+def _status_marker(
+    task: tasks.Task,
+    effective_status: tasks.TaskStatus,
+    retries: int,
+    *,
+    is_current: bool,
+) -> str:
+    """Formats a task status without allowing metadata to dominate context."""
+    if effective_status == tasks.TaskStatus.COMPLETED:
+        return "[COMPLETED]"
+    if effective_status == tasks.TaskStatus.FAILED:
+        return f"[FAILED - {task.attempts}/{retries} attempt(s)]"
+    if effective_status == tasks.TaskStatus.SUPERSEDED:
+        reason = (
+            f" - {_compact_text(task.superseded_reason, 200)}"
+            if task.superseded_reason
+            else ""
+        )
+        return f"[SUPERSEDED{reason}]"
+    if effective_status == tasks.TaskStatus.CANCELLED:
+        return "[CANCELLED]"
+    if task.status == tasks.TaskStatus.IN_PROGRESS or is_current:
+        return "[IN PROGRESS]"
+    if task.attempts > 0:
+        return f"[PENDING - {task.attempts}/{retries} attempt(s) so far]"
+    return "[PENDING]"
+
+
+def _format_recent_progress(
+    progress: list[str],
+    *,
+    entries: int,
+    entry_chars: int,
+    indent: str = "",
+) -> str:
+    """Formats only the most recent bounded progress entries."""
+    if not progress or entries <= 0 or entry_chars <= 0:
+        return ""
+
+    lines: list[str] = []
+    omitted = max(0, len(progress) - entries)
+    if omitted:
+        lines.append(f"{indent}- … {omitted} earlier progress entry(s) omitted")
+    for item in progress[-entries:]:
+        lines.append(f"{indent}- {_compact_text(item, entry_chars)}")
+    return "\n".join(lines) + "\n"
+
+
+def _format_task_block(
+    task: tasks.Task,
+    *,
+    current_task_id: str | None,
+    retries: int,
+    policy: _RoadmapContextPolicy,
+    recent_completed_ids: set[str],
+) -> str:
+    """Formats one task according to a bounded roadmap policy."""
+    effective_status = task.requested_status or task.status
+    marker = _status_marker(
+        task,
+        effective_status,
+        retries,
+        is_current=task.id == current_task_id,
+    )
+    task_id = _compact_text(task.id, 100)
+
+    if task.id == current_task_id:
+        return f"- **{marker} ({task_id}) — current task; details below**\n"
+
+    description_limit = (
+        policy.terminal_description_chars
+        if effective_status in _TERMINAL_STATUSES
+        else policy.active_description_chars
+    )
+    description = _compact_text(task.description, description_limit)
+    block = f"- {marker} ({task_id}) {description}\n"
+
+    include_progress = (
+        effective_status != tasks.TaskStatus.COMPLETED
+        or task.id in recent_completed_ids
+    )
+    if include_progress:
+        block += _format_recent_progress(
+            task.progress,
+            entries=policy.progress_entries,
+            entry_chars=policy.progress_entry_chars,
+            indent="  ",
+        )
+    return block
+
+
+def _read_log_excerpt(log_file: pathlib.Path) -> str:
+    """Reads a bounded tail without loading an entire runner log into memory."""
+    scan_bytes = MAX_LOG_CONTEXT_BYTES * _LOG_SCAN_MULTIPLIER
+    with log_file.open("rb") as log:
+        size = log.seek(0, 2)
+        start = max(0, size - scan_bytes)
+        log.seek(start)
+        raw_tail = log.read(scan_bytes)
+
+    decoded = raw_tail.decode("utf-8", errors="replace")
+    filtered = "\n".join(
+        line
+        for line in decoded.splitlines()
+        if not line.startswith("Command: ")
+    )
+    encoded = filtered.encode("utf-8")
+    was_truncated = start > 0 or len(encoded) > MAX_LOG_CONTEXT_BYTES
+    if not was_truncated:
+        return filtered
+
+    marker = "[… earlier log output omitted …]\n"
+    payload_bytes = MAX_LOG_CONTEXT_BYTES - len(marker.encode("utf-8"))
+    tail = encoded[-payload_bytes:].decode("utf-8", errors="ignore")
+    return marker + tail
+
+
+def _roadmap_task_priority(
+    task: tasks.Task,
+    index: int,
+    current_task_id: str | None,
+) -> tuple[int, int]:
+    """Prioritizes actionable tasks while favoring recent history."""
+    if task.id == current_task_id:
+        return (0, index)
+    effective_status = task.requested_status or task.status
+    if effective_status not in _TERMINAL_STATUSES:
+        return (1, index)
+    return (2, -index)
 
 
 def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
@@ -38,66 +240,77 @@ def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
 
 
 def _format_roadmap(
-    data: tasks.Roadmap, current_task_id: str | None = None
+    data: tasks.Roadmap,
+    current_task_id: str | None = None,
+    *,
+    policy: _RoadmapContextPolicy = _ROADMAP_HOOK_POLICY,
 ) -> str:
     """Formats the roadmap for inclusion in prompts.
 
     Args:
         data: The current Roadmap.
         current_task_id: ID of the task currently being executed, if any.
+        policy: Context limits for the prompt being prepared.
 
     Returns:
         A formatted roadmap string.
     """
-    roadmap_str = f"## Long-Term Goal\n{data.goal or 'No goal provided.'}\n\n"
-    roadmap_str += "## Roadmap\n"
+    goal = _truncate_text(data.goal or "No goal provided.", policy.goal_chars)
+    prefix = f"## Long-Term Goal\n{goal}\n\n## Roadmap\n"
 
-    completed_tasks = [
-        t
-        for t in data.tasks
-        if (t.requested_status or t.status) == tasks.TaskStatus.COMPLETED
+    completed_ids = [
+        task.id
+        for task in data.tasks
+        if (task.requested_status or task.status) == tasks.TaskStatus.COMPLETED
+    ]
+    recent_completed_ids = (
+        set(completed_ids[-policy.completed_progress_tasks :])
+        if policy.completed_progress_tasks > 0
+        else set()
+    )
+    blocks = [
+        _format_task_block(
+            task,
+            current_task_id=current_task_id,
+            retries=data.config.retries,
+            policy=policy,
+            recent_completed_ids=recent_completed_ids,
+        )
+        for task in data.tasks
     ]
 
-    for i, t in enumerate(data.tasks):
-        effective_status = t.requested_status or t.status
-        if effective_status == tasks.TaskStatus.COMPLETED:
-            marker = "[COMPLETED]"
-        elif effective_status == tasks.TaskStatus.FAILED:
-            marker = f"[FAILED - {t.attempts}/{data.config.retries} attempt(s)]"
-        elif effective_status == tasks.TaskStatus.SUPERSEDED:
-            reason = f" - {t.superseded_reason}" if t.superseded_reason else ""
-            marker = f"[SUPERSEDED{reason}]"
-        elif (
-            t.status == tasks.TaskStatus.IN_PROGRESS or t.id == current_task_id
-        ):
-            marker = "[IN PROGRESS]"
-        elif t.attempts > 0:
-            marker = (
-                f"[PENDING - {t.attempts}/{data.config.retries}"
-                " attempt(s) so far]"
-            )
-        else:
-            marker = "[PENDING]"
+    # Preserve the current and actionable tasks before historical terminal
+    # tasks. The selected blocks are restored to roadmap order for readability.
+    prioritized_indexes = sorted(
+        range(len(data.tasks)),
+        key=lambda index: _roadmap_task_priority(
+            data.tasks[index],
+            index,
+            current_task_id,
+        ),
+    )
+    available = max(
+        0,
+        policy.total_chars - len(prefix) - _OMISSION_MARKER_RESERVE,
+    )
+    selected: set[int] = set()
+    selected_chars = 0
+    for index in prioritized_indexes:
+        block_chars = len(blocks[index])
+        if selected_chars + block_chars <= available:
+            selected.add(index)
+            selected_chars += block_chars
 
-        # Bold the current task to make it stand out
-        if t.id == current_task_id:
-            roadmap_str += f"- **{marker} ({t.id}) {t.description}**\n"
-        else:
-            roadmap_str += f"- {marker} ({t.id}) {t.description}\n"
-
-        if t.progress:
-            # For completed tasks, only show progress for the last 5 to
-            # keep the prompt concise
-            if effective_status == tasks.TaskStatus.COMPLETED:
-                completed_index = completed_tasks.index(t)
-                if len(completed_tasks) - completed_index <= 5:
-                    for o in t.progress:
-                        roadmap_str += f"  - {o}\n"
-            else:
-                for o in t.progress:
-                    roadmap_str += f"  - {o}\n"
-
-    return roadmap_str
+    roadmap = prefix + "".join(
+        block for index, block in enumerate(blocks) if index in selected
+    )
+    omitted = len(blocks) - len(selected)
+    if omitted:
+        roadmap += (
+            f"- … {omitted} task(s) omitted to keep roadmap context within "
+            f"{policy.total_chars} characters.\n"
+        )
+    return roadmap
 
 
 def prepare_hook_prompt(
@@ -117,7 +330,16 @@ def prepare_hook_prompt(
     Returns:
         The fully rendered hook prompt string.
     """
-    roadmap_str = _format_roadmap(data, current_task_id=finished_task.id)
+    policy = (
+        _REVIEW_HOOK_POLICY
+        if hook_name in _REVIEW_HOOKS
+        else _ROADMAP_HOOK_POLICY
+    )
+    roadmap_str = _format_roadmap(
+        data,
+        current_task_id=finished_task.id,
+        policy=policy,
+    )
 
     # Use requested_status when available — it reflects the actual outcome
     # (e.g. FAILED) while status may still be IN_PROGRESS during hook execution.
@@ -149,26 +371,25 @@ def prepare_hook_prompt(
 
     if finished_task.progress:
         finished_str += "Progress recorded during this attempt:\n"
-        for o in finished_task.progress:
-            finished_str += f"- {o}\n"
+        finished_str += _format_recent_progress(
+            finished_task.progress,
+            entries=MAX_DETAILED_PROGRESS_ENTRIES,
+            entry_chars=MAX_DETAILED_PROGRESS_ENTRY_CHARS,
+        )
 
-    # Include the last 100 lines of the runner log for the finished task.
+    # Include a byte-bounded tail of the runner log for the finished task.
     # We filter out 'Command:' lines because they contain the full previous
     # prompt and cause exponential escaping growth when prompts are re-quoted.
     log_file = paths.get_log_file(tasks_file, finished_task.id)
     if log_file.exists():
         try:
-            with open(log_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                filtered = [
-                    line for line in lines if not line.startswith("Command: ")
-                ]
-                last_lines = [line.rstrip() for line in filtered[-100:]]
+            excerpt = _read_log_excerpt(log_file)
+            if excerpt:
                 finished_str += (
-                    "\nExecution log of THIS task (last 100 lines):\n"
+                    "\nExecution log of THIS task (bounded recent excerpt):\n"
                 )
                 finished_str += "```\n"
-                finished_str += "\n".join(last_lines)
+                finished_str += excerpt
                 finished_str += "\n```\n"
         except Exception as e:
             finished_str += f"\n(Could not read log file: {e})\n"
@@ -202,7 +423,11 @@ def prepare_prompt(
     Returns:
         The fully rendered prompt string.
     """
-    roadmap_str = _format_roadmap(data, current_task_id=task.id)
+    roadmap_str = _format_roadmap(
+        data,
+        current_task_id=task.id,
+        policy=_RUNNER_ROADMAP_POLICY,
+    )
 
     # Add parent task context if it's from another project
     if task.parent and task.parent_tasks_file:
@@ -218,18 +443,31 @@ def prepare_prompt(
                     roadmap_str += (
                         "\n## Parent Task Context (From root project)\n"
                     )
-                    roadmap_str += f"- [ ] {parent_task.description}\n"
+                    description = _compact_text(
+                        parent_task.description,
+                        _RUNNER_ROADMAP_POLICY.active_description_chars,
+                    )
+                    roadmap_str += f"- [ ] {description}\n"
                     if parent_task.progress:
-                        for progress_item in parent_task.progress:
-                            roadmap_str += f"  - {progress_item}\n"
+                        roadmap_str += _format_recent_progress(
+                            parent_task.progress,
+                            entries=_RUNNER_ROADMAP_POLICY.progress_entries,
+                            entry_chars=(
+                                _RUNNER_ROADMAP_POLICY.progress_entry_chars
+                            ),
+                            indent="  ",
+                        )
         except Exception:
             pass
 
     progress_str = ""
     if task.progress:
         progress_str = "### Progress from Previous Attempts on THIS Task\n"
-        for progress_item in task.progress:
-            progress_str += f"- {progress_item}\n"
+        progress_str += _format_recent_progress(
+            task.progress,
+            entries=MAX_DETAILED_PROGRESS_ENTRIES,
+            entry_chars=MAX_DETAILED_PROGRESS_ENTRY_CHARS,
+        )
         progress_str += "\n"
 
     time_limit_section = ""

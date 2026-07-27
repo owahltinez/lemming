@@ -155,10 +155,16 @@ Your hook template can use the following placeholders:
 
 - `{{roadmap}}`: A structured summary of the long-term goal and all tasks.
 - `{{finished_task}}`: Details about the task that just finished (ID,
-  description, progress, and the last 100 lines of its execution log).
+  description, recent progress, and a recent execution-log excerpt capped at
+  16 KiB).
 - `{{finished_task_id}}`: The ID of the task that just finished.
 - `{{tasks_file_name}}`: The filename of the tasks YAML file.
 - `{{tasks_file_path}}`: The full path to the tasks YAML file.
+
+Roadmap context is size-bounded and prioritizes current and actionable tasks
+over older completed history. Readability, testing, and UX hooks receive a
+smaller roadmap summary because their primary context is the finished task and
+the workspace.
 
 ## Developer Ergonomics
 
