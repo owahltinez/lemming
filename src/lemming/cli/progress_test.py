@@ -38,3 +38,23 @@ def test_progress(setup_env):
 
     data = tasks.load_tasks(tasks_file)
     assert "Observed behavior X" in data.tasks[0].progress
+
+
+def test_progress_reports_actionable_size_error(setup_env):
+    runner, base_args, tasks_file = setup_env
+
+    result = runner.invoke(
+        cli.cli,
+        base_args
+        + [
+            "progress",
+            "12345678",
+            "x" * (tasks.MAX_PROGRESS_ENTRY_CHARS + 1),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "281 characters (limit 280)" in result.output
+    assert "Write detailed evidence or verbose command output" in result.output
+    assert str(tasks_file.parent) not in result.output
+    assert tasks.load_tasks(tasks_file).tasks[0].progress == []

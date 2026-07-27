@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from .. import models, paths, persistence
-from . import lifecycle, operations, queries
+from . import lifecycle, limits, operations, queries
 
 
 def test_add_task_captures_parent_project(tmp_path):
@@ -43,6 +43,30 @@ def test_add_task(tmp_path):
     data = persistence.load_tasks(tasks_file)
     assert len(data.tasks) == 1
     assert data.tasks[0].created_at == task.created_at
+
+
+def test_add_task_enforces_description_size_limit(tmp_path, monkeypatch):
+    lemming_home = tmp_path / "lemming-home"
+    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
+    tasks_file = tmp_path / "project" / "tasks.yml"
+
+    accepted = operations.add_task(
+        tasks_file,
+        "a" * limits.MAX_TASK_DESCRIPTION_CHARS,
+    )
+    assert len(accepted.description) == limits.MAX_TASK_DESCRIPTION_CHARS
+
+    with pytest.raises(ValueError) as excinfo:
+        operations.add_task(
+            tasks_file,
+            "b" * (limits.MAX_TASK_DESCRIPTION_CHARS + 1),
+        )
+
+    message = str(excinfo.value)
+    assert "2,001 characters (limit 2,000)" in message
+    assert "move shared rules to the long-term goal" in message
+    assert str(paths.get_project_dir(tasks_file)) in message
+    assert len(persistence.load_tasks(tasks_file).tasks) == 1
 
 
 def test_add_task_does_not_reuse_retained_log_id(tmp_path, monkeypatch):
@@ -83,6 +107,48 @@ def test_update_task_description(tmp_path):
         operations.update_task(
             tasks_file, task_id, description="Trying to change"
         )
+
+
+def test_update_task_rejects_oversized_description_without_mutating(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = operations.add_task(tasks_file, "Original description")
+
+    with pytest.raises(ValueError, match=r"2,001 characters \(limit 2,000\)"):
+        operations.update_task(
+            tasks_file,
+            task.id,
+            description="x" * (limits.MAX_TASK_DESCRIPTION_CHARS + 1),
+        )
+
+    persisted = persistence.load_tasks(tasks_file).tasks[0]
+    assert persisted.description == "Original description"
+
+
+def test_legacy_oversized_content_remains_readable_and_updatable(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    legacy_description = "d" * (limits.MAX_TASK_DESCRIPTION_CHARS + 1)
+    legacy_progress = "p" * (limits.MAX_PROGRESS_ENTRY_CHARS + 1)
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="legacy",
+                    description=legacy_description,
+                    progress=[legacy_progress],
+                )
+            ]
+        ),
+    )
+
+    loaded = persistence.load_tasks(tasks_file)
+    assert loaded.tasks[0].description == legacy_description
+    updated = operations.update_task(tasks_file, "legacy", runner="claude")
+
+    assert updated.runner == "claude"
+    persisted = persistence.load_tasks(tasks_file).tasks[0]
+    assert persisted.description == legacy_description
+    assert persisted.progress == [legacy_progress]
 
 
 def test_update_task_runner(tmp_path):

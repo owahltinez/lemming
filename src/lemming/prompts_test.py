@@ -7,6 +7,9 @@ def test_load_prompt():
     prompt = prompts.load_prompt("taskrunner")
     assert "roadmap" in prompt
     assert "description" in prompt
+    assert "{{max_task_description_chars}}" in prompt
+    assert "{{max_progress_entry_chars}}" in prompt
+    assert "{{tasks_dir}}" in prompt
 
 
 def test_load_builtin_ux_prompt():
@@ -27,7 +30,9 @@ def test_load_builtin_readability_prompt_includes_simplification():
     assert "False reuse" in prompt
 
 
-def test_prepare_prompt(tmp_path):
+def test_prepare_prompt(tmp_path, monkeypatch):
+    lemming_home = tmp_path / "lemming-home"
+    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
     tasks_file = tmp_path / "tasks.yml"
     data = tasks.Roadmap(
         goal="My goal",
@@ -49,6 +54,10 @@ def test_prepare_prompt(tmp_path):
     assert "T2" in prompt
     assert "T1" in prompt
     assert "O1" in prompt
+    assert str(paths.get_project_dir(tasks_file)) in prompt
+    assert "{{tasks_dir}}" not in prompt
+    assert "no more than 2,000 characters" in prompt
+    assert "280 characters" in prompt
 
 
 def test_prepare_prompt_with_parent_context(tmp_path):
@@ -149,6 +158,9 @@ Finished Task: {{finished_task}}
 ID: {{finished_task_id}}
 File Name: {{tasks_file_name}}
 File Path: {{tasks_file_path}}
+Tasks Dir: {{tasks_dir}}
+Description Limit: {{max_task_description_chars}}
+Progress Limit: {{max_progress_entry_chars}}
 """)
 
     # Mock log file
@@ -172,6 +184,9 @@ File Path: {{tasks_file_path}}
     assert "Progress recorded during this attempt:\n- Done" in prompt
     assert prompt.count("Task 1") == 1
     assert prompt.count("- Done") == 1
+    assert f"Tasks Dir: {paths.get_project_dir(tasks_file)}" in prompt
+    assert "Description Limit: 2,000" in prompt
+    assert "Progress Limit: 280" in prompt
 
     # Verify log inclusion
     assert "Execution log of THIS task" in prompt

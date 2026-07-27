@@ -395,6 +395,7 @@ def prepare_hook_prompt(
             finished_str += f"\n(Could not read log file: {e})\n"
 
     tasks_file_str = runner._pretty_quote(str(tasks_file))
+    tasks_dir = str(paths.get_project_dir(tasks_file))
     prompt_template = load_prompt(hook_name, tasks_file)
 
     return (
@@ -403,6 +404,15 @@ def prepare_hook_prompt(
         .replace("{{finished_task_id}}", finished_task.id)
         .replace("{{tasks_file_name}}", tasks_file.name)
         .replace("{{tasks_file_path}}", tasks_file_str)
+        .replace("{{tasks_dir}}", tasks_dir)
+        .replace(
+            "{{max_task_description_chars}}",
+            f"{tasks.MAX_TASK_DESCRIPTION_CHARS:,}",
+        )
+        .replace(
+            "{{max_progress_entry_chars}}",
+            f"{tasks.MAX_PROGRESS_ENTRY_CHARS:,}",
+        )
     )
 
 
@@ -493,6 +503,7 @@ def prepare_prompt(
         )
 
     tasks_file_str = runner._pretty_quote(str(tasks_file))
+    tasks_dir = str(paths.get_project_dir(tasks_file))
     prompt_template = load_prompt("taskrunner", tasks_file)
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)
@@ -500,6 +511,15 @@ def prepare_prompt(
         .replace("{{description}}", task.description)
         .replace("{{tasks_file_name}}", tasks_file.name)
         .replace("{{tasks_file_path}}", tasks_file_str)
+        .replace("{{tasks_dir}}", tasks_dir)
+        .replace(
+            "{{max_task_description_chars}}",
+            f"{tasks.MAX_TASK_DESCRIPTION_CHARS:,}",
+        )
+        .replace(
+            "{{max_progress_entry_chars}}",
+            f"{tasks.MAX_PROGRESS_ENTRY_CHARS:,}",
+        )
         .replace("{{task_id}}", task.id)
         .replace("{{time_limit_section}}", time_limit_section)
     )

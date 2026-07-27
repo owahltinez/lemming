@@ -5,7 +5,7 @@ import pathlib
 import time
 
 from .. import models, paths, persistence
-from . import lifecycle, queries
+from . import lifecycle, limits, queries
 
 _DONE_STATUSES = (
     models.TaskStatus.COMPLETED,
@@ -64,6 +64,8 @@ def add_task(
     Returns:
         The newly created Task.
     """
+    limits.validate_task_description(tasks_file, description)
+
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
 
@@ -264,6 +266,9 @@ def update_task(
 
         if target.status == models.TaskStatus.COMPLETED and description:
             raise ValueError("Cannot edit description of a completed task")
+
+        if description is not None:
+            limits.validate_task_description(tasks_file, description)
 
         if require_progress and not target.progress:
             raise ValueError(

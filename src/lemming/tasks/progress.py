@@ -3,6 +3,7 @@
 import pathlib
 
 from .. import models, persistence
+from . import limits
 
 
 def add_progress(
@@ -24,6 +25,7 @@ def add_progress(
         if not target:
             raise ValueError(f"Task {task_id} not found")
 
+        limits.validate_progress_entry(tasks_file, text)
         target.progress.append(text)
         persistence.save_tasks(tasks_file, data)
     return target

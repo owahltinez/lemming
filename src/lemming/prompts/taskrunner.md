@@ -36,33 +36,33 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
      a fresh, empty conversation history. Their only context is the global
      roadmap, previously recorded progress from completed tasks, and the state
      of the file system.
-   - **Self-Contained Descriptions:** Because of this isolation, you MUST write
-     extremely thorough, self-contained descriptions for any new tasks you
-     schedule. Reference specific task IDs, file paths, and exact symbols so the
-     new task knows exactly what to do.
-   - **Complex Handoffs:** If you need to pass extensive context (like detailed
-     architectural plans, specific error traces, or large code snippets) to a
-     downstream task, do not rely on the brief progress messages alone. Instead,
-     create a dedicated file in the workspace to hold this context, and
-     explicitly mention its path in the new task's description. Use this
-     technique judiciously to avoid creating a mess of orphaned files in the
-     project.
+   - **Task-Specific Descriptions:** New task descriptions must be concise,
+     self-contained, and no more than {{max_task_description_chars}} characters.
+     Include the file paths, symbols, motivation, and acceptance criteria that
+     task needs, but do not restate project-wide rules already present in the
+     long-term goal.
+   - **Detailed Evidence:** Keep verbose gate output, transcripts, error traces,
+     and other ephemeral evidence in `{{tasks_dir}}`, which is Lemming's
+     per-project scratch directory outside the workspace. Reference the file
+     from a task description or progress entry when another attempt needs it.
+     Put conclusions that must outlive the task in the commit message or a
+     decision document in the repository.
 
-4. **Progress:** Your first action should be to record a brief progress entry
-   describing how you intend to approach this task — e.g. which files you will
-   modify, what strategy you will use. This lets the operator verify your
-   direction early. Then continue recording progress as you work: each time you
-   complete a meaningful step, discover something relevant, or hit a problem,
-   record it immediately. If your process is killed, recorded progress carries
-   over to the next attempt. At least one progress entry is required before
+4. **Progress:** Your first action should be to record a one-line progress entry
+   describing your approach. Continue recording concise findings as you work,
+   but keep each entry to one line and no more than
+   {{max_progress_entry_chars}} characters. Do not paste command output or
+   detailed evidence into progress; write it under `{{tasks_dir}}` and reference
+   the file instead. If your process is killed, recorded progress carries over
+   to the next attempt. At least one progress entry is required before
    completing or failing a task:
    `lemming --tasks-file {{tasks_file_path}} progress {{task_id}} '<what you did or found>'`
 5. **Success:** When you have completely finished and verified the task, and
-   recorded ALL relevant progress (at least one is required), run:
+   recorded relevant progress (at least one entry is required), run:
    `lemming --tasks-file {{tasks_file_path}} complete {{task_id}}`
 6. **Failure/Blocker:** If you hit a technical roadblock, cannot fix a bug, or
-   are unable to complete the task, after recording ALL relevant progress (at
-   least one is required), run:
+   are unable to complete the task, after recording relevant progress (at least
+   one entry is required), run:
    `lemming --tasks-file {{tasks_file_path}} fail {{task_id}}`
 
 7. Stop and exit after running either the complete or fail command.

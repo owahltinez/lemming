@@ -30,6 +30,19 @@ def test_add_task(client, test_tasks):
     assert any(t.description == "New task from test" for t in roadmap.tasks)
 
 
+def test_add_task_rejects_oversized_description(client, test_tasks):
+    response = client.post(
+        "/api/tasks",
+        json={
+            "description": "x" * (tasks.MAX_TASK_DESCRIPTION_CHARS + 1),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "2,001 characters (limit 2,000)" in response.json()["detail"]
+    assert len(tasks.load_tasks(test_tasks).tasks) == 3
+
+
 def test_add_task_with_runner(client, test_tasks):
     response = client.post(
         "/api/tasks", json={"description": "Runner task", "runner": "claude"}

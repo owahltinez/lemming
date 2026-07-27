@@ -49,16 +49,21 @@ the plan up-to-date with minimal friction.
     forgotten teardowns, missing tests reported by the testing hook, or
     formatting issues reported by the readability hook), add new tasks to
     address them.
-7.  **No Code Changes**: Your only persistent changes may be to the roadmap via
+7.  **Task-Specific Briefs**: Keep new or rewritten task descriptions concise,
+    self-contained, and no more than {{max_task_description_chars}} characters.
+    Include the concrete files, symbols, motivation, and acceptance criteria the
+    task needs, but do not repeat project-wide rules already present in the
+    long-term goal.
+8.  **No Code Changes**: Your only persistent changes may be to the roadmap via
     the `lemming` CLI. Do NOT edit source or configuration files. Reading the
-    workspace and running existing build, test, and entry-point commands for the
-    queue-drain audit is explicitly allowed.
-8.  **Fast Exit**: If the roadmap is accurate and well-structured, AND there are
-    no failed tasks that have reached their maximum attempts, you may exit
-    immediately without running any commands. The queue-drain audit in directive
-    4 must finish before this clause applies. If a task is marked as FAILED and
-    has reached its maximum attempts, a Fast Exit will result in the entire
-    project ABORTING. In that case, you MUST repair it.
+    workspace and running existing build, test, and entry-point commands for
+    the queue-drain audit is explicitly allowed.
+9.  **Fast Exit**: If the roadmap is accurate and well-structured, AND there
+    are no failed tasks that have reached their maximum attempts, you may exit
+    immediately without running any commands. The queue-drain audit in
+    directive 4 must finish before this clause applies. If a task is marked as
+    FAILED and has reached its maximum attempts, a Fast Exit will result in the
+    entire project ABORTING. In that case, you MUST repair it.
 
 ## Commands
 

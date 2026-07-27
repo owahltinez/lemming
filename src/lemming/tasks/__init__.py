@@ -49,6 +49,12 @@ from .lifecycle import (
 from .lifecycle import (
     update_run_time as update_run_time,
 )
+from .limits import (
+    MAX_PROGRESS_ENTRY_CHARS as MAX_PROGRESS_ENTRY_CHARS,
+)
+from .limits import (
+    MAX_TASK_DESCRIPTION_CHARS as MAX_TASK_DESCRIPTION_CHARS,
+)
 from .operations import (
     add_task as add_task,
 )

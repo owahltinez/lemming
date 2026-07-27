@@ -51,6 +51,18 @@ class TestCLITasks(unittest.TestCase):
         task_descs = [t.description for t in data.tasks]
         self.assertIn("New Task", task_descs)
 
+    def test_add_task_reports_actionable_size_error(self):
+        result = self.cli_runner.invoke(
+            cli.cli,
+            self.base_args
+            + ["add", "x" * (tasks.MAX_TASK_DESCRIPTION_CHARS + 1)],
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("2,001 characters (limit 2,000)", result.output)
+        self.assertIn("Keep the brief task-specific", result.output)
+        self.assertEqual(len(tasks.load_tasks(self.test_tasks_file).tasks), 1)
+
     def test_edit_task_description(self):
         result = self.cli_runner.invoke(
             cli.cli,
