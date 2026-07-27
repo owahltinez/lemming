@@ -645,11 +645,11 @@ def fail(ctx: click.Context, task_id: str):
         ctx.exit(1)
 
 
-@cli.command(short_help="<taskid> Stop an in-progress task")
+@cli.command(short_help="<taskid> Cancel a pending or active task")
 @click.argument("task_id")
 @click.pass_context
 def cancel(ctx: click.Context, task_id: str):
-    """Kills the runner and cancels an in-progress task."""
+    """Cancels a task, stopping its runner if it is active."""
     tasks_file = ctx.obj["TASKS_FILE"]
     if tasks.cancel_task(tasks_file, task_id):
         click.echo(f"Task {task_id} cancelled.")

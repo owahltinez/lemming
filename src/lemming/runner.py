@@ -374,6 +374,10 @@ def run_with_heartbeat(
                 target=heartbeat_loop, daemon=True
             )
             heartbeat_thread.start()
+        else:
+            # The task was cancelled after it was claimed but before this
+            # subprocess PID was recorded.
+            _kill_process_tree(process)
 
         reader_thread.start()
 

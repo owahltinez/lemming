@@ -483,7 +483,9 @@ def test_handle_runner_exit_completes(mock_sleep, mock_run_hooks, setup_env):
 
 
 @mock.patch("lemming.orchestrator.run_hooks")
-def test_handle_runner_exit_cancelled(mock_run_hooks, setup_env):
+def test_handle_runner_exit_stops_on_unexpected_sigterm(
+    mock_run_hooks, setup_env
+):
     test_tasks_file, initial_data = setup_env
     data = tasks.load_tasks(test_tasks_file)
     task = data.tasks[0]
@@ -507,7 +509,38 @@ def test_handle_runner_exit_cancelled(mock_run_hooks, setup_env):
         working_dir=None,
         time_limit=1,
     )
-    assert should_abort, "Cancellation (-15) should abort the loop"
+    assert should_abort
+
+
+@mock.patch("lemming.orchestrator.run_hooks")
+def test_handle_runner_exit_continues_after_cancellation(
+    mock_run_hooks, setup_env
+):
+    test_tasks_file, initial_data = setup_env
+    data = tasks.load_tasks(test_tasks_file)
+    task = data.tasks[0]
+    task.status = tasks.TaskStatus.CANCELLED
+    tasks.save_tasks(test_tasks_file, data)
+
+    should_abort = _handle_runner_exit(
+        test_tasks_file,
+        task.id,
+        returncode=-15,
+        stdout="",
+        stderr="",
+        retries=3,
+        retry_delay=5,
+        runner_name="agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        active_hooks=[],
+        working_dir=None,
+        time_limit=1,
+    )
+
+    assert not should_abort
 
 
 @mock.patch("lemming.orchestrator.time.sleep")

@@ -218,6 +218,11 @@ def test_shlex_join_pretty():
 def test_run_with_heartbeat_truncation_only_affects_log(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "test_task"
+    tasks.save_tasks(
+        tasks_file,
+        tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test")]),
+    )
+    tasks.mark_task_in_progress(tasks_file, task_id)
     log_file = paths.get_log_file(tasks_file, task_id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -226,6 +231,7 @@ def test_run_with_heartbeat_truncation_only_affects_log(tmp_path):
     cmd = ["echo", long_arg]
 
     mock_process = unittest.mock.MagicMock()
+    mock_process.pid = 12345
     mock_process.returncode = 0
     mock_process.stdout = None
     mock_process.poll.return_value = 0
@@ -252,6 +258,18 @@ def test_run_with_heartbeat_truncation_only_affects_log(tmp_path):
 def test_run_with_heartbeat_log_header(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "test_task"
+    task_id_2 = "test_task_2"
+    tasks.save_tasks(
+        tasks_file,
+        tasks.Roadmap(
+            tasks=[
+                tasks.Task(id=task_id, description="test"),
+                tasks.Task(id=task_id_2, description="test 2"),
+            ]
+        ),
+    )
+    tasks.mark_task_in_progress(tasks_file, task_id)
+    tasks.mark_task_in_progress(tasks_file, task_id_2)
     log_file = paths.get_log_file(tasks_file, task_id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -269,7 +287,6 @@ def test_run_with_heartbeat_log_header(tmp_path):
     assert "=" * 80 in content
 
     # 2. Run without a header (it should still have the attempt marker)
-    task_id_2 = "test_task_2"
     log_file_2 = paths.get_log_file(tasks_file, task_id_2)
     runner.run_with_heartbeat(
         cmd, tasks_file, task_id_2, verbose=False, header=None
@@ -288,6 +305,7 @@ def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):
         tasks_file,
         tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="timed task")]),
     )
+    tasks.mark_task_in_progress(tasks_file, task_id)
 
     runner.run_with_heartbeat(["true"], tasks_file, task_id, verbose=False)
     runner.run_with_heartbeat(
@@ -313,6 +331,7 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
     # 1. Setup a dummy Roadmap
     roadmap = tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test")])
     tasks.save_tasks(tasks_file, roadmap)
+    tasks.mark_task_in_progress(tasks_file, task_id)
 
     # 2. Mock subprocess.Popen and related functions
     mock_process = unittest.mock.MagicMock()
@@ -338,6 +357,31 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
 
         # 4. Verify cleanup was attempted
         mock_killpg.assert_called_once_with(54321, signal.SIGTERM)
+
+
+def test_run_with_heartbeat_kills_runner_if_task_was_cancelled(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "cancelled"
+    tasks.save_tasks(
+        tasks_file,
+        tasks.Roadmap(
+            tasks=[
+                tasks.Task(
+                    id=task_id,
+                    description="cancelled task",
+                    status=tasks.TaskStatus.CANCELLED,
+                )
+            ]
+        ),
+    )
+
+    started = time.monotonic()
+    returncode, _, _ = runner.run_with_heartbeat(
+        ["sleep", "60"], tasks_file, task_id, verbose=False
+    )
+
+    assert returncode == -signal.SIGTERM
+    assert time.monotonic() - started < 10
 
 
 def test_returncode_timeout_constant():
@@ -423,6 +467,7 @@ def test_run_with_heartbeat_no_timeout(tmp_path):
         tasks=[tasks.Task(id=task_id, description="test no timeout")]
     )
     tasks.save_tasks(tasks_file, roadmap)
+    tasks.mark_task_in_progress(tasks_file, task_id)
 
     returncode, _, _ = runner.run_with_heartbeat(
         ["true"],
@@ -512,6 +557,7 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
         tasks=[tasks.Task(id=task_id, description="test pipe hold")]
     )
     tasks.save_tasks(tasks_file, roadmap)
+    tasks.mark_task_in_progress(tasks_file, task_id)
 
     child_code = (
         "import subprocess, sys\n"

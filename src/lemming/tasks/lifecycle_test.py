@@ -220,7 +220,7 @@ def test_cancel_task(tmp_path):
     assert updated_data.tasks[0].pid is None
 
 
-def test_cancel_task_kills_loop_pid(tmp_path):
+def test_cancel_active_task_kills_runner_but_not_loop(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(
         tasks=[
@@ -234,25 +234,71 @@ def test_cancel_task_kills_loop_pid(tmp_path):
     )
     persistence.save_tasks(tasks_file, data)
 
-    # Mock get_loop_pid to return a dummy PID
     with (
         patch("lemming.persistence.get_loop_pid", return_value=456),
-        patch("lemming.tasks.lifecycle.os.getpgid", return_value=123),
         patch("lemming.tasks.lifecycle.os.kill") as mock_kill,
-        patch("lemming.tasks.lifecycle.os.killpg") as mock_killpg,
-        patch("lemming.tasks.lifecycle.is_pid_alive", return_value=False),
+        patch("lemming.tasks.lifecycle._kill_pid_tree") as mock_kill_tree,
     ):
         success = lifecycle.cancel_task(tasks_file, "1")
-        assert success is True
 
-        # Verify task PID was killed
-        mock_killpg.assert_called_once_with(123, signal.SIGTERM)
-        # Verify loop PID was killed
-        mock_kill.assert_any_call(456, signal.SIGTERM)
+    assert success is True
+    mock_kill_tree.assert_called_once_with(123)
+    mock_kill.assert_not_called()
 
-        # Verify task is marked as cancelled
-        updated_data = persistence.load_tasks(tasks_file)
-        assert updated_data.tasks[0].status == models.TaskStatus.CANCELLED
+    updated_data = persistence.load_tasks(tasks_file)
+    assert updated_data.tasks[0].status == models.TaskStatus.CANCELLED
+
+
+def test_cancel_pending_task_does_not_kill_process(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="1",
+                    description="Pending task",
+                    status=models.TaskStatus.PENDING,
+                )
+            ]
+        ),
+    )
+
+    with patch(
+        "lemming.tasks.lifecycle._kill_pid_tree"
+    ) as mock_kill_tree:
+        success = lifecycle.cancel_task(tasks_file, "1")
+
+    assert success is True
+    mock_kill_tree.assert_not_called()
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.CANCELLED
+
+
+def test_cancel_during_claim_does_not_kill_loop_pid(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="1",
+                    description="Claimed task",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    pid=456,
+                )
+            ]
+        ),
+    )
+
+    with (
+        patch("lemming.persistence.get_loop_pid", return_value=456),
+        patch("lemming.tasks.lifecycle._kill_pid_tree") as mock_kill_tree,
+    ):
+        success = lifecycle.cancel_task(tasks_file, "1")
+
+    assert success is True
+    mock_kill_tree.assert_not_called()
 
 
 def test_kill_pid_tree_escalates_to_sigkill():

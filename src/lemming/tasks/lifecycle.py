@@ -380,7 +380,7 @@ def _kill_pid_tree(pid: int) -> None:
 
 
 def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
-    """Kill the task process AND the orchestrator loop, then mark cancelled.
+    """Mark a task cancelled and stop its runner process, if active.
 
     Args:
         tasks_file: Path to the tasks YAML file.
@@ -393,15 +393,18 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
     # Update the task state first and release the lock: the kill below can
     # wait out a grace period and must not stall heartbeats or readers.
     task_pid = None
-    loop_pid = None
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
         task = next((t for t in data.tasks if t.id == task_id), None)
         if not task:
             return False
 
-        task_pid = task.pid
         loop_pid = persistence.get_loop_pid(tasks_file)
+        if (
+            task.status == models.TaskStatus.IN_PROGRESS
+            and task.pid != loop_pid
+        ):
+            task_pid = task.pid
 
         update_run_time(task)
         task.status = models.TaskStatus.CANCELLED
@@ -412,14 +415,6 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
         task.active_execution_started_at = None
 
         persistence.save_tasks(tasks_file, data)
-
-    # Kill the orchestrator loop first so it cannot pick up the next task
-    # while we wait for the task process tree to die.
-    if loop_pid:
-        try:
-            os.kill(loop_pid, signal.SIGTERM)
-        except OSError:
-            pass
 
     if task_pid:
         _kill_pid_tree(task_pid)

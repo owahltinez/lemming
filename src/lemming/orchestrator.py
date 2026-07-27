@@ -357,8 +357,14 @@ def _handle_runner_exit(
                 click.echo(stderr, err=True)
 
         if returncode == -15:
+            if post_task.status == tasks.TaskStatus.CANCELLED:
+                if verbose:
+                    click.echo("Task was cancelled. Continuing orchestrator.")
+                return False
             if verbose:
-                click.echo("Task was cancelled. Stopping orchestrator loop.")
+                click.echo(
+                    "Runner exited after SIGTERM. Stopping orchestrator loop."
+                )
             return True
 
         if runner_failed and not post_task.requested_status:
