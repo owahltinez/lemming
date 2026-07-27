@@ -1,10 +1,32 @@
 import time
 from unittest import mock
 
+import pytest
+
 from lemming import paths
 
 from .. import models, persistence
 from . import queries
+
+
+def test_resolve_retained_log_by_exact_id_and_prefix(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    tasks_file = tmp_path / "tasks.yml"
+    log_file = paths.get_log_file(tasks_file, "abc12345")
+    log_file.write_text("retained")
+
+    assert queries.resolve_log_file(tasks_file, "abc12345") == log_file
+    assert queries.resolve_log_file(tasks_file, "abc1") == log_file
+
+
+def test_resolve_retained_log_rejects_ambiguous_prefix(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    tasks_file = tmp_path / "tasks.yml"
+    paths.get_log_file(tasks_file, "abc12345").write_text("first")
+    paths.get_log_file(tasks_file, "abc67890").write_text("second")
+
+    with pytest.raises(models.AmbiguousTaskIdError, match="abc12345, abc67890"):
+        queries.resolve_log_file(tasks_file, "abc")
 
 
 def test_get_project_data_deduplication(tmp_path):

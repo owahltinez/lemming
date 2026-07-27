@@ -225,7 +225,7 @@ def test_api_log(client, test_tasks):
     assert response.json() == {"log": ""}
 
 
-def test_api_delete_log_cleanup(client, test_tasks):
+def test_api_delete_retains_log(client, test_tasks):
     test_tasks_file = test_tasks
     # 1. Add a task
     data = tasks.load_tasks(test_tasks_file)
@@ -248,6 +248,20 @@ def test_api_delete_log_cleanup(client, test_tasks):
 
     # 3. Delete via API
     response = client.post(f"/api/tasks/{task_id}/delete")
+    assert response.status_code == 200
+    assert log_file.read_text() == "API delete log"
+
+    response = client.get(f"/api/tasks/{task_id}/log")
+    assert response.status_code == 200
+    assert response.json() == {"log": "API delete log"}
+
+
+def test_api_delete_completed_cleans_up_log(client, test_tasks):
+    log_file = paths.get_log_file(test_tasks, "task1")
+    log_file.write_text("completed task log")
+
+    response = client.post("/api/tasks/delete-completed")
+
     assert response.status_code == 200
     assert not log_file.exists()
 

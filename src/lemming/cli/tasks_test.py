@@ -1,3 +1,4 @@
+import os
 import pathlib
 import shutil
 import tempfile
@@ -7,7 +8,7 @@ from unittest import mock
 
 import click.testing
 
-from lemming import cli, tasks
+from lemming import cli, paths, tasks
 
 
 class TestCLITasks(unittest.TestCase):
@@ -72,11 +73,32 @@ class TestCLITasks(unittest.TestCase):
             t.id for t in data.tasks if t.description == "To be removed"
         )
 
-        delete_result = self.cli_runner.invoke(
-            cli.cli, self.base_args + ["delete", task_id]
-        )
-        self.assertEqual(delete_result.exit_code, 0)
-        self.assertIn("Removed task", delete_result.output)
+        with mock.patch.dict(
+            os.environ,
+            {"LEMMING_HOME": str(pathlib.Path(self.test_dir) / "home")},
+        ):
+            log_file = paths.get_log_file(self.test_tasks_file, task_id)
+            log_file.write_text("retained runner output")
+
+            delete_result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["delete", task_id]
+            )
+            self.assertEqual(delete_result.exit_code, 0)
+            self.assertIn("runner log retained", delete_result.output)
+            self.assertTrue(log_file.exists())
+
+            logs_result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["logs", task_id[:4]]
+            )
+            self.assertEqual(logs_result.exit_code, 0)
+            self.assertIn("retained runner output", logs_result.output)
+
+            status_result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["status", task_id[:4]]
+            )
+            self.assertEqual(status_result.exit_code, 0)
+            self.assertIn(f"Task {task_id} was removed", status_result.output)
+            self.assertIn(str(log_file), status_result.output)
 
         data = tasks.load_tasks(self.test_tasks_file)
         task_descs = [t.description for t in data.tasks]

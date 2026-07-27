@@ -229,8 +229,8 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index` and `--runner`.
 - **`edit <id>`**: Modify a task's description, runner, or position.
-- **`delete <id>`**: Remove a task. Supports `--all` and `--completed` for bulk
-  operations.
+- **`delete <id>`**: Remove a task while retaining its runner log. Supports
+  `--all` and `--completed` for bulk cleanup, including logs.
 - **`progress`**: Manage progress entries and findings for specific tasks.
   - `list <id>`: List all progress for a task.
   - `add <id> <finding>`: Record a new technical detail.
@@ -261,9 +261,9 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 - **`fail <id>`**: Mark a task as a terminal failure (will not be retried).
 - **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 - **`reset <id>`**: Clear attempts and progress to start a task fresh.
-- **`logs [<id>]`**: Print a task's execution log to stdout. If no ID is
-  provided, it defaults to the active or most recent task. Orchestrator hook
-  output is automatically appended.
+- **`logs [<id>]`**: Print a task's execution log to stdout, including retained
+  logs for removed tasks. If no ID is provided, it defaults to the active or
+  most recent task. Orchestrator hook output is automatically appended.
 
 ### Execution
 

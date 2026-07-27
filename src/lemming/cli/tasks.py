@@ -203,7 +203,10 @@ def delete_task(
         click.echo(f"Deleted {removed} completed task(s) and their logs.")
     elif task_id:
         if removed > 0:
-            click.echo(f"Removed task(s) matching {task_id} and their logs")
+            click.echo(
+                f"Removed task matching {task_id}; runner log retained "
+                "if present."
+            )
         else:
             click.echo(f"Error: Task {task_id} not found.")
 
@@ -278,12 +281,26 @@ def status(ctx: click.Context, task_id: str | None):
                 )
         return
 
-    target = next(
-        (t for t in project_data.tasks if t.id.startswith(task_id)), None
-    )
+    try:
+        target = tasks.resolve_task(project_data.tasks, task_id)
+    except tasks.TaskNotFoundError:
+        try:
+            retained_log = tasks.resolve_log_file(tasks_file, task_id)
+        except tasks.TaskNotFoundError:
+            click.echo(f"Error: Task {task_id} not found.")
+            return
+        except tasks.AmbiguousTaskIdError as e:
+            click.echo(f"Error: {e}")
+            return
 
-    if not target:
-        click.echo(f"Error: Task {task_id} not found.")
+        retained_id = retained_log.name.removesuffix("-runner.log")
+        click.echo(
+            f"Task {retained_id} was removed; runner log retained at "
+            f"{retained_log}"
+        )
+        return
+    except tasks.AmbiguousTaskIdError as e:
+        click.echo(f"Error: {e}")
         return
 
     if project_data.loop_running:
@@ -359,10 +376,18 @@ def logs(ctx: click.Context, task_id: str | None):
     data = tasks.load_tasks(tasks_file)
 
     target = None
+    log_file = None
     if task_id:
-        target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
-        if not target:
-            click.echo(f"Error: Task {task_id} not found.")
+        try:
+            target = tasks.resolve_task(data.tasks, task_id)
+        except tasks.TaskNotFoundError:
+            try:
+                log_file = tasks.resolve_log_file(tasks_file, task_id)
+            except (tasks.TaskNotFoundError, tasks.AmbiguousTaskIdError) as e:
+                click.echo(f"Error: {e}")
+                ctx.exit(1)
+        except tasks.AmbiguousTaskIdError as e:
+            click.echo(f"Error: {e}")
             ctx.exit(1)
     else:
         # Try to find an active task
@@ -380,11 +405,12 @@ def logs(ctx: click.Context, task_id: str | None):
                     -1
                 ]
 
-    if not target:
+    if not target and log_file is None:
         click.echo("Error: No active or recently completed task found.")
         ctx.exit(1)
 
-    log_file = paths.get_log_file(tasks_file, target.id)
+    if log_file is None:
+        log_file = paths.get_log_file(tasks_file, target.id)
     if not log_file.exists():
         click.echo(f"No log for task {target.id}.")
         ctx.exit(1)

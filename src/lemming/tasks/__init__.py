@@ -66,6 +66,9 @@ from .queries import (
     get_project_data as get_project_data,
 )
 from .queries import (
+    resolve_log_file as resolve_log_file,
+)
+from .queries import (
     resolve_task as resolve_task,
 )
 

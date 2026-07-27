@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from .. import models, persistence
+from .. import models, paths, persistence
 from . import lifecycle, operations, queries
 
 
@@ -43,6 +43,22 @@ def test_add_task(tmp_path):
     data = persistence.load_tasks(tasks_file)
     assert len(data.tasks) == 1
     assert data.tasks[0].created_at == task.created_at
+
+
+def test_add_task_does_not_reuse_retained_log_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    tasks_file = tmp_path / "tasks.yml"
+    retained_log = paths.get_log_file(tasks_file, "deadbeef")
+    retained_log.write_text("retained")
+
+    with patch(
+        "lemming.tasks.operations.lifecycle.generate_task_id",
+        side_effect=["deadbeef", "cafebabe"],
+    ):
+        task = operations.add_task(tasks_file, "New task")
+
+    assert task.id == "cafebabe"
+    assert retained_log.read_text() == "retained"
 
 
 def test_update_task_description(tmp_path):
@@ -211,16 +227,32 @@ def test_update_task_parent_fields(tmp_path):
     assert cleared.parent_tasks_file is None
 
 
-def test_delete_tasks(tmp_path):
+def test_delete_tasks_retains_runner_log(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
     tasks_file = tmp_path / "tasks.yml"
     operations.add_task(tasks_file, "Task 1")
     t2 = operations.add_task(tasks_file, "Task 2")
+    log_file = paths.get_log_file(tasks_file, t2.id)
+    log_file.write_text("runner output")
 
     count = operations.delete_tasks(tasks_file, task_id=t2.id)
     assert count == 1
     data = persistence.load_tasks(tasks_file)
     assert len(data.tasks) == 1
     assert data.tasks[0].description == "Task 1"
+    assert log_file.read_text() == "runner output"
+
+
+def test_delete_all_tasks_removes_runner_logs(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    tasks_file = tmp_path / "tasks.yml"
+    task = operations.add_task(tasks_file, "Task")
+    log_file = paths.get_log_file(tasks_file, task.id)
+    log_file.write_text("runner output")
+
+    operations.delete_tasks(tasks_file, all_tasks=True)
+
+    assert not log_file.exists()
 
 
 def test_update_task_rejects_ambiguous_prefix(tmp_path):

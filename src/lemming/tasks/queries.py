@@ -6,6 +6,8 @@ import time
 from .. import models, paths, persistence
 from . import lifecycle
 
+_RUNNER_LOG_SUFFIX = "-runner.log"
+
 
 def resolve_task(tasks: list[models.Task], task_id: str) -> models.Task:
     """Resolves an exact task ID or an unambiguous task ID prefix."""
@@ -22,6 +24,47 @@ def resolve_task(tasks: list[models.Task], task_id: str) -> models.Task:
             f"Task ID {task_id} is ambiguous; matches: {matching_ids}"
         )
     return prefix_matches[0]
+
+
+def resolve_log_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
+    """Resolve an exact or unambiguous task ID to an existing runner log.
+
+    The lookup enumerates known log filenames instead of interpolating
+    ``task_id`` into a path, so removed tasks remain inspectable without
+    allowing path traversal.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: Full task ID or an unambiguous prefix.
+
+    Returns:
+        The matching runner log path.
+
+    Raises:
+        TaskNotFoundError: If no runner log matches the ID.
+        AmbiguousTaskIdError: If the prefix matches multiple runner logs.
+    """
+    project_dir = paths.get_project_dir(tasks_file)
+    candidates = []
+    for log_file in project_dir.glob(f"*{_RUNNER_LOG_SUFFIX}"):
+        if not log_file.is_file():
+            continue
+        candidate_id = log_file.name[: -len(_RUNNER_LOG_SUFFIX)]
+        if candidate_id == task_id:
+            return log_file
+        if candidate_id.startswith(task_id):
+            candidates.append((candidate_id, log_file))
+
+    if not candidates:
+        raise models.TaskNotFoundError(f"Task {task_id} not found")
+    if len(candidates) > 1:
+        matching_ids = ", ".join(
+            candidate_id for candidate_id, _ in sorted(candidates)
+        )
+        raise models.AmbiguousTaskIdError(
+            f"Task ID {task_id} is ambiguous; matches: {matching_ids}"
+        )
+    return candidates[0][1]
 
 
 def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:

@@ -4,7 +4,7 @@ import os
 import pathlib
 import time
 
-from .. import models, persistence
+from .. import models, paths, persistence
 from . import lifecycle, queries
 
 _DONE_STATUSES = (
@@ -68,7 +68,12 @@ def add_task(
 
         task_id = lifecycle.generate_task_id()
         existing_ids = {t.id for t in data.tasks}
-        while task_id in existing_ids:
+        while (
+            task_id in existing_ids
+            or (
+                paths.get_project_dir(tasks_file) / f"{task_id}-runner.log"
+            ).exists()
+        ):
             task_id = lifecycle.generate_task_id()
 
         # Detect if we are running inside an agent and set parent automatically
@@ -146,7 +151,6 @@ def delete_tasks(
             except models.TaskNotFoundError:
                 target = None
             if target:
-                lifecycle.reset_task_logs(tasks_file, target.id)
                 data.tasks = [t for t in data.tasks if t.id != target.id]
 
         persistence.save_tasks(tasks_file, data)
