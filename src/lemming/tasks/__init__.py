@@ -26,6 +26,9 @@ from .lifecycle import (
     is_task_active as is_task_active,
 )
 from .lifecycle import (
+    mark_execution_started as mark_execution_started,
+)
+from .lifecycle import (
     mark_task_in_progress as mark_task_in_progress,
 )
 from .lifecycle import (

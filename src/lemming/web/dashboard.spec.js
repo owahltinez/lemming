@@ -163,6 +163,43 @@ test.describe('Dashboard E2E', () => {
     expect(new Set(measurements.map((segment) => segment.color)).size).toBe(3);
   });
 
+  test('advances the active execution segment while a task is running', async ({
+    page,
+  }) => {
+    const activeStartedAt = Date.now() / 1000 - 5;
+    await page.route('**/api/data', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        json: {
+          cwd: '/mock/cwd',
+          loop_running: true,
+          goal: 'Live timing project',
+          tasks: [
+            {
+              id: 'running',
+              description: 'Task with live execution timing',
+              status: 'in_progress',
+              attempts: 1,
+              progress: [],
+              active_execution_component: 'runner',
+              active_execution_started_at: activeStartedAt,
+            },
+          ],
+          config: { retries: 3, runner: 'agy', time_limit: 60 },
+        },
+      });
+    });
+
+    await gotoAndAwaitMancha(page);
+    await page.getByRole('button', { name: 'Show details' }).click();
+
+    const timingBar = page.getByTestId('execution-breakdown').getByRole('img');
+    const initialLabel = await timingBar.getAttribute('aria-label');
+    await expect
+      .poll(() => timingBar.getAttribute('aria-label'))
+      .not.toBe(initialLabel);
+  });
+
   // --- Environment Overrides Tests ---
 
   test('adds an environment override, stores it in localStorage, and sends it on run', async ({

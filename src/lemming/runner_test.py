@@ -302,6 +302,8 @@ def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):
     assert task.execution_times is not None
     assert task.execution_times["runner"] > 0
     assert task.execution_times["hook:testing"] > 0
+    assert task.active_execution_component is None
+    assert task.active_execution_started_at is None
 
 
 def test_run_with_heartbeat_interruption_cleanup(tmp_path):

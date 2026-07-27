@@ -216,6 +216,8 @@ def supersede_task(
         target.pid = None
         target.last_heartbeat = None
         target.requested_status = None
+        target.active_execution_component = None
+        target.active_execution_started_at = None
 
         persistence.save_tasks(tasks_file, data)
         return target
@@ -320,12 +322,16 @@ def update_task(
                     target.pid = None
                     target.last_heartbeat = None
                     target.requested_status = None
+                    target.active_execution_component = None
+                    target.active_execution_started_at = None
                 elif status == models.TaskStatus.PENDING:
                     target.completed_at = None
                     target.superseded_at = None
                     target.superseded_reason = None
                     target.attempts = 0
                     target.requested_status = None
+                    target.active_execution_component = None
+                    target.active_execution_started_at = None
                 elif target.completed_at is not None:
                     target.completed_at = None
 

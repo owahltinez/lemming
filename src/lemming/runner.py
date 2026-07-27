@@ -306,6 +306,15 @@ def run_with_heartbeat(
         if header and header.startswith("Hook: ")
         else "runner"
     )
+    try:
+        tasks.mark_execution_started(tasks_file, task_id, component)
+    except Exception:
+        logger.warning(
+            "Could not mark %s execution as active for task %s",
+            component,
+            task_id,
+            exc_info=True,
+        )
 
     full_log: list[str] = []
 

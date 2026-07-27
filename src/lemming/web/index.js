@@ -193,7 +193,21 @@
           'bg-purple-600',
           'bg-red-600',
         ];
-        const entries = Object.entries(task.execution_times || {}).filter(
+        const executionTimes = { ...(task.execution_times || {}) };
+        if (
+          task.status === 'in_progress' &&
+          task.active_execution_component &&
+          task.active_execution_started_at
+        ) {
+          const activeDuration = Math.max(
+            0,
+            Date.now() / 1000 - task.active_execution_started_at,
+          );
+          executionTimes[task.active_execution_component] =
+            Number(executionTimes[task.active_execution_component] || 0) +
+            activeDuration;
+        }
+        const entries = Object.entries(executionTimes).filter(
           ([, duration]) => Number.isFinite(Number(duration)) && duration > 0,
         );
         entries.sort(([a], [b]) => {

@@ -19,6 +19,8 @@ def test_task_model_defaults():
     assert task.progress == []
     assert task.run_time == 0.0
     assert task.execution_times is None
+    assert task.active_execution_component is None
+    assert task.active_execution_started_at is None
     assert task.superseded_at is None
     assert task.superseded_reason is None
     assert task.created_at > 0

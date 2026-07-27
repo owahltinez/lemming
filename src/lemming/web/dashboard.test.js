@@ -98,7 +98,21 @@ const createInitialState = (overrides = {}) => {
         'bg-purple-600',
         'bg-red-600',
       ];
-      const entries = Object.entries(task.execution_times || {}).filter(
+      const executionTimes = { ...(task.execution_times || {}) };
+      if (
+        task.status === 'in_progress' &&
+        task.active_execution_component &&
+        task.active_execution_started_at
+      ) {
+        const activeDuration = Math.max(
+          0,
+          Date.now() / 1000 - task.active_execution_started_at,
+        );
+        executionTimes[task.active_execution_component] =
+          Number(executionTimes[task.active_execution_component] || 0) +
+          activeDuration;
+      }
+      const entries = Object.entries(executionTimes).filter(
         ([, duration]) => Number.isFinite(Number(duration)) && duration > 0,
       );
       entries.sort(([a], [b]) => {
@@ -892,6 +906,37 @@ describe('Lemming Web Dashboard', () => {
     assert.ok(breakdown.textContent.includes('Runner 30s'));
     assert.ok(breakdown.textContent.includes('readability 10s'));
     assert.ok(breakdown.textContent.includes('testing 20s'));
+  });
+
+  test('adds live elapsed time to the active execution segment', () => {
+    const originalDateNow = Date.now;
+    let now = 1_000_000;
+    Date.now = () => now;
+    try {
+      const task = {
+        status: 'in_progress',
+        execution_times: { runner: 30 },
+        active_execution_component: 'hook:testing',
+        active_execution_started_at: 990,
+      };
+      const initialState = createInitialState();
+
+      let segments = initialState.getExecutionSegments(task);
+      assert.deepStrictEqual(
+        segments.map(({ key, duration }) => [key, duration]),
+        [
+          ['runner', 30],
+          ['hook:testing', 10],
+        ],
+      );
+
+      now += 5_000;
+      segments = initialState.getExecutionSegments(task);
+      assert.strictEqual(segments[1].duration, 15);
+      assert.ok(Math.abs(segments[1].percent - 100 / 3) < 0.001);
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
   test('hides execution breakdown when timing data is unavailable', async () => {

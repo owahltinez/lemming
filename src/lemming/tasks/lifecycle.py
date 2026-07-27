@@ -83,6 +83,34 @@ def record_execution_time(
         task.execution_times[component] = (
             task.execution_times.get(component, 0.0) + duration
         )
+        if task.active_execution_component == component:
+            task.active_execution_component = None
+            task.active_execution_started_at = None
+        persistence.save_tasks(tasks_file, data)
+
+
+def mark_execution_started(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    component: str,
+    started_at: float | None = None,
+) -> None:
+    """Records the component whose elapsed time is currently accumulating.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task whose subprocess started.
+        component: Stable component key, such as ``runner``.
+        started_at: Optional wall-clock timestamp, defaulting to now.
+    """
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        task = next((t for t in data.tasks if t.id == task_id), None)
+        if task is None:
+            return
+
+        task.active_execution_component = component
+        task.active_execution_started_at = started_at or time.time()
         persistence.save_tasks(tasks_file, data)
 
 
@@ -141,6 +169,8 @@ def _mark_task_in_progress(
                 if task.started_at is None:
                     task.started_at = now
                 task.last_started_at = now
+                task.active_execution_component = None
+                task.active_execution_started_at = None
                 if pid is not None:
                     task.pid = pid
                 return True
@@ -259,6 +289,8 @@ def revert_task_to_pending(
         task.requested_status = None
         task.pid = None
         task.last_heartbeat = None
+        task.active_execution_component = None
+        task.active_execution_started_at = None
 
         persistence.save_tasks(tasks_file, data)
         return task
@@ -376,6 +408,8 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
         task.pid = None
         task.last_heartbeat = None
         task.requested_status = None
+        task.active_execution_component = None
+        task.active_execution_started_at = None
 
         persistence.save_tasks(tasks_file, data)
 
@@ -414,6 +448,8 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
         target.progress = []
         target.run_time = 0.0
         target.execution_times = None
+        target.active_execution_component = None
+        target.active_execution_started_at = None
         target.completed_at = None
         target.superseded_at = None
         target.superseded_reason = None

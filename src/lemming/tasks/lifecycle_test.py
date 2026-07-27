@@ -61,6 +61,27 @@ def test_record_execution_time_accumulates_by_component(tmp_path):
     }
 
 
+def test_active_execution_is_recorded_then_cleared(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id="1", description="test")]),
+    )
+
+    lifecycle.mark_execution_started(
+        tasks_file, "1", "hook:testing", started_at=123.0
+    )
+    active_task = persistence.load_tasks(tasks_file).tasks[0]
+    assert active_task.active_execution_component == "hook:testing"
+    assert active_task.active_execution_started_at == 123.0
+
+    lifecycle.record_execution_time(tasks_file, "1", "hook:testing", 5.0)
+    finished_task = persistence.load_tasks(tasks_file).tasks[0]
+    assert finished_task.execution_times == {"hook:testing": 5.0}
+    assert finished_task.active_execution_component is None
+    assert finished_task.active_execution_started_at is None
+
+
 def test_mark_task_in_progress(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(
