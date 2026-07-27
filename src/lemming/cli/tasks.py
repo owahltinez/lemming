@@ -1,5 +1,6 @@
 """CLI commands for managing tasks in the roadmap queue."""
 
+import math
 import time
 import typing
 
@@ -7,6 +8,35 @@ import click
 
 from .. import paths, tasks
 from .main import cli
+
+
+def _format_elapsed_time(seconds: float) -> str:
+    """Format elapsed seconds for CLI status output."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+
+
+def _execution_time_rows(
+    execution_times: dict[str, float] | None,
+) -> list[tuple[str, str]]:
+    """Return display labels and durations with the runner first."""
+    if not execution_times:
+        return []
+
+    components = [
+        (component, duration)
+        for component, duration in execution_times.items()
+        if math.isfinite(duration) and duration > 0
+    ]
+    components.sort(key=lambda item: item[0] != "runner")
+    return [
+        (
+            component.removeprefix("hook:"),
+            _format_elapsed_time(duration),
+        )
+        for component, duration in components
+    ]
 
 
 @cli.command(short_help="[description] Add a new task to the queue")
@@ -348,11 +378,13 @@ def status(ctx: click.Context, task_id: str | None):
         run_time += time.time() - target.last_started_at
 
     if run_time > 0:
-        if run_time < 60:
-            rt_str = f"{run_time:.1f}s"
-        else:
-            rt_str = f"{int(run_time // 60)}m {int(run_time % 60)}s"
-        click.echo(f"Run Time:      {rt_str}")
+        click.echo(f"Run Time:      {_format_elapsed_time(run_time)}")
+
+    execution_rows = _execution_time_rows(target.execution_times)
+    if execution_rows:
+        label_width = max(len(label) for label, _ in execution_rows)
+        for label, duration in execution_rows:
+            click.echo(f"  {label:<{label_width}}  {duration}")
 
     if target.progress:
         click.secho("\n--- Progress ---", fg="magenta", bold=True)

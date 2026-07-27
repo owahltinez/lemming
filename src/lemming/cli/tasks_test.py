@@ -119,6 +119,35 @@ class TestCLITasks(unittest.TestCase):
             )
             self.assertIn("Loop Status: Running", result.output)
 
+    def test_status_command_shows_execution_time_breakdown(self):
+        with tasks.lock_tasks(self.test_tasks_file):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data.tasks[0].run_time = 1422
+            data.tasks[0].execution_times = {
+                "hook:testing": 216,
+                "runner": 894,
+                "hook:readability": 282,
+                "hook:ux": 12,
+                "hook:roadmap": 12,
+            }
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", "1234"]
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Run Time:      23m 42s", result.output)
+        runner_index = result.output.index("  runner       14m 54s")
+        readability_index = result.output.index("  readability  4m 42s")
+        testing_index = result.output.index("  testing      3m 36s")
+        ux_index = result.output.index("  ux           12.0s")
+        roadmap_index = result.output.index("  roadmap      12.0s")
+        self.assertLess(runner_index, testing_index)
+        self.assertLess(testing_index, readability_index)
+        self.assertLess(readability_index, ux_index)
+        self.assertLess(ux_index, roadmap_index)
+
     def test_logs_command_fail_no_logs(self):
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["logs", "12345678"]

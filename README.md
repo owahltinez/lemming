@@ -224,7 +224,8 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 
 ### Roadmap Management
 
-- **`status [<id>]`**: Roadmap overview or deep-dive into a specific task.
+- **`status [<id>]`**: Roadmap overview or deep-dive into a specific task,
+  including runner and orchestrator-hook execution times.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index` and `--runner`.
