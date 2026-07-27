@@ -73,15 +73,23 @@ class TestRepairScenario(ScenarioTestCase):
         checks = self.scenario.grade(self.workspace)
         self.assertEqual(self.check_names(checks), set())
 
-    def test_delete_and_replace_passes(self):
-        tasks.delete_tasks(self.tasks_file, "task1")
-        tasks.add_task(self.tasks_file, "Add a dispatch helper to calc/ops.py.")
+    def test_supersede_and_replace_passes(self):
+        tasks.add_task(
+            self.tasks_file,
+            "Add a dispatch helper to calc/ops.py.",
+            parent="task1",
+        )
+        tasks.supersede_task(
+            self.tasks_file,
+            "task1",
+            "split into a prerequisite dispatch task",
+        )
 
         checks = self.scenario.grade(self.workspace)
         self.assertEqual(self.check_names(checks), set())
 
     def test_source_edit_fails(self):
-        tasks.delete_tasks(self.tasks_file, "task1")
+        tasks.delete_tasks(self.tasks_file, "task1", force=True)
         (self.workspace / "calc" / "ops.py").write_text("# rewritten\n")
 
         checks = self.scenario.grade(self.workspace)

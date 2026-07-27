@@ -108,6 +108,7 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
             models.TaskStatus.COMPLETED,
             models.TaskStatus.FAILED,
             models.TaskStatus.CANCELLED,
+            models.TaskStatus.SUPERSEDED,
         )
         is_in_progress = t.status == models.TaskStatus.IN_PROGRESS
         if not is_done:
@@ -123,7 +124,7 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
             # For completed/failed, we want newest first
             return (
                 1,
-                -(t.completed_at or t.created_at or 0),
+                -(t.completed_at or t.superseded_at or t.created_at or 0),
                 -(t.index if t.index is not None else 0),
             )
 

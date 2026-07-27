@@ -37,6 +37,29 @@ def test_load_save_tasks(tmp_path):
     assert loaded.tasks[0].id == "1"
 
 
+def test_load_tasks_without_superseded_fields(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.write_text(
+        yaml.safe_dump(
+            {
+                "tasks": [
+                    {
+                        "id": "1",
+                        "description": "task from an older roadmap",
+                        "status": "pending",
+                        "attempts": 0,
+                    }
+                ]
+            }
+        )
+    )
+
+    loaded = persistence.load_tasks(tasks_file)
+
+    assert loaded.tasks[0].superseded_at is None
+    assert loaded.tasks[0].superseded_reason is None
+
+
 def test_load_tasks_preserves_explicit_runner(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     tasks_file.write_text(yaml.dump({"config": {"runner": "aider"}}))

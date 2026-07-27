@@ -174,6 +174,25 @@ def test_reopen_cancelled_task_via_api(client, test_tasks):
     assert response.json()["attempts"] == 0
 
 
+def test_supersede_and_reopen_task_via_api(client, test_tasks):
+    response = client.post(
+        "/api/tasks/task2/supersede",
+        json={"reason": "split after timeout"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == tasks.TaskStatus.SUPERSEDED
+    assert response.json()["superseded_reason"] == "split after timeout"
+
+    response = client.post(
+        "/api/tasks/task2/update",
+        json={"status": tasks.TaskStatus.PENDING},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == tasks.TaskStatus.PENDING
+    assert response.json()["superseded_reason"] is None
+    assert response.json()["superseded_at"] is None
+
+
 def test_has_log_population(client, test_tasks):
     # Initially no logs
     response = client.get("/api/data")

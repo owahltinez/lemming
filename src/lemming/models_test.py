@@ -9,6 +9,7 @@ def test_task_status_values():
     assert models.TaskStatus.IN_PROGRESS == "in_progress"
     assert models.TaskStatus.COMPLETED == "completed"
     assert models.TaskStatus.FAILED == "failed"
+    assert models.TaskStatus.SUPERSEDED == "superseded"
 
 
 def test_task_model_defaults():
@@ -18,6 +19,8 @@ def test_task_model_defaults():
     assert task.progress == []
     assert task.run_time == 0.0
     assert task.execution_times is None
+    assert task.superseded_at is None
+    assert task.superseded_reason is None
     assert task.created_at > 0
 
 

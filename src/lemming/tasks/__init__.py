@@ -53,6 +53,9 @@ from .operations import (
     delete_tasks as delete_tasks,
 )
 from .operations import (
+    supersede_task as supersede_task,
+)
+from .operations import (
     update_goal as update_goal,
 )
 from .operations import (

@@ -191,8 +191,19 @@ def _grade_repair(workspace: pathlib.Path) -> list[scenarios.Check]:
     # An unchanged description means the same failure will repeat (naive
     # reset) or the project aborts outright (still out of retries).
     task = next((t for t in roadmap.tasks if t.id == "task1"), None)
+    replacements = [t for t in roadmap.tasks if t.parent == "task1"]
     if task is None:
         repaired = scenarios.Check(name="repaired", passed=True)
+    elif task.status == models.TaskStatus.SUPERSEDED:
+        repaired = scenarios.Check(
+            name="repaired",
+            passed=bool(task.superseded_reason and replacements),
+            detail=(
+                "superseded task has no reason or linked replacements"
+                if not task.superseded_reason or not replacements
+                else ""
+            ),
+        )
     elif task.description == _REPAIR_DESCRIPTION:
         reason = (
             "naive reset: attempts cleared but approach unchanged"

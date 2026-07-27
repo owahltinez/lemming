@@ -64,6 +64,9 @@ def _format_roadmap(
             marker = "[COMPLETED]"
         elif effective_status == tasks.TaskStatus.FAILED:
             marker = f"[FAILED - {t.attempts}/{data.config.retries} attempt(s)]"
+        elif effective_status == tasks.TaskStatus.SUPERSEDED:
+            reason = f" - {t.superseded_reason}" if t.superseded_reason else ""
+            marker = f"[SUPERSEDED{reason}]"
         elif (
             t.status == tasks.TaskStatus.IN_PROGRESS or t.id == current_task_id
         ):

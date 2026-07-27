@@ -68,6 +68,43 @@
       $.showNewFolderInput = false;
       $.newFolderName = '';
 
+      $.isHistoryTask = (task) =>
+        ['completed', 'failed', 'cancelled', 'superseded'].includes(
+          task.status,
+        );
+      $.getTaskStatusLabel = (task) => {
+        if (task.status === 'completed') return 'Completed';
+        if (task.status === 'failed') return 'Failed';
+        if (task.status === 'cancelled') return 'Cancelled';
+        if (task.status === 'superseded') return 'Superseded';
+        if (task.status === 'in_progress') {
+          return task.requested_status ? 'Finalizing' : 'Running';
+        }
+        return task.attempts > 0 ? 'Retrying' : 'Pending';
+      };
+      $.getTaskStatusClass = (task) => {
+        if (task.status === 'completed') return 'bg-green-100 text-green-700';
+        if (task.status === 'failed') return 'bg-red-100 text-red-700';
+        if (task.status === 'cancelled') return 'bg-orange-100 text-orange-700';
+        if (task.status === 'superseded') {
+          return 'bg-purple-100 text-purple-700';
+        }
+        if (task.status === 'in_progress') {
+          return 'bg-blue-100 text-blue-700 animate-pulse';
+        }
+        return task.attempts > 0
+          ? 'bg-amber-100 text-amber-700'
+          : 'bg-gray-100 text-gray-500';
+      };
+      $.getTaskTextClass = (task) => {
+        if (task.status === 'completed') return 'text-gray-400 line-through';
+        if (task.status === 'cancelled') return 'text-orange-600 line-through';
+        if (task.status === 'superseded') return 'text-purple-600';
+        if (task.status === 'failed') return 'text-red-600';
+        if (task.status === 'in_progress') return 'text-blue-600';
+        return task.attempts > 0 ? 'text-amber-600' : '';
+      };
+
       // --- Computed Properties ---
       $.runningCount = $.$computed(
         ($) => $.tasks.filter((t) => t.status === 'in_progress').length,
@@ -84,6 +121,12 @@
             (t) => t.status === 'failed' || t.status === 'cancelled',
           ).length,
       );
+      $.supersededCount = $.$computed(
+        ($) => $.tasks.filter((t) => t.status === 'superseded').length,
+      );
+      $.historyCount = $.$computed(
+        ($) => $.tasks.filter((t) => $.isHistoryTask(t)).length,
+      );
 
       $.filteredTasks = $.$computed(($) => {
         const ts = [...$.tasks];
@@ -91,18 +134,8 @@
         // 1. Uncompleted tasks (pending, in_progress) first.
         // 2. Completed tasks (completed, failed) at the bottom.
         ts.sort((a, b) => {
-          const aDone =
-            a.status === 'completed' ||
-            a.status === 'failed' ||
-            a.status === 'cancelled'
-              ? 1
-              : 0;
-          const bDone =
-            b.status === 'completed' ||
-            b.status === 'failed' ||
-            b.status === 'cancelled'
-              ? 1
-              : 0;
+          const aDone = $.isHistoryTask(a) ? 1 : 0;
+          const bDone = $.isHistoryTask(b) ? 1 : 0;
           if (aDone !== bDone) return aDone - bDone;
 
           if (!aDone) {
@@ -116,19 +149,13 @@
           }
 
           // Completed tasks: newest first (reverse chronological by completion/creation time).
-          const aTime = a.completed_at || a.created_at || 0;
-          const bTime = b.completed_at || b.created_at || 0;
+          const aTime = a.completed_at || a.superseded_at || a.created_at || 0;
+          const bTime = b.completed_at || b.superseded_at || b.created_at || 0;
           if (aTime !== bTime) return bTime - aTime;
 
           return (b.index || 0) - (a.index || 0);
         });
-        return ts.filter(
-          (t) =>
-            (t.status !== 'completed' &&
-              t.status !== 'failed' &&
-              t.status !== 'cancelled') ||
-            !$.hideCompleted,
-        );
+        return ts.filter((t) => !$.isHistoryTask(t) || !$.hideCompleted);
       });
 
       // --- Utilities ---
@@ -219,6 +246,17 @@
       $.getParent = (parentId) => {
         return $.tasks.find((t) => t.id === parentId);
       };
+      $.getChildren = (parentId) => {
+        return $.tasks.filter((t) => t.parent === parentId);
+      };
+      $.focusTask = (taskId) => {
+        $.expanded[taskId] = true;
+        requestAnimationFrame(() => {
+          document
+            .querySelector(`[data-task-id="${CSS.escape(taskId)}"]`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      };
 
       $.copyToClipboard = function (text) {
         if (!navigator.clipboard) {
@@ -277,6 +315,14 @@
               'info',
             );
           } else if (
+            oldTask.status !== 'superseded' &&
+            newTask.status === 'superseded'
+          ) {
+            $.addToast(
+              `Task superseded: ${$.trim(newTask.description, 60)}`,
+              'info',
+            );
+          } else if (
             oldTask.status === 'in_progress' &&
             newTask.status === 'pending'
           ) {
@@ -319,7 +365,10 @@
             t.status === 'cancelled',
         );
         const allCompleted =
-          $.tasks.length > 0 && $.tasks.every((t) => t.status === 'completed');
+          $.tasks.length > 0 &&
+          $.tasks.every(
+            (t) => t.status === 'completed' || t.status === 'superseded',
+          );
         const state = $.loopRunning
           ? 'running'
           : hasError
@@ -579,12 +628,12 @@
       };
 
       $.deleteCompletedTasks = async () => {
-        if (confirm('Delete ALL completed tasks?')) {
+        if (confirm('Permanently delete ALL task history and its logs?')) {
           const res = await fetch(apiUrl('/api/tasks/delete-completed'), {
             method: 'POST',
           });
           if (res.ok) {
-            $.addToast('Completed tasks deleted', 'success');
+            $.addToast('Task history deleted', 'success');
             await $.fetchData();
           }
         }

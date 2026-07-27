@@ -100,6 +100,35 @@ describe('Lemming Task Log Viewer', () => {
     assert.strictEqual(liveIndicator.textContent.trim(), 'Live');
   });
 
+  test('shows superseded disposition without a live indicator', async () => {
+    const renderer = new Renderer(
+      createInitialState({
+        task: {
+          id: 't1',
+          status: 'superseded',
+          description: 'Split task',
+          superseded_at: 2000,
+          superseded_reason: 'split after timeout',
+        },
+        loading: false,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(logsHtmlPath);
+    const root =
+      fragment.querySelector('body') || fragment.firstElementChild || fragment;
+    if (root.hasAttribute(':data')) root.removeAttribute(':data');
+    await renderer.mount(fragment);
+
+    assert.strictEqual(fragment.querySelector('.text-blue-600'), null);
+    assert.ok(root.textContent.includes('Superseded:'));
+    assert.ok(
+      fragment
+        .querySelector('[title="split after timeout"]')
+        .textContent.includes('Superseded'),
+    );
+  });
+
   test('displays timing information correctly', async () => {
     const now = Date.now() / 1000;
     const taskInProgress = {

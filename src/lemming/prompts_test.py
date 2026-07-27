@@ -399,3 +399,20 @@ def test_format_roadmap_with_finalizing_task():
     output = prompts._format_roadmap(data)
     assert "[COMPLETED] (2)" in output
     assert "- b" in output
+
+
+def test_format_roadmap_with_superseded_task():
+    data = models.Roadmap(
+        tasks=[
+            models.Task(
+                id="1",
+                description="Oversized task",
+                status=models.TaskStatus.SUPERSEDED,
+                superseded_reason="split after timeout",
+            )
+        ]
+    )
+
+    output = prompts._format_roadmap(data)
+
+    assert "[SUPERSEDED - split after timeout] (1)" in output

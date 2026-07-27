@@ -11,6 +11,7 @@ _DONE_STATUSES = (
     models.TaskStatus.COMPLETED,
     models.TaskStatus.FAILED,
     models.TaskStatus.CANCELLED,
+    models.TaskStatus.SUPERSEDED,
 )
 
 
@@ -101,6 +102,7 @@ def delete_tasks(
     task_id: str | None = None,
     all_tasks: bool = False,
     completed_only: bool = False,
+    force: bool = False,
 ) -> int:
     """Deletes tasks from the roadmap.
 
@@ -108,7 +110,8 @@ def delete_tasks(
         tasks_file: Path to the tasks YAML file.
         task_id: Optional ID of a specific task to delete.
         all_tasks: If True, deletes all tasks and clears the goal.
-        completed_only: If True, deletes only completed tasks.
+        completed_only: If True, deletes terminal task history.
+        force: Allow deleting an individual task with execution history.
 
     Returns:
         The number of tasks deleted.
@@ -131,6 +134,7 @@ def delete_tasks(
                     models.TaskStatus.COMPLETED,
                     models.TaskStatus.FAILED,
                     models.TaskStatus.CANCELLED,
+                    models.TaskStatus.SUPERSEDED,
                 )
             ]
             for t in completed_tasks:
@@ -143,6 +147,7 @@ def delete_tasks(
                     models.TaskStatus.COMPLETED,
                     models.TaskStatus.FAILED,
                     models.TaskStatus.CANCELLED,
+                    models.TaskStatus.SUPERSEDED,
                 )
             ]
         elif task_id:
@@ -151,10 +156,69 @@ def delete_tasks(
             except models.TaskNotFoundError:
                 target = None
             if target:
+                log_exists = (
+                    paths.get_project_dir(tasks_file)
+                    / f"{target.id}-runner.log"
+                ).exists()
+                if not force and (
+                    target.status == models.TaskStatus.IN_PROGRESS
+                    or target.attempts > 0
+                    or target.started_at is not None
+                    or log_exists
+                ):
+                    raise ValueError(
+                        f"Task {target.id} has execution history. "
+                        "Supersede it to preserve lineage, or use --force "
+                        "to remove it explicitly."
+                    )
                 data.tasks = [t for t in data.tasks if t.id != target.id]
 
         persistence.save_tasks(tasks_file, data)
         return initial_count - len(data.tasks)
+
+
+def supersede_task(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    reason: str,
+) -> models.Task:
+    """Retire a task while preserving its execution history and lineage.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: Full task ID or an unambiguous prefix.
+        reason: Human-readable reason the task was replaced.
+
+    Returns:
+        The superseded task.
+
+    Raises:
+        ValueError: If the task is missing, already finished, or the reason is
+            empty.
+    """
+    reason = reason.strip()
+    if not reason:
+        raise ValueError("Supersede reason cannot be empty")
+
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        target = queries.resolve_task(data.tasks, task_id)
+        if target.status in _DONE_STATUSES:
+            raise ValueError(
+                f"Cannot supersede task {target.id} with status {target.status}"
+            )
+
+        if target.status == models.TaskStatus.IN_PROGRESS:
+            lifecycle.update_run_time(target)
+        target.status = models.TaskStatus.SUPERSEDED
+        target.superseded_at = time.time()
+        target.superseded_reason = reason
+        target.pid = None
+        target.last_heartbeat = None
+        target.requested_status = None
+
+        persistence.save_tasks(tasks_file, data)
+        return target
 
 
 def update_task(
@@ -233,6 +297,7 @@ def update_task(
                     models.TaskStatus.COMPLETED,
                     models.TaskStatus.FAILED,
                     models.TaskStatus.CANCELLED,
+                    models.TaskStatus.SUPERSEDED,
                 )
             ):
                 lifecycle.update_run_time(target)
@@ -249,6 +314,7 @@ def update_task(
                     models.TaskStatus.COMPLETED,
                     models.TaskStatus.FAILED,
                     models.TaskStatus.CANCELLED,
+                    models.TaskStatus.SUPERSEDED,
                 ):
                     target.completed_at = time.time()
                     target.pid = None
@@ -256,6 +322,8 @@ def update_task(
                     target.requested_status = None
                 elif status == models.TaskStatus.PENDING:
                     target.completed_at = None
+                    target.superseded_at = None
+                    target.superseded_reason = None
                     target.attempts = 0
                     target.requested_status = None
                 elif target.completed_at is not None:

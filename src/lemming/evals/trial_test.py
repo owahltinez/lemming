@@ -105,9 +105,10 @@ class TestTrialWithScriptedRunner(TrialTestCase):
         # A well-behaved agent: replace the doomed task with a smaller one
         # through the lemming CLI, exactly as the hook prompt instructs.
         runner = self.write_runner_script(
-            "lemming --tasks-file tasks.yml delete task1\n"
             "lemming --tasks-file tasks.yml add "
             "'Create a calc/cli.py skeleton with a dispatch table.'\n"
+            "lemming --tasks-file tasks.yml supersede task1 "
+            "--reason 'split into a smaller prerequisite task'\n"
         )
         self.run_trial_ok(scenario, runner=runner)
 

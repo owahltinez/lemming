@@ -317,6 +317,8 @@ def test_reset_task(tmp_path):
                 status=models.TaskStatus.COMPLETED,
                 progress=["done"],
                 execution_times={"runner": 10.0},
+                superseded_at=100.0,
+                superseded_reason="split",
             )
         ],
     )
@@ -331,6 +333,8 @@ def test_reset_task(tmp_path):
     assert reset_task.status == models.TaskStatus.PENDING
     assert reset_task.progress == []
     assert reset_task.execution_times is None
+    assert reset_task.superseded_at is None
+    assert reset_task.superseded_reason is None
     assert not log_file.exists()
 
 

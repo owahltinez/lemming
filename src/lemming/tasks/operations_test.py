@@ -235,12 +235,46 @@ def test_delete_tasks_retains_runner_log(tmp_path, monkeypatch):
     log_file = paths.get_log_file(tasks_file, t2.id)
     log_file.write_text("runner output")
 
-    count = operations.delete_tasks(tasks_file, task_id=t2.id)
+    count = operations.delete_tasks(tasks_file, task_id=t2.id, force=True)
     assert count == 1
     data = persistence.load_tasks(tasks_file)
     assert len(data.tasks) == 1
     assert data.tasks[0].description == "Task 1"
     assert log_file.read_text() == "runner output"
+
+
+def test_delete_started_task_requires_explicit_force(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = operations.add_task(tasks_file, "Started task")
+    operations.update_task(
+        tasks_file, task.id, status=models.TaskStatus.IN_PROGRESS
+    )
+
+    with pytest.raises(ValueError, match="Supersede it"):
+        operations.delete_tasks(tasks_file, task_id=task.id)
+
+    assert persistence.load_tasks(tasks_file).tasks[0].id == task.id
+
+
+def test_supersede_task_preserves_history(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    tasks_file = tmp_path / "tasks.yml"
+    task = operations.add_task(tasks_file, "Large task")
+    operations.update_task(
+        tasks_file, task.id, status=models.TaskStatus.IN_PROGRESS
+    )
+    log_file = paths.get_log_file(tasks_file, task.id)
+    log_file.write_text("partial work")
+
+    superseded = operations.supersede_task(
+        tasks_file, task.id, "split after reaching the time limit"
+    )
+
+    assert superseded.status == models.TaskStatus.SUPERSEDED
+    assert superseded.superseded_at is not None
+    assert superseded.superseded_reason == "split after reaching the time limit"
+    assert superseded.requested_status is None
+    assert log_file.read_text() == "partial work"
 
 
 def test_delete_all_tasks_removes_runner_logs(tmp_path, monkeypatch):

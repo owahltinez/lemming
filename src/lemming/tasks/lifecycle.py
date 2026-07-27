@@ -415,6 +415,8 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
         target.run_time = 0.0
         target.execution_times = None
         target.completed_at = None
+        target.superseded_at = None
+        target.superseded_reason = None
         target.started_at = None
         target.last_started_at = None
         target.pid = None

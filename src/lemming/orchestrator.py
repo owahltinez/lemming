@@ -69,7 +69,7 @@ def run_hooks(
             )
         return exit_codes
 
-    for hook_name in active_hooks:
+    for hook_index, hook_name in enumerate(active_hooks):
         # Reload tasks every time to ensure each hook sees progress from
         # previous hooks
         data = tasks.load_tasks(tasks_file)
@@ -80,6 +80,12 @@ def run_hooks(
                     f"Task {task_id} not found during hook '{hook_name}' run."
                 )
             continue
+        if (
+            hook_index > 0
+            and final_status is not None
+            and task.status != tasks.TaskStatus.IN_PROGRESS
+        ):
+            break
 
         try:
             prompt = prompts.prepare_hook_prompt(
@@ -225,14 +231,21 @@ def _process_exhausted_retries(
     # Re-check: if a hook reset/edited/replaced the task, continue the loop
     data = tasks.load_tasks(tasks_file)
     healed_task = next((t for t in data.tasks if t.id == task_id), None)
-    if healed_task and healed_task.attempts >= retries:
+    if (
+        healed_task
+        and tasks.TaskStatus.FAILED
+        in (
+            healed_task.status,
+            healed_task.requested_status,
+        )
+        and healed_task.attempts >= retries
+    ):
         click.echo(
             f"\nTask {task_id} failed after {retries} attempts. Aborting run."
         )
         return True
 
-    # Orchestrator healed it (reset attempts, deleted it, etc.) — continue
-    # the loop
+    # Orchestrator healed or superseded it — continue the loop.
     click.echo(f"Orchestrator intervened on task {task_id}. Continuing...")
     return False
 

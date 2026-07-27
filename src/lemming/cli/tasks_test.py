@@ -81,7 +81,7 @@ class TestCLITasks(unittest.TestCase):
             log_file.write_text("retained runner output")
 
             delete_result = self.cli_runner.invoke(
-                cli.cli, self.base_args + ["delete", task_id]
+                cli.cli, self.base_args + ["delete", task_id, "--force"]
             )
             self.assertEqual(delete_result.exit_code, 0)
             self.assertIn("runner log retained", delete_result.output)
@@ -103,6 +103,88 @@ class TestCLITasks(unittest.TestCase):
         data = tasks.load_tasks(self.test_tasks_file)
         task_descs = [t.description for t in data.tasks]
         self.assertNotIn("To be removed", task_descs)
+
+    def test_started_task_must_be_superseded_or_force_deleted(self):
+        with tasks.lock_tasks(self.test_tasks_file):
+            data = tasks.load_tasks(self.test_tasks_file)
+            data.tasks[0].attempts = 1
+            tasks.save_tasks(self.test_tasks_file, data)
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["delete", "12345678"]
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Supersede it", result.output)
+
+    def test_supersede_command_preserves_task_and_shows_replacements(self):
+        child = tasks.add_task(
+            self.test_tasks_file,
+            "Smaller replacement",
+            parent="12345678",
+        )
+
+        result = self.cli_runner.invoke(
+            cli.cli,
+            self.base_args
+            + [
+                "supersede",
+                "1234",
+                "--reason",
+                "split after reaching the time limit",
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        task = next(
+            item
+            for item in tasks.load_tasks(self.test_tasks_file).tasks
+            if item.id == "12345678"
+        )
+        self.assertEqual(task.status, tasks.TaskStatus.SUPERSEDED)
+
+        status = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", "1234"]
+        )
+        self.assertIn("Status:        superseded", status.output)
+        self.assertIn(
+            "Reason:         split after reaching the time limit",
+            status.output,
+        )
+        self.assertIn("Replaced By:", status.output)
+        self.assertIn(
+            f"{child.id} [pending] Smaller replacement",
+            status.output,
+        )
+
+    def test_status_overview_separates_queue_and_visible_history(self):
+        child = tasks.add_task(
+            self.test_tasks_file,
+            "Smaller replacement",
+            parent="12345678",
+        )
+        tasks.supersede_task(
+            self.test_tasks_file,
+            "12345678",
+            "split after timeout",
+        )
+
+        result = self.cli_runner.invoke(
+            cli.cli,
+            [
+                "--tasks-file",
+                str(self.test_tasks_file),
+                "status",
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Queue:", result.output)
+        self.assertIn(f"[ ] ({child.id}) [parent:12345678]", result.output)
+        self.assertIn("History:", result.output)
+        self.assertIn("[~] (12345678) Initial Task", result.output)
+        self.assertIn("Reason: split after timeout", result.output)
+        self.assertIn(f"Replaced by: {child.id}", result.output)
 
     def test_status_command(self):
         result = self.cli_runner.invoke(cli.cli, self.base_args + ["status"])

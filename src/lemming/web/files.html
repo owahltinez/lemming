@@ -317,7 +317,10 @@
                 );
                 const allCompleted =
                   data.tasks.length > 0 &&
-                  data.tasks.every((t) => t.status === 'completed');
+                  data.tasks.every(
+                    (t) =>
+                      t.status === 'completed' || t.status === 'superseded',
+                  );
                 const state = data.loop_running
                   ? 'running'
                   : hasError

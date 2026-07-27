@@ -224,14 +224,20 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 
 ### Roadmap Management
 
-- **`status [<id>]`**: Roadmap overview or deep-dive into a specific task,
-  including runner and orchestrator-hook execution times.
+- **`status [<id>]`**: Queue/history overview or deep-dive into a specific
+  task, including supersession lineage and runner/orchestrator-hook execution
+  times. Superseded and failed history stays visible in the default overview;
+  `--verbose` also shows routine completed/cancelled history.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index` and `--runner`.
 - **`edit <id>`**: Modify a task's description, runner, or position.
-- **`delete <id>`**: Remove a task while retaining its runner log. Supports
-  `--all` and `--completed` for bulk cleanup, including logs.
+- **`delete <id>`**: Remove an unstarted task while retaining its runner log.
+  Tasks with execution history require `--force`; autonomous restructuring
+  should use `supersede`. Supports `--all` and `--completed` for bulk cleanup,
+  including logs.
+- **`supersede <id> --reason <text>`**: Retire a replaced or split task without
+  losing its progress, timings, log, or links to replacement tasks.
 - **`progress`**: Manage progress entries and findings for specific tasks.
   - `list <id>`: List all progress for a task.
   - `add <id> <finding>`: Record a new technical detail.
@@ -262,6 +268,8 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 - **`fail <id>`**: Mark a task as a terminal failure (will not be retried).
 - **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 - **`reset <id>`**: Clear attempts and progress to start a task fresh.
+- Superseded tasks remain visible as non-failing history; replacement tasks
+  link back through their parent task ID.
 - **`logs [<id>]`**: Print a task's execution log to stdout, including retained
   logs for removed tasks. If no ID is provided, it defaults to the active or
   most recent task. Orchestrator hook output is automatically appended.

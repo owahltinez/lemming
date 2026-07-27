@@ -386,6 +386,44 @@ def test_process_exhausted_retries_healed(mock_run_hooks, setup_env):
 
 
 @mock.patch("lemming.orchestrator.run_hooks")
+def test_process_exhausted_retries_continues_when_superseded(
+    mock_run_hooks, setup_env
+):
+    test_tasks_file, _ = setup_env
+    task_id = tasks.load_tasks(test_tasks_file).tasks[0].id
+
+    def fake_run_hooks(*args, **kwargs):
+        tasks.supersede_task(
+            test_tasks_file,
+            task_id,
+            "split after reaching the time limit",
+        )
+
+    mock_run_hooks.side_effect = fake_run_hooks
+    data = tasks.load_tasks(test_tasks_file)
+    data.tasks[0].attempts = 3
+    tasks.save_tasks(test_tasks_file, data)
+
+    should_abort = _process_exhausted_retries(
+        test_tasks_file,
+        task_id,
+        retries=3,
+        runner_name="agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        active_hooks=["roadmap"],
+        working_dir=None,
+        time_limit=1,
+    )
+
+    assert not should_abort
+    task = tasks.load_tasks(test_tasks_file).tasks[0]
+    assert task.status == tasks.TaskStatus.SUPERSEDED
+
+
+@mock.patch("lemming.orchestrator.run_hooks")
 def test_process_finalizing_task(mock_run_hooks, setup_env):
     test_tasks_file, initial_data = setup_env
     _process_finalizing_task(

@@ -76,6 +76,11 @@ def update_task(
     """Update a task's description, runner, position, status, or parent."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     status = update.get("status")
+    if status == tasks.TaskStatus.SUPERSEDED:
+        raise fastapi.HTTPException(
+            400,
+            "Use the supersede endpoint so a reason is recorded.",
+        )
 
     # Validation: require progress if completing or failing from the UI,
     # but not if we are just marking a finished task as pending (uncomplete).
@@ -91,6 +96,7 @@ def update_task(
             tasks.TaskStatus.COMPLETED,
             tasks.TaskStatus.FAILED,
             tasks.TaskStatus.CANCELLED,
+            tasks.TaskStatus.SUPERSEDED,
         ):
             require_progress = True
 
@@ -130,9 +136,37 @@ def delete_task(
 ):
     """Delete a single task by ID."""
     tasks.delete_tasks(
-        context.resolve_tasks_file(request.app.state, project), task_id=task_id
+        context.resolve_tasks_file(request.app.state, project),
+        task_id=task_id,
+        force=True,
     )
     return {"status": "ok"}
+
+
+class SupersedeTaskRequest(pydantic.BaseModel):
+    """Request body for superseding a task."""
+
+    reason: str
+
+
+@router.post("/api/tasks/{task_id}/supersede")
+def supersede_task(
+    request: fastapi.Request,
+    task_id: str,
+    body: SupersedeTaskRequest,
+    project: str | None = None,
+):
+    """Supersede a task while retaining its history."""
+    try:
+        return tasks.supersede_task(
+            context.resolve_tasks_file(request.app.state, project),
+            task_id,
+            body.reason,
+        )
+    except ValueError as e:
+        if "not found" in str(e):
+            raise fastapi.HTTPException(404, str(e))
+        raise fastapi.HTTPException(400, str(e))
 
 
 @router.post("/api/tasks/{task_id}/cancel")

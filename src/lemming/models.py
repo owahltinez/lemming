@@ -40,6 +40,7 @@ class TaskStatus(enum.StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    SUPERSEDED = "superseded"
 
 
 class Task(pydantic.BaseModel):
@@ -52,6 +53,8 @@ class Task(pydantic.BaseModel):
     progress: list[str] = pydantic.Field(default_factory=list)
     runner: str | None = None
     completed_at: float | None = None
+    superseded_at: float | None = None
+    superseded_reason: str | None = None
     started_at: float | None = None
     last_started_at: float | None = None
     created_at: float = pydantic.Field(default_factory=time.time)

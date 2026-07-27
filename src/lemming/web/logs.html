@@ -142,6 +142,19 @@
               >
             </div>
             <div
+              :if="task.status === 'superseded' && task.superseded_at"
+              class="hidden sm:block"
+              :attr:title="task.superseded_reason || 'Task superseded'"
+            >
+              <span class="text-10px font-semibold uppercase text-gray-400 mr-1"
+                >Superseded:</span
+              >
+              <span
+                class="text-10px text-purple-600 dark:text-purple-400 font-mono"
+                >{{ formatDate(task.superseded_at) }}</span
+              >
+            </div>
+            <div
               :if="task.run_time || task.status === 'in_progress'"
               class="hidden sm:block"
             >
@@ -278,6 +291,8 @@
                       ? 'running'
                       : $.task.status === 'completed'
                         ? 'success'
+                        : $.task.status === 'superseded'
+                          ? 'idle'
                         : $.task.attempts > 0
                           ? 'error'
                           : 'idle';

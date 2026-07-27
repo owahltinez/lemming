@@ -8,6 +8,8 @@ const indexHtmlPath = path.join(process.cwd(), 'src/lemming/web/index.html');
 const createInitialState = (overrides = {}) => {
   const tasks = overrides.tasks || [];
   const hideCompleted = overrides.hideCompleted || false;
+  const isHistoryTask = (task) =>
+    ['completed', 'failed', 'cancelled', 'superseded'].includes(task.status);
   return {
     tasks,
     goal: '',
@@ -26,6 +28,39 @@ const createInitialState = (overrides = {}) => {
     folderPickerBreadcrumbs: [],
     folderPickerDirs: [],
     hideCompleted,
+    isHistoryTask,
+    getTaskStatusLabel: (task) => {
+      if (task.status === 'completed') return 'Completed';
+      if (task.status === 'failed') return 'Failed';
+      if (task.status === 'cancelled') return 'Cancelled';
+      if (task.status === 'superseded') return 'Superseded';
+      if (task.status === 'in_progress') {
+        return task.requested_status ? 'Finalizing' : 'Running';
+      }
+      return task.attempts > 0 ? 'Retrying' : 'Pending';
+    },
+    getTaskStatusClass: (task) => {
+      if (task.status === 'completed') return 'bg-green-100 text-green-700';
+      if (task.status === 'failed') return 'bg-red-100 text-red-700';
+      if (task.status === 'cancelled') return 'bg-orange-100 text-orange-700';
+      if (task.status === 'superseded') {
+        return 'bg-purple-100 text-purple-700';
+      }
+      if (task.status === 'in_progress') {
+        return 'bg-blue-100 text-blue-700 animate-pulse';
+      }
+      return task.attempts > 0
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-gray-100 text-gray-500';
+    },
+    getTaskTextClass: (task) => {
+      if (task.status === 'completed') return 'text-gray-400 line-through';
+      if (task.status === 'cancelled') return 'text-orange-600 line-through';
+      if (task.status === 'superseded') return 'text-purple-600';
+      if (task.status === 'failed') return 'text-red-600';
+      if (task.status === 'in_progress') return 'text-blue-600';
+      return task.attempts > 0 ? 'text-amber-600' : '';
+    },
     toasts: [],
     expanded: [],
     timeLimit: '3600',
@@ -113,11 +148,16 @@ const createInitialState = (overrides = {}) => {
         )
         .join(', ');
     },
+    getParent: (parentId) => tasks.find((t) => t.id === parentId),
+    getChildren: (parentId) => tasks.filter((t) => t.parent === parentId),
+    focusTask: () => {},
+    supersededCount: tasks.filter((t) => t.status === 'superseded').length,
+    historyCount: tasks.filter(isHistoryTask).length,
     filteredTasks: $computed(() => {
       const ts = [...tasks];
       ts.sort((a, b) => {
-        const aDone = a.status === 'completed' || a.status === 'failed' ? 1 : 0;
-        const bDone = b.status === 'completed' || b.status === 'failed' ? 1 : 0;
+        const aDone = isHistoryTask(a) ? 1 : 0;
+        const bDone = isHistoryTask(b) ? 1 : 0;
         if (aDone !== bDone) return aDone - bDone;
 
         if (!aDone) {
@@ -129,16 +169,13 @@ const createInitialState = (overrides = {}) => {
           return (a.created_at || 0) - (b.created_at || 0);
         }
 
-        const aTime = a.completed_at || a.created_at || 0;
-        const bTime = b.completed_at || b.created_at || 0;
+        const aTime = a.completed_at || a.superseded_at || a.created_at || 0;
+        const bTime = b.completed_at || b.superseded_at || b.created_at || 0;
         if (aTime !== bTime) return bTime - aTime;
 
         return (b.index || 0) - (a.index || 0);
       });
-      return ts.filter(
-        (t) =>
-          (t.status !== 'completed' && t.status !== 'failed') || !hideCompleted,
-      );
+      return ts.filter((t) => !isHistoryTask(t) || !hideCompleted);
     }),
     ...overrides,
   };
@@ -356,7 +393,7 @@ describe('Lemming Web Dashboard', () => {
     assert.ok(descriptions.includes('Test Task 2'));
   });
 
-  test('hides completed tasks when hideCompleted is true', async () => {
+  test('hides terminal task history when hideCompleted is true', async () => {
     const tasks = [
       {
         id: '123',
@@ -372,6 +409,13 @@ describe('Lemming Web Dashboard', () => {
         attempts: 1,
         progress: ['Success'],
       },
+      {
+        id: '789',
+        description: 'Superseded Task',
+        status: 'superseded',
+        attempts: 1,
+        progress: ['Partial work'],
+      },
     ];
 
     const renderer = new Renderer(
@@ -379,7 +423,9 @@ describe('Lemming Web Dashboard', () => {
         tasks,
         hideCompleted: true,
         loading: false,
-        filteredTasks: tasks.filter((t) => t.status !== 'completed'),
+        filteredTasks: tasks.filter(
+          (t) => !['completed', 'superseded'].includes(t.status),
+        ),
       }),
     );
 
@@ -396,6 +442,55 @@ describe('Lemming Web Dashboard', () => {
     assert.strictEqual(taskItems.length, 1);
     assert.ok(taskItems[0].textContent.includes('Pending Task'));
     assert.ok(!taskItems[0].textContent.includes('Completed Task'));
+    assert.ok(!taskItems[0].textContent.includes('Superseded Task'));
+  });
+
+  test('renders superseded task lineage without failure styling', async () => {
+    const tasks = [
+      {
+        id: 'parent1',
+        description: 'Oversized implementation task',
+        status: 'superseded',
+        attempts: 2,
+        superseded_at: 2000,
+        superseded_reason: 'split after reaching the time limit',
+        progress: ['Committed the completed foundation'],
+      },
+      {
+        id: 'child1',
+        description: 'Finish the smaller remaining slice',
+        status: 'pending',
+        attempts: 0,
+        parent: 'parent1',
+        progress: [],
+      },
+    ];
+    const renderer = new Renderer(
+      createInitialState({
+        tasks,
+        loading: false,
+        expanded: { parent1: true, child1: true },
+        filteredTasks: tasks,
+      }),
+    );
+
+    const fragment = await renderer.preprocessLocal(indexHtmlPath);
+    await renderer.mount(fragment);
+
+    const parent = fragment.querySelector('[data-task-id="parent1"]');
+    assert.ok(parent.textContent.includes('Superseded'));
+    assert.ok(
+      parent.textContent.includes('split after reaching the time limit'),
+    );
+    assert.ok(parent.querySelector('.bg-purple-100'));
+    const replacements = parent.querySelector(
+      '[data-testid="replacement-tasks"]',
+    );
+    assert.ok(replacements.textContent.includes('child1'));
+
+    const child = fragment.querySelector('[data-task-id="child1"]');
+    assert.ok(child.textContent.includes('parent1'));
+    assert.ok(!parent.textContent.includes('Failed'));
   });
 
   test('shows only stop button for in_progress tasks', async () => {
@@ -539,6 +634,7 @@ describe('Lemming Web Dashboard', () => {
         pendingCount: 1,
         completedCount: 0,
         failedCount: 0,
+        historyCount: 0,
         filteredTasks: tasksNoCompleted,
       }),
     );
@@ -550,13 +646,13 @@ describe('Lemming Web Dashboard', () => {
     await renderer.mount(fragment);
 
     let deleteCompletedBtn = fragment.querySelector(
-      '[aria-label="Delete all completed tasks"]',
+      '[aria-label="Delete all task history"]',
     );
-    assert.ok(deleteCompletedBtn, 'Delete Completed button should exist');
+    assert.ok(deleteCompletedBtn, 'Delete History button should exist');
     assert.strictEqual(
       deleteCompletedBtn.style.display,
       'none',
-      'Delete Completed button should be hidden when no completed tasks',
+      'Delete History button should be hidden when there is no history',
     );
 
     // 2. With completed tasks
@@ -584,6 +680,7 @@ describe('Lemming Web Dashboard', () => {
         pendingCount: 1,
         completedCount: 1,
         failedCount: 0,
+        historyCount: 1,
         filteredTasks: tasksWithCompleted,
       }),
     );
@@ -595,13 +692,13 @@ describe('Lemming Web Dashboard', () => {
     await renderer.mount(fragment);
 
     deleteCompletedBtn = fragment.querySelector(
-      '[aria-label="Delete all completed tasks"]',
+      '[aria-label="Delete all task history"]',
     );
-    assert.ok(deleteCompletedBtn, 'Delete Completed button should exist');
+    assert.ok(deleteCompletedBtn, 'Delete History button should exist');
     assert.strictEqual(
       deleteCompletedBtn.style.display,
       '',
-      'Delete Completed button should be visible when there are completed tasks',
+      'Delete History button should be visible when history exists',
     );
   });
 
@@ -964,6 +1061,13 @@ describe('Lemming Web Dashboard', () => {
         attempts: 1,
         progress: [],
       },
+      {
+        id: 's1',
+        description: 'Superseded Task',
+        status: 'superseded',
+        attempts: 1,
+        progress: ['Partial implementation retained'],
+      },
     ];
 
     const renderer = new Renderer(
@@ -980,7 +1084,7 @@ describe('Lemming Web Dashboard', () => {
     await renderer.mount(fragment);
 
     const taskItems = fragment.querySelectorAll('[role="listitem"]');
-    assert.strictEqual(taskItems.length, 5);
+    assert.strictEqual(taskItems.length, 6);
 
     // 1. Running Task
     const runningChip = taskItems[0].querySelector('[role="status"]');
@@ -1002,14 +1106,20 @@ describe('Lemming Web Dashboard', () => {
 
     // 4. Retriable Failed Task (pending with attempts)
     const retriableChip = taskItems[3].querySelector('[role="status"]');
-    assert.strictEqual(retriableChip.textContent.trim(), 'Failed');
-    assert.ok(retriableChip.classList.contains('bg-red-100'));
+    assert.strictEqual(retriableChip.textContent.trim(), 'Retrying');
+    assert.ok(retriableChip.classList.contains('bg-amber-100'));
 
     // 5. Completed Task
     const completedChip = taskItems[4].querySelector('[role="status"]');
     assert.strictEqual(completedChip.textContent.trim(), 'Completed');
     assert.ok(completedChip.classList.contains('bg-green-100'));
     assert.ok(completedChip.classList.contains('text-green-700'));
+
+    // 6. Superseded Task
+    const supersededChip = taskItems[5].querySelector('[role="status"]');
+    assert.strictEqual(supersededChip.textContent.trim(), 'Superseded');
+    assert.ok(supersededChip.classList.contains('bg-purple-100'));
+    assert.ok(supersededChip.classList.contains('text-purple-700'));
   });
 
   test('displays real-time run time for in-progress tasks', async () => {

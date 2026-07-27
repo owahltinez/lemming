@@ -39,6 +39,29 @@ def _execution_time_rows(
     ]
 
 
+def _echo_task_summary(task: tasks.Task, all_tasks: list[tasks.Task]) -> None:
+    """Print one task row plus compact supersession lineage."""
+    marker_by_status = {
+        tasks.TaskStatus.COMPLETED: ("[x]", "green"),
+        tasks.TaskStatus.IN_PROGRESS: ("[*]", "cyan"),
+        tasks.TaskStatus.CANCELLED: ("[-]", "red"),
+        tasks.TaskStatus.SUPERSEDED: ("[~]", "magenta"),
+        tasks.TaskStatus.FAILED: ("[!]", "red"),
+        tasks.TaskStatus.PENDING: ("[ ]", "yellow"),
+    }
+    marker, status_color = marker_by_status[task.status]
+    click.secho(f"{marker} ", fg=status_color, nl=False)
+    parent_str = f" [parent:{task.parent}]" if task.parent else ""
+    click.echo(f"({task.id}){parent_str} {task.description}")
+
+    if task.status == tasks.TaskStatus.SUPERSEDED:
+        if task.superseded_reason:
+            click.echo(f"    Reason: {task.superseded_reason}")
+        replacements = [item.id for item in all_tasks if item.parent == task.id]
+        if replacements:
+            click.echo(f"    Replaced by: {', '.join(replacements)}")
+
+
 @cli.command(short_help="[description] Add a new task to the queue")
 @click.argument("description", required=False)
 @click.option(
@@ -195,10 +218,23 @@ def edit(
     is_flag=True,
     help="Delete all tasks and clear the goal.",
 )
-@click.option("--completed", is_flag=True, help="Delete completed tasks only.")
+@click.option(
+    "--completed",
+    is_flag=True,
+    help="Delete terminal task history and its logs.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Explicitly remove a task that has execution history.",
+)
 @click.pass_context
 def delete_task(
-    ctx: click.Context, task_id: str | None, delete_all: bool, completed: bool
+    ctx: click.Context,
+    task_id: str | None,
+    delete_all: bool,
+    completed: bool,
+    force: bool,
 ):
     """Deletes one or more tasks from the roadmap."""
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -210,6 +246,9 @@ def delete_task(
     if task_id and (delete_all or completed):
         click.echo("Error: Cannot specify a task ID with --all or --completed.")
         ctx.exit(1)
+    if force and not task_id:
+        click.echo("Error: --force requires a task ID.")
+        ctx.exit(1)
     if not task_id and not delete_all and not completed:
         click.echo("Error: Provide a task ID, or use --all or --completed.")
         ctx.exit(1)
@@ -220,6 +259,7 @@ def delete_task(
             task_id=task_id,
             all_tasks=delete_all,
             completed_only=completed,
+            force=force,
         )
     except ValueError as e:
         click.echo(f"Error: {e}")
@@ -230,7 +270,7 @@ def delete_task(
             "Deleted all tasks, progress, and logs, and cleared the goal."
         )
     elif completed:
-        click.echo(f"Deleted {removed} completed task(s) and their logs.")
+        click.echo(f"Deleted {removed} history task(s) and their logs.")
     elif task_id:
         if removed > 0:
             click.echo(
@@ -239,6 +279,24 @@ def delete_task(
             )
         else:
             click.echo(f"Error: Task {task_id} not found.")
+
+
+@cli.command(short_help="<taskid> Replace a task while keeping its history")
+@click.argument("task_id")
+@click.option(
+    "--reason",
+    required=True,
+    help="Why the task was replaced (for example, split after timeout).",
+)
+@click.pass_context
+def supersede(ctx: click.Context, task_id: str, reason: str):
+    """Marks a task as superseded without deleting its execution record."""
+    try:
+        target = tasks.supersede_task(ctx.obj["TASKS_FILE"], task_id, reason)
+        click.echo(f"Task {target.id} marked as superseded: {reason.strip()}")
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
 
 
 @cli.command(short_help="<taskid> Show the goal and task details")
@@ -264,51 +322,59 @@ def status(ctx: click.Context, task_id: str | None):
         if verbose:
             click.secho("=== Long-Term Goal ===", fg="cyan", bold=True)
             click.echo(project_data.goal or "No goal set.")
-            click.secho("\n=== Tasks ===", fg="cyan", bold=True)
 
         if not project_data.tasks:
             if verbose:
                 click.echo("No tasks found.")
             return
 
-        for t in project_data.tasks:
-            if not verbose and t.status in (
-                tasks.TaskStatus.COMPLETED,
-                tasks.TaskStatus.CANCELLED,
-            ):
-                continue
+        terminal_statuses = {
+            tasks.TaskStatus.COMPLETED,
+            tasks.TaskStatus.FAILED,
+            tasks.TaskStatus.CANCELLED,
+            tasks.TaskStatus.SUPERSEDED,
+        }
+        queue = [
+            task
+            for task in project_data.tasks
+            if task.status not in terminal_statuses
+        ]
+        history = [
+            task
+            for task in project_data.tasks
+            if task.status in terminal_statuses
+        ]
+        visible_history = (
+            history
+            if verbose
+            else [
+                task
+                for task in history
+                if task.status
+                in (tasks.TaskStatus.FAILED, tasks.TaskStatus.SUPERSEDED)
+            ]
+        )
 
-            if t.status == tasks.TaskStatus.COMPLETED:
-                marker = "[x]"
-                status_color = "green"
-            elif t.status == tasks.TaskStatus.IN_PROGRESS:
-                marker = "[*]"
-                status_color = "cyan"
-            elif t.status == tasks.TaskStatus.CANCELLED:
-                marker = "[-]"
-                status_color = "red"
-            else:
-                marker = "[ ]"
-                status_color = "yellow"
+        queue_heading = "\n=== Queue ===" if verbose else "Queue:"
+        click.secho(queue_heading, fg="cyan", bold=True)
+        if queue:
+            for task in queue:
+                _echo_task_summary(task, project_data.tasks)
+        else:
+            click.echo("No active tasks.")
 
-            click.secho(f"{marker} ", fg=status_color, nl=False)
-            parent_str = ""
-            if t.parent:
-                parent_str = f" [parent:{t.parent}]"
+        if visible_history:
+            history_heading = "\n=== History ===" if verbose else "\nHistory:"
+            click.secho(history_heading, fg="magenta", bold=True)
+            for task in visible_history:
+                _echo_task_summary(task, project_data.tasks)
 
-            click.echo(f"({t.id}){parent_str} {t.description}")
-
-        if not verbose:
-            completed_count = sum(
-                1
-                for t in project_data.tasks
-                if t.status
-                in (tasks.TaskStatus.COMPLETED, tasks.TaskStatus.CANCELLED)
+        hidden_count = len(history) - len(visible_history)
+        if hidden_count:
+            click.echo(
+                f"({hidden_count} completed/cancelled history task(s) hidden; "
+                "use --verbose to show)"
             )
-            if completed_count > 0:
-                click.echo(
-                    f"({completed_count} completed/cancelled tasks hidden)"
-                )
         return
 
     try:
@@ -351,7 +417,14 @@ def status(ctx: click.Context, task_id: str | None):
     click.echo(f"Status:        {status_str}")
     click.echo(f"Description:   {target.description}")
     if target.parent:
-        click.echo(f"Parent:        {target.parent}")
+        parent = next(
+            (task for task in project_data.tasks if task.id == target.parent),
+            None,
+        )
+        parent_context = (
+            f" [{parent.status}] {parent.description}" if parent else ""
+        )
+        click.echo(f"Parent:        {target.parent}{parent_context}")
     if target.runner:
         click.echo(f"Custom Runner: {target.runner}")
     click.echo(f"Attempts:      {target.attempts}")
@@ -373,6 +446,25 @@ def status(ctx: click.Context, task_id: str | None):
             "%Y-%m-%d %H:%M:%S %Z", time.localtime(target.completed_at)
         )
         click.echo(f"Completed At:  {comp_time}")
+    if target.superseded_at:
+        superseded_time = time.strftime(
+            "%Y-%m-%d %H:%M:%S %Z",
+            time.localtime(target.superseded_at),
+        )
+        click.echo(f"Superseded At: {superseded_time}")
+    if target.superseded_reason:
+        click.echo(f"Reason:         {target.superseded_reason}")
+
+    replacements = [
+        task for task in project_data.tasks if task.parent == target.id
+    ]
+    if replacements:
+        click.echo("Replaced By:")
+        for replacement in replacements:
+            click.echo(
+                f"  {replacement.id} [{replacement.status}] "
+                f"{replacement.description}"
+            )
     run_time = target.run_time
     if target.status == tasks.TaskStatus.IN_PROGRESS and target.last_started_at:
         run_time += time.time() - target.last_started_at
@@ -399,7 +491,7 @@ def logs(ctx: click.Context, task_id: str | None):
     """Prints the execution log for a task to stdout.
 
     If no task_id is provided, it defaults to the currently running task or
-    the most recently completed one.
+    the most recently finished one.
 
     Note: Orchestrator hooks are appended to the main 'runner' log.
     """
@@ -428,17 +520,31 @@ def logs(ctx: click.Context, task_id: str | None):
             None,
         )
         if not target:
-            # Fall back to the most recently completed task
-            completed = [
-                t for t in data.tasks if t.status == tasks.TaskStatus.COMPLETED
+            # Fall back to the most recently finished task.
+            finished = [
+                task
+                for task in data.tasks
+                if task.status
+                in (
+                    tasks.TaskStatus.COMPLETED,
+                    tasks.TaskStatus.FAILED,
+                    tasks.TaskStatus.CANCELLED,
+                    tasks.TaskStatus.SUPERSEDED,
+                )
             ]
-            if completed:
-                target = sorted(completed, key=lambda x: x.completed_at or 0)[
-                    -1
-                ]
+            if finished:
+                target = max(
+                    finished,
+                    key=lambda task: (
+                        task.completed_at
+                        or task.superseded_at
+                        or task.created_at
+                        or 0
+                    ),
+                )
 
     if not target and log_file is None:
-        click.echo("Error: No active or recently completed task found.")
+        click.echo("Error: No active or recently finished task found.")
         ctx.exit(1)
 
     if log_file is None:
