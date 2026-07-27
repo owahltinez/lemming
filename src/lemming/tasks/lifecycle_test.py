@@ -264,9 +264,7 @@ def test_cancel_pending_task_does_not_kill_process(tmp_path):
         ),
     )
 
-    with patch(
-        "lemming.tasks.lifecycle._kill_pid_tree"
-    ) as mock_kill_tree:
+    with patch("lemming.tasks.lifecycle._kill_pid_tree") as mock_kill_tree:
         success = lifecycle.cancel_task(tasks_file, "1")
 
     assert success is True
