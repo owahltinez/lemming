@@ -55,6 +55,54 @@ def multiply(a, b):
     return a * b
 '''
 
+_FULL_OPS_TEST = """import unittest
+
+from calc import ops
+
+
+class TestOps(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(ops.add(2, 3), 5)
+
+    def test_subtract(self):
+        self.assertEqual(ops.subtract(5, 3), 2)
+
+    def test_multiply(self):
+        self.assertEqual(ops.multiply(2, 3), 6)
+"""
+
+_INCOMPLETE_CLI = '''"""Command dispatch for the calculator CLI."""
+
+from calc import ops
+
+
+COMMANDS = {
+    "add": ops.add,
+    "subtract": ops.subtract,
+}
+
+
+def execute(command, left, right):
+    """Executes a registered calculator command."""
+    return COMMANDS[command](left, right)
+'''
+
+_INCOMPLETE_CLI_TEST = """import unittest
+
+from calc import cli
+
+
+class TestCli(unittest.TestCase):
+    def test_registered_commands(self):
+        cases = {
+            "add": (2, 3, 5),
+            "subtract": (5, 3, 2),
+        }
+        for command, (left, right, expected) in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(cli.execute(command, left, right), expected)
+"""
+
 _BUGGY_OPS = '''"""Arithmetic operations for the calculator CLI."""
 
 
@@ -357,6 +405,97 @@ def _grade_extend(workspace: pathlib.Path) -> list[scenarios.Check]:
     ]
 
 
+def _build_workspace_gap(workspace: pathlib.Path) -> None:
+    """Fixture: truthful completed tasks conceal an unwired multiply command."""
+    fixtures.init_repo(
+        workspace,
+        {
+            "calc/__init__.py": "",
+            "calc/ops.py": _FULL_OPS,
+            "calc/ops_test.py": _FULL_OPS_TEST,
+            "calc/cli.py": _INCOMPLETE_CLI,
+            "calc/cli_test.py": _INCOMPLETE_CLI_TEST,
+            "README.md": "# Calculator CLI\n",
+        },
+    )
+    fixtures.save_roadmap(
+        workspace,
+        models.Roadmap(
+            goal=_GOAL,
+            config=_config(),
+            tasks=[
+                models.Task(
+                    id="task0",
+                    description=(
+                        "Implement the calculator arithmetic operations with "
+                        "focused unit tests."
+                    ),
+                    status=models.TaskStatus.COMPLETED,
+                    attempts=1,
+                    progress=[
+                        "Implemented add(), subtract(), and multiply() with "
+                        "passing unit tests."
+                    ],
+                ),
+                models.Task(
+                    id="task1",
+                    description=(
+                        "Implement the calculator CLI command dispatcher and "
+                        "cover its registered commands with tests."
+                    ),
+                    attempts=1,
+                    requested_status=models.TaskStatus.COMPLETED,
+                    progress=[
+                        "Implemented the CLI dispatcher and tests for its "
+                        "registered commands; the full test suite passes."
+                    ],
+                ),
+            ],
+        ),
+    )
+
+
+def _grade_workspace_gap(workspace: pathlib.Path) -> list[scenarios.Check]:
+    """The hook must inspect source and schedule the hidden integration gap."""
+    roadmap, checks = scenarios.load_or_fail(workspace)
+    if roadmap is None:
+        return checks
+
+    new_pending = [
+        t
+        for t in roadmap.tasks
+        if t.id not in ("task0", "task1")
+        and t.status == models.TaskStatus.PENDING
+    ]
+    scheduled = scenarios.Check(
+        name="workspace-gap-scheduled",
+        passed=bool(new_pending),
+        detail="no pending task was added for the workspace-only gap"
+        if not new_pending
+        else "",
+    )
+    targeted = scenarios.Check(
+        name="workspace-gap-targeted",
+        passed=any(
+            "multiply" in t.description.lower()
+            and any(
+                word in t.description.lower()
+                for word in ("cli", "command", "dispatch", "register")
+            )
+            for t in new_pending
+        ),
+        detail=f"new tasks: {[t.description for t in new_pending]}",
+        advisory=True,
+    )
+
+    return [
+        scenarios.check_finalized(roadmap, "task1"),
+        scheduled,
+        targeted,
+        scenarios.check_clean_source(workspace),
+    ]
+
+
 def _build_follow_up(workspace: pathlib.Path) -> None:
     """Fixture: the finished task reported an out-of-scope bug in source."""
     _write_project(workspace, _BUGGY_OPS)
@@ -453,6 +592,18 @@ SCENARIOS = [
         summary="Adds concrete tasks when the goal has an uncovered gap.",
         build=_build_extend,
         grade=_grade_extend,
+    ),
+    scenarios.Scenario(
+        name="audit-workspace-at-queue-drain",
+        hook="roadmap",
+        outcome=models.TaskStatus.COMPLETED,
+        task_id="task1",
+        summary=(
+            "Inspects the workspace at queue drain and schedules a hidden "
+            "integration gap."
+        ),
+        build=_build_workspace_gap,
+        grade=_grade_workspace_gap,
     ),
     scenarios.Scenario(
         name="follow-up-without-code-changes",

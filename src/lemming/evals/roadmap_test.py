@@ -34,7 +34,7 @@ class TestSuiteRegistry(ScenarioTestCase):
     def test_all_suites_includes_roadmap(self):
         registry = suites.all_suites()
         self.assertIn("roadmap", registry)
-        self.assertEqual(len(registry["roadmap"]), 5)
+        self.assertEqual(len(registry["roadmap"]), 6)
 
     def test_scenario_names_are_unique(self):
         names = [s.name for s in roadmap.SCENARIOS]
@@ -175,6 +175,56 @@ class TestExtendScenario(ScenarioTestCase):
         # trial itself still passes.
         self.assertEqual(self.check_names(checks), {"gap-covered"})
         self.assertTrue(scenarios.passed(checks))
+
+
+class TestWorkspaceGapScenario(ScenarioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.scenario = _scenario("audit-workspace-at-queue-drain")
+        self.scenario.build(self.workspace)
+        self.tasks_file = fixtures.tasks_file(self.workspace)
+
+    def test_scheduling_integration_task_passes(self):
+        _finalize(self.workspace)
+        tasks.add_task(
+            self.tasks_file,
+            "Register the multiply command in the CLI dispatch table and add "
+            "an end-to-end command test.",
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.check_names(checks), set())
+
+    def test_fast_exit_fails(self):
+        _finalize(self.workspace)
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(
+            self.check_names(checks),
+            {"workspace-gap-scheduled", "workspace-gap-targeted"},
+        )
+        self.assertFalse(scenarios.passed(checks))
+
+    def test_unrelated_task_flags_target_check_as_advisory(self):
+        _finalize(self.workspace)
+        tasks.add_task(self.tasks_file, "Polish the README wording.")
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.check_names(checks), {"workspace-gap-targeted"})
+        self.assertTrue(scenarios.passed(checks))
+
+    def test_source_edit_fails(self):
+        _finalize(self.workspace)
+        cli = self.workspace / "calc" / "cli.py"
+        cli.write_text(
+            cli.read_text().replace(
+                '"subtract": ops.subtract,',
+                '"subtract": ops.subtract,\n    "multiply": ops.multiply,',
+            )
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn("no-source-changes", self.check_names(checks))
 
 
 class TestFollowUpScenario(ScenarioTestCase):
