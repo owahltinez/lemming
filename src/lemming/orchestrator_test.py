@@ -209,6 +209,7 @@ def test_synchronous_hooks_execution_timing(setup_env):
 @mock.patch("lemming.runner.run_with_heartbeat")
 def test_run_loop_calls_runner_with_header(mock_run, setup_env):
     test_tasks_file, initial_data = setup_env
+    working_dir = test_tasks_file.parent / "project with spaces"
     # Setup runner mock
     mock_run.return_value = (0, "output", "")
 
@@ -225,11 +226,14 @@ def test_run_loop_calls_runner_with_header(mock_run, setup_env):
             yolo=True,
             no_defaults=False,
             runner_args=(),
+            working_dir=working_dir,
         )
 
     # Verify run_with_heartbeat was called with header="Task Runner"
     args, kwargs = mock_run.call_args
     assert kwargs.get("header") == "Task Runner"
+    cmd = args[0]
+    assert cmd[cmd.index("--add-dir") + 1] == str(working_dir)
 
 
 @mock.patch("lemming.runner.run_with_heartbeat")
@@ -609,6 +613,7 @@ def test_run_hooks_success(mock_prepare, mock_list, mock_run, hooks_env):
     mock_list.return_value = ["roadmap"]
     mock_prepare.return_value = "Hook Prompt"
     mock_run.return_value = (0, "stdout", "")
+    working_dir = hooks_env.parent / "project with spaces"
 
     # Task must be IN_PROGRESS for finalization to apply
     tasks.update_task(
@@ -623,10 +628,13 @@ def test_run_hooks_success(mock_prepare, mock_list, mock_run, hooks_env):
         runner_args=(),
         no_defaults=False,
         verbose=True,
+        working_dir=working_dir,
         final_status=tasks.TaskStatus.COMPLETED,
     )
 
     assert mock_run.called
+    cmd = mock_run.call_args.args[0]
+    assert cmd[cmd.index("--add-dir") + 1] == str(working_dir)
     data = tasks.load_tasks(hooks_env)
     assert data.tasks[0].status == tasks.TaskStatus.COMPLETED
 

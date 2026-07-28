@@ -111,6 +111,7 @@ def run_hooks(
             no_defaults,
             verbose=verbose,
             time_limit=time_limit,
+            working_dir=working_dir,
         )
 
         try:
@@ -542,6 +543,7 @@ def run_loop(
             no_defaults,
             verbose=verbose,
             time_limit=time_limit,
+            working_dir=working_dir,
         )
 
         returncode = 0

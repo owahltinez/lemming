@@ -297,7 +297,8 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 Lemming uses **fuzzy matching** to automatically inject the correct "YOLO"
 (auto-approve) and "Quiet" flags for popular tools:
 
-- **Antigravity (`agy`)**: Adds `--dangerously-skip-permissions`
+- **Antigravity (`agy`)**: Adds `--dangerously-skip-permissions` and exposes
+  the project workspace with `--add-dir`
 - **Aider**: Adds `--yes --quiet`
 - **Claude**: Adds `--dangerously-skip-permissions`
 - **Codex**: Runs non-interactively via `codex exec`, adds `--json`, and, in

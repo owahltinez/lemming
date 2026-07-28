@@ -1,3 +1,4 @@
+import pathlib
 import signal
 import subprocess
 import sys
@@ -12,6 +13,31 @@ def test_build_runner_command_agy():
     assert "--dangerously-skip-permissions" in cmd
     assert "--prompt" in cmd
     assert "my prompt" in cmd
+
+
+def test_build_runner_command_agy_adds_project_workspace():
+    working_dir = pathlib.Path("/tmp/project with spaces")
+    cmd = runner.build_runner_command(
+        "agy",
+        "my prompt",
+        yolo=True,
+        working_dir=working_dir,
+    )
+
+    add_dir_index = cmd.index("--add-dir")
+    assert cmd[add_dir_index + 1] == str(working_dir)
+
+
+def test_build_runner_command_agy_without_defaults_skips_project_workspace():
+    cmd = runner.build_runner_command(
+        "agy",
+        "my prompt",
+        yolo=True,
+        no_defaults=True,
+        working_dir=pathlib.Path("/tmp/project"),
+    )
+
+    assert "--add-dir" not in cmd
 
 
 def test_build_runner_command_agy_streams_json_events():
@@ -40,9 +66,14 @@ def test_build_runner_command_agy_print_timeout_without_time_limit():
 
 def test_build_runner_command_time_limit_ignored_by_other_runners():
     cmd = runner.build_runner_command(
-        "claude", "my prompt", yolo=True, time_limit=45
+        "claude",
+        "my prompt",
+        yolo=True,
+        time_limit=45,
+        working_dir=pathlib.Path("/tmp/project"),
     )
     assert "--print-timeout" not in cmd
+    assert "--add-dir" not in cmd
     assert "--log-file" not in cmd
 
 
@@ -128,9 +159,13 @@ def test_build_runner_command_template_ignores_defaults():
     # Even though runner starts with "agy", template mode should not
     # inject --dangerously-skip-permissions etc.
     cmd = runner.build_runner_command(
-        "agy --custom {{prompt}}", "do stuff", yolo=True
+        "agy --custom {{prompt}}",
+        "do stuff",
+        yolo=True,
+        working_dir=pathlib.Path("/tmp/project"),
     )
     assert "--dangerously-skip-permissions" not in cmd
+    assert "--add-dir" not in cmd
     assert cmd == ["agy", "--custom", "do stuff"]
 
 

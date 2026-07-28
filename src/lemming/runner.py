@@ -102,6 +102,7 @@ def build_runner_command(
     no_defaults: bool = False,
     verbose: bool = False,
     time_limit: int = 0,
+    working_dir: pathlib.Path | None = None,
 ) -> list[str]:
     """Constructs the CLI command for the specified runner.
 
@@ -118,6 +119,8 @@ def build_runner_command(
         verbose: If True, enable verbose output for supported runners.
         time_limit: Task time limit in minutes; used to size runner-side
             timeouts for runners that enforce their own (0 means no limit).
+        working_dir: Project directory exposed to runners that do not preserve
+            the subprocess working directory for their shell tools.
 
     Returns:
         A list of command-line arguments.
@@ -152,6 +155,12 @@ def build_runner_command(
         if runner_base.startswith("agy"):
             if yolo:
                 cmd.append("--dangerously-skip-permissions")
+
+            # agy runs shell tools in its own scratch directory even when its
+            # process cwd is the project. Add the project as a workspace so
+            # task runners and hooks execute commands against the repository.
+            if working_dir is not None:
+                cmd.extend(["--add-dir", str(working_dir)])
 
             # Print mode buffers the response until the run completes, so
             # stream JSON events (agent messages, tool calls and their
