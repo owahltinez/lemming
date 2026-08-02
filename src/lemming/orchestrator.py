@@ -378,6 +378,19 @@ def _handle_runner_exit(
             return True
 
         if runner_failed and not post_task.requested_status:
+            # The runner usually says why it stopped (quota, a rejected
+            # model, an auth failure); without this the reason stays buried
+            # in the log behind a generic notice.
+            reason = runner.extract_error_message(stdout)
+            if reason:
+                click.echo(f"Runner reported: {reason}")
+                try:
+                    tasks.add_progress(
+                        tasks_file, task_id, f"Runner failed: {reason}"
+                    )
+                except Exception:
+                    # Recording the reason must never mask the failure.
+                    pass
             click.echo(
                 "Runner exited unsuccessfully. Task left pending and attempt "
                 "not counted; switch runners or retry later."

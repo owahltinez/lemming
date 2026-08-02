@@ -956,3 +956,53 @@ def test_run_loop_task_model_overrides_project_model(mock_run, setup_env):
     cmd = mock_run.call_args[0][0]
     assert cmd.count("--model") == 1
     assert cmd[cmd.index("--model") + 1] == "task-model"
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+@mock.patch("time.sleep", return_value=None)
+def test_run_loop_surfaces_runner_error(
+    mock_sleep, mock_run, setup_env, capsys
+):
+    """A failing runner's own reason must not stay buried in the log."""
+    test_tasks_file, _ = setup_env
+    mock_run.return_value = (
+        1,
+        '{"type":"error","message":"You\'ve hit your usage limit."}\n',
+        "",
+    )
+
+    run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+    )
+
+    assert "You've hit your usage limit." in capsys.readouterr().out
+    progress = tasks.load_tasks(test_tasks_file).tasks[0].progress
+    assert any("usage limit" in entry for entry in progress), progress
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+@mock.patch("time.sleep", return_value=None)
+def test_run_loop_failure_without_a_reason_is_unchanged(
+    mock_sleep, mock_run, setup_env, capsys
+):
+    """Runners that say nothing still get the generic notice."""
+    test_tasks_file, _ = setup_env
+    mock_run.return_value = (1, "no structured output here\n", "")
+
+    run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+    )
+
+    out = capsys.readouterr().out
+    assert "Runner exited unsuccessfully" in out
+    assert "Runner reported:" not in out

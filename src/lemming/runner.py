@@ -1,5 +1,6 @@
 """Runner command construction and subprocess execution with heartbeats."""
 
+import json
 import logging
 import os
 import pathlib
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Sentinel return codes for non-standard process termination.
 RETURNCODE_TIMEOUT = -14
+
+# Ceiling for a runner error surfaced in the orchestrator's output.
+MAX_ERROR_MESSAGE_CHARS = 200
 
 # Grace period after SIGTERM before escalating to SIGKILL.
 KILL_GRACE_SECONDS = 5
@@ -270,6 +274,74 @@ def build_runner_command(
         cmd.append(prompt)
 
     return cmd
+
+
+def _unwrap_error_text(message: str) -> str:
+    """Returns the human-readable core of a possibly re-encoded error.
+
+    Runners sometimes forward an upstream error by embedding its whole JSON
+    payload in the message field, which is unreadable in a terminal.
+    """
+    try:
+        payload = json.loads(message)
+    except (ValueError, TypeError):
+        return message
+
+    if isinstance(payload, dict):
+        inner = payload.get("error")
+        if isinstance(inner, dict) and isinstance(inner.get("message"), str):
+            return inner["message"]
+        if isinstance(payload.get("message"), str):
+            return payload["message"]
+    return message
+
+
+def extract_error_message(
+    output: str, max_chars: int = MAX_ERROR_MESSAGE_CHARS
+) -> str | None:
+    """Returns the runner's own final error message, if it reported one.
+
+    Only run-level failures count. A failed shell command inside the agent
+    also carries an error flag, but reporting that as the runner's failure
+    would be actively misleading.
+
+    Args:
+        output: Captured runner output, one JSON event per line.
+        max_chars: Ceiling for the returned message.
+
+    Returns:
+        The last run-level error message, or None if there was not one.
+    """
+    for raw_line in reversed(output.splitlines()):
+        line = raw_line.strip()
+        if not line.startswith("{") or "error" not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+
+        kind = event.get("type")
+        message = None
+        if kind == "error" and isinstance(event.get("message"), str):
+            message = event["message"]
+        elif kind == "turn.failed":
+            nested = event.get("error")
+            if isinstance(nested, dict):
+                message = nested.get("message")
+            elif isinstance(nested, str):
+                message = nested
+        if not isinstance(message, str) or not message.strip():
+            continue
+
+        text = " ".join(_unwrap_error_text(message).split())
+        if len(text) > max_chars:
+            text = f"{text[: max_chars - 1]}…"
+        return text
+
+    return None
 
 
 def describe_command(cmd: list[str], prompt: str) -> str:

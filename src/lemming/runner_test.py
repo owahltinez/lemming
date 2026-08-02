@@ -777,3 +777,68 @@ def test_interrupt_during_marking_kills_the_child(tmp_path):
     )
 
     child.wait(timeout=10)
+
+
+def test_extract_error_message_from_error_event():
+    """The runner's own diagnosis beats a generic failure notice."""
+    output = (
+        '{"type":"turn.started"}\n'
+        '{"type":"error","message":"You\'ve hit your usage limit."}\n'
+    )
+
+    assert (
+        runner.extract_error_message(output) == "You've hit your usage limit."
+    )
+
+
+def test_extract_error_message_unwraps_nested_json():
+    """Some runners wrap the human message in another JSON payload."""
+    inner = (
+        '{\\"type\\":\\"error\\",\\"status\\":400,\\"error\\":'
+        '{\\"type\\":\\"invalid_request_error\\",\\"message\\":'
+        "\\\"The 'sonnet' model is not supported when using Codex.\\\"}}"
+    )
+    output = '{"type":"error","message":"' + inner + '"}\n'
+
+    assert (
+        runner.extract_error_message(output)
+        == "The 'sonnet' model is not supported when using Codex."
+    )
+
+
+def test_extract_error_message_from_turn_failed():
+    output = '{"type":"turn.failed","error":{"message":"quota exhausted"}}\n'
+
+    assert runner.extract_error_message(output) == "quota exhausted"
+
+
+def test_extract_error_message_ignores_tool_failures():
+    """A failed shell command inside the agent is not the runner failing."""
+    output = (
+        '{"type":"user","is_error":true,"tool_use_result":"grep: no match"}\n'
+    )
+
+    assert runner.extract_error_message(output) is None
+
+
+def test_extract_error_message_returns_none_without_an_error():
+    assert runner.extract_error_message('{"type":"turn.completed"}\n') is None
+    assert runner.extract_error_message("") is None
+    assert runner.extract_error_message("not json at all\n") is None
+
+
+def test_extract_error_message_prefers_the_last_error():
+    output = (
+        '{"type":"error","message":"first"}\n'
+        '{"type":"error","message":"second"}\n'
+    )
+
+    assert runner.extract_error_message(output) == "second"
+
+
+def test_extract_error_message_is_bounded():
+    output = '{"type":"error","message":"' + "x" * 900 + '"}\n'
+
+    message = runner.extract_error_message(output)
+
+    assert len(message) <= 200
