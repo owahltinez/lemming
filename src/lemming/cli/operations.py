@@ -4,15 +4,19 @@ import copy
 import os
 import pathlib
 import secrets
+import signal
 import sys
 import threading
 import time
 
 import click
 
-from .. import paths, providers, tasks
+from .. import paths, providers, shutdown, tasks
 from ..orchestrator import parse_timeout, run_loop
 from .main import cli
+
+# How long `lemming stop` waits for the loop to shut down before giving up.
+LOOP_EXIT_TIMEOUT = 30.0
 
 
 @cli.command(
@@ -67,6 +71,11 @@ def run(
     if env_overrides:
         os.environ.update(env_overrides)
 
+    # Handle stop requests before claiming work, so a SIGTERM arriving mid-task
+    # takes the runner down instead of orphaning it.
+    shutdown.clear_drain()
+    shutdown.install_handlers()
+
     completed = False
     try:
         tasks.acquire_loop_lock(tasks_file)
@@ -87,6 +96,94 @@ def run(
         tasks.release_loop_lock(tasks_file)
     if not completed:
         ctx.exit(1)
+
+
+def _wait_for_loop_exit(pid: int, timeout: float = LOOP_EXIT_TIMEOUT) -> bool:
+    """Waits for the orchestrator process to exit.
+
+    Args:
+        pid: PID of the orchestrator loop.
+        timeout: Seconds to wait before giving up.
+
+    Returns:
+        True if the loop exited within the timeout.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not tasks.is_pid_alive(pid):
+            return True
+        time.sleep(0.1)
+    return not tasks.is_pid_alive(pid)
+
+
+def _release_stopped_tasks(tasks_file: pathlib.Path) -> list[str]:
+    """Returns tasks abandoned by the stopped loop to the pending queue.
+
+    A task left in_progress with a dead runner blocks the next `lemming run`
+    until it goes stale, so an intentional stop clears it immediately.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+
+    Returns:
+        IDs of the tasks that were reverted.
+    """
+    now = time.time()
+    reverted = []
+
+    for task in tasks.load_tasks(tasks_file).tasks:
+        is_unfinished = (
+            task.status == tasks.TaskStatus.IN_PROGRESS or task.requested_status
+        )
+        if is_unfinished and not tasks.is_task_active(task, now):
+            tasks.revert_task_to_pending(tasks_file, task.id)
+            reverted.append(task.id)
+
+    return reverted
+
+
+@cli.command(short_help="Stop the running orchestrator loop")
+@click.option(
+    "--after-current-task",
+    is_flag=True,
+    help="Let the running task finish, then stop before claiming another.",
+)
+@click.pass_context
+def stop(ctx: click.Context, after_current_task: bool) -> None:
+    """Stops the orchestrator loop started by `lemming run`.
+
+    By default the running task is interrupted and returned to the queue.
+    With --after-current-task the loop drains instead, which is the safe way
+    to reconfigure a runner or model without stranding work in flight.
+    """
+    tasks_file = ctx.obj["TASKS_FILE"]
+
+    loop_pid = tasks.get_loop_pid(tasks_file)
+    if loop_pid is None or not tasks.is_pid_alive(loop_pid):
+        click.echo("No orchestrator loop is running.")
+        return
+
+    # A drain leaves the in-flight task alone; an immediate stop tears the
+    # runner down and hands its task back to the queue.
+    if after_current_task:
+        os.kill(loop_pid, shutdown.DRAIN_SIGNAL)
+        click.echo(
+            f"Stop requested; loop {loop_pid} will exit after the current task."
+        )
+        return
+
+    os.kill(loop_pid, signal.SIGTERM)
+    if not _wait_for_loop_exit(loop_pid):
+        click.echo(
+            f"Loop {loop_pid} did not exit within "
+            f"{LOOP_EXIT_TIMEOUT:g}s; leaving task state untouched."
+        )
+        ctx.exit(1)
+
+    reverted = _release_stopped_tasks(tasks_file)
+    click.echo(f"Stopped orchestrator loop {loop_pid}.")
+    for task_id in reverted:
+        click.echo(f"Returned task {task_id} to the queue.")
 
 
 @cli.command(short_help="Launch the web interface")

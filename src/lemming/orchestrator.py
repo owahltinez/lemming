@@ -8,7 +8,7 @@ import traceback
 
 import click
 
-from . import prompts, runner, tasks
+from . import prompts, runner, shutdown, tasks
 from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
 
 
@@ -411,6 +411,12 @@ def run_loop(
     """Runs pending tasks, returning True only when the roadmap is complete."""
     while True:
         returncode = 0
+
+        # A drain request stops the loop between tasks, so the task that was
+        # already running is never stranded mid-flight.
+        if shutdown.drain_requested():
+            click.echo("Stop requested; exiting after the current task.")
+            return False
 
         # Reload configuration on each iteration to respond to changes
         # (e.g., from Web UI)
