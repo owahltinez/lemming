@@ -130,8 +130,13 @@ def run_hooks(
                 time_limit=time_limit,
             )
             exit_codes[hook_name] = returncode
-            if verbose:
-                if returncode != 0:
+            if returncode != 0:
+                # An exit code alone sends the operator to the log; the hook
+                # usually already said what went wrong.
+                reason = runner.extract_error_message(stdout)
+                if reason:
+                    click.echo(f"Hook '{hook_name}' reported: {reason}")
+                if verbose:
                     click.echo(
                         f"Hook '{hook_name}' exited with code {returncode}."
                     )

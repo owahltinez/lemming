@@ -1006,3 +1006,50 @@ def test_run_loop_failure_without_a_reason_is_unchanged(
     out = capsys.readouterr().out
     assert "Runner exited unsuccessfully" in out
     assert "Runner reported:" not in out
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_hooks_surfaces_hook_error(mock_run, setup_env, capsys):
+    """A failing hook's reason should not require opening the log."""
+    test_tasks_file, _ = setup_env
+    tasks.mark_task_in_progress(test_tasks_file, "task1")
+    mock_run.return_value = (
+        1,
+        '{"type":"error","message":"You\'ve hit your usage limit."}\n',
+        "",
+    )
+
+    exit_codes = run_hooks(
+        test_tasks_file,
+        "task1",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        hooks=["roadmap"],
+    )
+
+    assert exit_codes["roadmap"] == 1
+    assert "You've hit your usage limit." in capsys.readouterr().out
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_hooks_quiet_when_hook_succeeds(mock_run, setup_env, capsys):
+    """A zero exit code stays silent, as before."""
+    test_tasks_file, _ = setup_env
+    tasks.mark_task_in_progress(test_tasks_file, "task1")
+    mock_run.return_value = (0, '{"type":"error","message":"ignored"}\n', "")
+
+    run_hooks(
+        test_tasks_file,
+        "task1",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        hooks=["roadmap"],
+    )
+
+    assert "reported:" not in capsys.readouterr().out
