@@ -222,6 +222,17 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 
 ## Command Reference
 
+### Global Options
+
+These come before the subcommand and apply to all of them.
+
+- **`-C, --project-dir <dir>`**: Run as if invoked from `<dir>`, addressing
+  that project's roadmap. Relative paths in other options resolve against it.
+  See [Working across projects](#working-across-projects).
+- **`--tasks-file <path>`**: Point at a specific tasks file instead of the one
+  derived from the current directory.
+- **`-v, --verbose`**: Show verbose output.
+
 ### Roadmap Management
 
 - **`status [<id>]`**: Queue/history overview or deep-dive into a specific
@@ -306,6 +317,36 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
     secure tunnel.
   - `--timeout`: Auto-shutdown after a duration (e.g., `8h`, `30m`). Defaults to
     `8h` with `--tunnel`, disabled otherwise.
+
+---
+
+## Working across projects
+
+When work on one project turns up something that belongs to another — a bug in
+a dependency you also maintain, a doc fix in a sibling repo — file it directly
+on that project's roadmap with `-C` instead of routing it through an external
+issue tracker:
+
+```bash
+# From inside project A, queue work on project B
+lemming -C ~/src/other-project add "check --fix drops the trailing newline"
+
+# Attach the evidence; the brief has no length cap
+lemming -C ~/src/other-project brief <id> --file repro.md
+
+# Read the other project's roadmap without leaving yours
+lemming -C ~/src/other-project status
+```
+
+`-C` works whether or not the target keeps a `tasks.yml` in its repo, so you
+never have to know where its isolated state lives. Because it changes the
+working directory, everything else follows too: the target's `.env`, its
+`.lemming/hooks`, and the directory the runner executes in.
+
+When an agent files a task this way from inside a `lemming run`, the new task
+records the task it came from via `parent` and `parent_tasks_file`. The
+downstream runner then sees a **Parent Task Context** section in its prompt
+describing why the work was requested, so the report doesn't lose its origin.
 
 ---
 

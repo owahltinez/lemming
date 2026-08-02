@@ -1,5 +1,6 @@
 """Top-level click group and shared options for the Lemming CLI."""
 
+import os
 import pathlib
 
 import click
@@ -22,7 +23,44 @@ class CorruptionAwareGroup(click.Group):
             raise click.ClickException(str(e)) from e
 
 
+def _enter_project_dir(ctx: click.Context, project_dir: pathlib.Path) -> None:
+    """Runs the command as if invoked from *project_dir*.
+
+    Every downstream path — the default tasks file, `.env` discovery, local
+    hooks, and the runner's own cwd — is derived from the current directory,
+    so changing it here is what makes one project able to address another
+    without threading a directory through each of those lookups.
+
+    The original directory is restored when the command finishes, keeping an
+    in-process invocation free of side effects.
+
+    Args:
+        ctx: The click context, used to schedule the restore.
+        project_dir: Directory to treat as the project root.
+    """
+    origin = pathlib.Path.cwd()
+
+    def switch_to(directory: pathlib.Path) -> None:
+        os.chdir(directory)
+        # in_git_repo() caches a check that is only valid for one directory.
+        paths.in_git_repo.cache_clear()
+
+    switch_to(project_dir)
+    ctx.call_on_close(lambda: switch_to(origin))
+
+
 @click.group(cls=CorruptionAwareGroup)
+@click.option(
+    "--project-dir",
+    "-C",
+    type=click.Path(
+        exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path
+    ),
+    help=(
+        "Run as if invoked from this directory, addressing that project's "
+        "roadmap. Relative paths in other options resolve against it."
+    ),
+)
 @click.option(
     "--tasks-file",
     type=click.Path(path_type=pathlib.Path),
@@ -38,7 +76,12 @@ class CorruptionAwareGroup(click.Group):
     help="Show verbose output.",
 )
 @click.pass_context
-def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
+def cli(
+    ctx: click.Context,
+    project_dir: pathlib.Path | None,
+    tasks_file: pathlib.Path | None,
+    verbose: bool,
+):
     """Lemming: An autonomous, iterative task runner for AI agents.
 
     Lemming orchestrates AI coding agents by walking through a structured
@@ -46,6 +89,11 @@ def cli(ctx: click.Context, tasks_file: pathlib.Path | None, verbose: bool):
     and records progress.
     """
     ctx.ensure_object(dict)
+
+    # Enter the target project before any path is resolved against the cwd.
+    if project_dir is not None:
+        _enter_project_dir(ctx, project_dir)
+
     if tasks_file is None:
         tasks_file = paths.get_default_tasks_file()
     tasks_file = tasks_file.resolve()
