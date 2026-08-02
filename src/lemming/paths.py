@@ -200,6 +200,25 @@ def get_log_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     return project_dir / f"{task_id}-runner.log"
 
 
+def get_brief_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
+    """Returns the long-form brief path for a specific task.
+
+    The brief holds evidence too large for the task description and is
+    delivered to the runner automatically, so a task never has to remember
+    to point at it.
+
+    Args:
+        tasks_file: Path to the tasks YAML file associated with the task.
+        task_id: The unique task ID.
+
+    Returns:
+        A pathlib.Path to the brief file for the given task.
+    """
+    project_dir = get_project_dir(tasks_file)
+    project_dir.mkdir(parents=True, exist_ok=True)
+    return project_dir / f"{task_id}-brief.md"
+
+
 @functools.cache
 def in_git_repo() -> bool:
     """Check if the current directory is inside a git repository.

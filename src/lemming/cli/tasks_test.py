@@ -60,7 +60,8 @@ class TestCLITasks(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 1)
         self.assertIn("2,001 characters (limit 2,000)", result.output)
-        self.assertIn("Keep the brief task-specific", result.output)
+        self.assertIn("Keep the description task-specific", result.output)
+        self.assertIn("lemming brief", result.output)
         self.assertEqual(len(tasks.load_tasks(self.test_tasks_file).tasks), 1)
 
     def test_edit_task_description(self):

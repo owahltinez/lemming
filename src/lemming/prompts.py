@@ -480,6 +480,15 @@ def prepare_prompt(
         )
         progress_str += "\n"
 
+    # The brief carries evidence that does not fit the description cap. It is
+    # injected unconditionally so a task cannot forget to reference it.
+    brief_section = ""
+    brief_file = paths.get_brief_file(tasks_file, task.id)
+    if brief_file.exists():
+        brief_text = brief_file.read_text(encoding="utf-8").strip()
+        if brief_text:
+            brief_section = f"\n## Task Brief\n\n{brief_text}\n"
+
     time_limit_section = ""
     if time_limit > 0:
         time_limit_section = (
@@ -521,5 +530,6 @@ def prepare_prompt(
             f"{tasks.MAX_PROGRESS_ENTRY_CHARS:,}",
         )
         .replace("{{task_id}}", task.id)
+        .replace("{{brief_section}}", brief_section)
         .replace("{{time_limit_section}}", time_limit_section)
     )

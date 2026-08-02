@@ -65,7 +65,8 @@ def test_add_task_enforces_description_size_limit(tmp_path, monkeypatch):
     message = str(excinfo.value)
     assert "2,001 characters (limit 2,000)" in message
     assert "move shared rules to the long-term goal" in message
-    assert str(paths.get_project_dir(tasks_file)) in message
+    # Oversized descriptions are steered to the uncapped, auto-delivered brief.
+    assert "lemming brief" in message
     assert len(persistence.load_tasks(tasks_file).tasks) == 1
 
 

@@ -17,13 +17,13 @@ def validate_task_description(
     if actual <= MAX_TASK_DESCRIPTION_CHARS:
         return
 
-    evidence_dir = paths.get_project_dir(tasks_file)
     raise ValueError(
         f"Task description is {actual:,} characters "
         f"(limit {MAX_TASK_DESCRIPTION_CHARS:,}). "
-        "Keep the brief task-specific, move shared rules to the long-term "
-        f"goal, and write detailed evidence to {evidence_dir}, then "
-        "reference it."
+        "Keep the description task-specific, move shared rules to the "
+        "long-term goal, and attach detailed evidence with "
+        "`lemming brief <taskid> --file -`, which has no cap and is "
+        "delivered to the runner automatically."
     )
 
 
@@ -41,5 +41,6 @@ def validate_progress_entry(
         f"Progress entry is {actual:,} characters "
         f"(limit {MAX_PROGRESS_ENTRY_CHARS:,}). "
         "Record the finding in one line. Write detailed evidence or verbose "
-        f"command output to {evidence_dir} and reference it."
+        f"command output to {evidence_dir} and reference it, or attach it to "
+        "a follow-up task with `lemming brief`."
     )
