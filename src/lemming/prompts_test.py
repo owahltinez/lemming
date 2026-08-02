@@ -519,3 +519,38 @@ def test_format_roadmap_with_superseded_task():
     output = prompts._format_roadmap(data)
 
     assert "[SUPERSEDED - split after timeout] (1)" in output
+
+
+def test_no_hook_sees_more_goal_than_the_runner(tmp_path):
+    """A hook reviews the runner's work; it must not out-context it.
+
+    The roadmap-hook policy previously allowed 16,000 goal characters against
+    the runner's 8,000, so a hook saw more of the goal than the agent writing
+    the code.
+    """
+    marker = "GOALMARK"
+    goal = f"{marker} " * 4_000
+    tasks_file = tmp_path / "tasks.yml"
+    data = models.Roadmap(
+        goal=goal,
+        tasks=[models.Task(id="t1", description="do the thing")],
+    )
+    tasks.save_tasks(tasks_file, data)
+
+    runner_prompt = prompts.prepare_prompt(data, data.tasks[0], tasks_file)
+    hook_prompt = prompts.prepare_hook_prompt(
+        "roadmap", data, data.tasks[0], tasks_file
+    )
+
+    assert hook_prompt.count(marker) <= runner_prompt.count(marker)
+
+
+def test_hook_goal_budget_never_exceeds_the_runner_budget():
+    """The invariant is expressed in the policies themselves."""
+    runner_budget = prompts._RUNNER_ROADMAP_POLICY.goal_chars
+
+    for policy in (
+        prompts._ROADMAP_HOOK_POLICY,
+        prompts._REVIEW_HOOK_POLICY,
+    ):
+        assert policy.goal_chars <= runner_budget

@@ -37,7 +37,10 @@ _RUNNER_ROADMAP_POLICY = _RoadmapContextPolicy(
 )
 _ROADMAP_HOOK_POLICY = _RoadmapContextPolicy(
     total_chars=64_000,
-    goal_chars=16_000,
+    # A hook reviews the runner's work, so it has no reason to see more of
+    # the goal than the runner that wrote the code. Deriving the budget keeps
+    # the two from drifting apart again.
+    goal_chars=_RUNNER_ROADMAP_POLICY.goal_chars,
     active_description_chars=2_000,
     terminal_description_chars=200,
     progress_entries=3,
