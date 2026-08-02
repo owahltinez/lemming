@@ -160,6 +160,7 @@ def build_runner_command(
     verbose: bool = False,
     time_limit: int = 0,
     working_dir: pathlib.Path | None = None,
+    model: str | None = None,
 ) -> list[str]:
     """Constructs the CLI command for the specified runner.
 
@@ -178,6 +179,8 @@ def build_runner_command(
             timeouts for runners that enforce their own (0 means no limit).
         working_dir: Project directory exposed to runners that do not preserve
             the subprocess working directory for their shell tools.
+        model: Model to request via ``--model``. Ignored in template mode and
+            when the runner string already names a model.
 
     Returns:
         A list of command-line arguments.
@@ -249,6 +252,11 @@ def build_runner_command(
             # Lemming's live task log.
             cmd.append("--json")
 
+    # The model field is a lower-priority spelling of "--model" in the runner
+    # string, so an explicit flag there wins.
+    if model and not any(_flag_name(part) == "--model" for part in extra_parts):
+        extra_parts = [*extra_parts, "--model", model]
+
     # Global passthrough goes first so a per-task flag also wins on runners
     # that resolve duplicates by last occurrence.
     if runner_args:
@@ -262,6 +270,24 @@ def build_runner_command(
         cmd.append(prompt)
 
     return cmd
+
+
+def describe_command(cmd: list[str], prompt: str) -> str:
+    """Renders a runner command for provenance, eliding the prompt text.
+
+    The prompt can run to thousands of characters, so it is replaced by a
+    placeholder; what matters after the fact is the runner and its flags.
+
+    Args:
+        cmd: The fully resolved command.
+        prompt: The prompt text to elide.
+
+    Returns:
+        A shell-quoted command string safe to persist and display.
+    """
+    return _shlex_join_pretty(
+        ["<prompt>" if part == prompt else part for part in cmd]
+    )
 
 
 def _kill_process_tree(process: subprocess.Popen) -> None:

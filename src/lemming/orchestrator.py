@@ -24,6 +24,7 @@ def run_hooks(
     working_dir: pathlib.Path | None = None,
     final_status: tasks.TaskStatus | None = None,
     time_limit: int = 0,
+    model_name: str | None = None,
 ) -> dict[str, int]:
     """Executes orchestrator hooks for a finished task.
 
@@ -40,6 +41,7 @@ def run_hooks(
         working_dir: Working directory for the hook runner processes.
         final_status: If provided, mark the task with this status after hooks.
         time_limit: Time limit in minutes for each hook run (0 disables it).
+        model_name: Model to request from the hook runner, if any.
 
     Returns:
         Mapping of each executed hook name to its runner exit code (-1 when
@@ -112,6 +114,7 @@ def run_hooks(
             verbose=verbose,
             time_limit=time_limit,
             working_dir=working_dir,
+            model=model_name,
         )
 
         try:
@@ -202,6 +205,7 @@ def _process_exhausted_retries(
     active_hooks: list[str],
     working_dir: pathlib.Path | None,
     time_limit: int,
+    model_name: str | None = None,
 ) -> bool:
     """Handles tasks that have exhausted retries.
 
@@ -227,6 +231,7 @@ def _process_exhausted_retries(
         working_dir=working_dir,
         final_status=tasks.TaskStatus.FAILED,
         time_limit=time_limit,
+        model_name=model_name,
     )
 
     # Re-check: if a hook reset/edited/replaced the task, continue the loop
@@ -263,6 +268,7 @@ def _process_finalizing_task(
     active_hooks: list[str],
     working_dir: pathlib.Path | None,
     time_limit: int,
+    model_name: str | None = None,
 ) -> None:
     """Runs hooks for a task that is in a finalizing state."""
     if verbose:
@@ -283,6 +289,7 @@ def _process_finalizing_task(
         working_dir=working_dir,
         final_status=requested_status,
         time_limit=time_limit,
+        model_name=model_name,
     )
 
 
@@ -302,6 +309,7 @@ def _handle_runner_exit(
     active_hooks: list[str],
     working_dir: pathlib.Path | None,
     time_limit: int,
+    model_name: str | None = None,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
@@ -343,6 +351,7 @@ def _handle_runner_exit(
             working_dir=working_dir,
             final_status=post_task.requested_status,
             time_limit=time_limit,
+            model_name=model_name,
         )
 
     if post_task.status == tasks.TaskStatus.COMPLETED:
@@ -425,6 +434,7 @@ def run_loop(
         retries = data.config.retries
         time_limit = data.config.time_limit
         runner_name = data.config.runner
+        model_name = data.config.model
         active_hooks = list_hooks(tasks_file)
 
         current_task = tasks.get_pending_task(data)
@@ -476,6 +486,7 @@ def run_loop(
                 task_id=task_id,
                 retries=retries,
                 runner_name=runner_name,
+                model_name=model_name,
                 yolo=yolo,
                 runner_args=runner_args,
                 no_defaults=no_defaults,
@@ -522,6 +533,7 @@ def run_loop(
                 task_id=task_id,
                 requested_status=current_task.requested_status,
                 runner_name=runner_name,
+                model_name=model_name,
                 yolo=yolo,
                 runner_args=runner_args,
                 no_defaults=no_defaults,
@@ -550,6 +562,13 @@ def run_loop(
             verbose=verbose,
             time_limit=time_limit,
             working_dir=working_dir,
+            model=current_task.model or model_name,
+        )
+
+        # Record what actually launched before it runs, so the provenance
+        # survives a crash or an interrupted attempt.
+        tasks.record_resolved_command(
+            tasks_file, task_id, runner.describe_command(cmd, prompt)
         )
 
         returncode = 0
@@ -600,6 +619,7 @@ def run_loop(
             retries=retries,
             retry_delay=retry_delay,
             runner_name=runner_name,
+            model_name=model_name,
             yolo=yolo,
             runner_args=runner_args,
             no_defaults=no_defaults,

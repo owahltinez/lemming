@@ -52,6 +52,10 @@ class Task(pydantic.BaseModel):
     attempts: int = 0
     progress: list[str] = pydantic.Field(default_factory=list)
     runner: str | None = None
+    model: str | None = None
+    # Runner command of the most recent attempt, with the prompt elided. Set
+    # when the runner starts so provenance survives the process.
+    resolved_command: str | None = None
     completed_at: float | None = None
     superseded_at: float | None = None
     superseded_reason: str | None = None
@@ -76,6 +80,7 @@ class RoadmapConfig(pydantic.BaseModel):
 
     retries: int = 3
     runner: str = pydantic.Field(default_factory=detect_default_runner)
+    model: str | None = None
     time_limit: int = 60
 
 

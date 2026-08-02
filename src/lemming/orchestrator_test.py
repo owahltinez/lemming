@@ -898,3 +898,61 @@ def test_run_hooks_reloads_tasks(mock_run, mock_prepare, hooks_env):
 
         # 1 initial load + 2 hook loads = 3
         assert mock_load.call_count == 3
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_loop_records_resolved_command(mock_run, setup_env):
+    """Provenance is persisted so the model behind a commit is recoverable."""
+    test_tasks_file, initial_data = setup_env
+    data = tasks.load_tasks(test_tasks_file)
+    data.config.model = "pinned-model"
+    tasks.save_tasks(test_tasks_file, data)
+    mock_run.return_value = (0, "output", "")
+
+    mock_task = initial_data.tasks[0]
+    mock_task.status = tasks.TaskStatus.COMPLETED
+    with mock.patch(
+        "lemming.tasks.finish_task_attempt", return_value=mock_task
+    ):
+        run_loop(
+            test_tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+        )
+
+    recorded = tasks.load_tasks(test_tasks_file).tasks[0].resolved_command
+    assert recorded is not None
+    assert "--model pinned-model" in recorded
+    assert recorded.startswith("agy ")
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_loop_task_model_overrides_project_model(mock_run, setup_env):
+    """A per-task model beats the project-wide pin."""
+    test_tasks_file, initial_data = setup_env
+    data = tasks.load_tasks(test_tasks_file)
+    data.config.model = "project-model"
+    data.tasks[0].model = "task-model"
+    tasks.save_tasks(test_tasks_file, data)
+    mock_run.return_value = (0, "output", "")
+
+    mock_task = initial_data.tasks[0]
+    mock_task.status = tasks.TaskStatus.COMPLETED
+    with mock.patch(
+        "lemming.tasks.finish_task_attempt", return_value=mock_task
+    ):
+        run_loop(
+            test_tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+        )
+
+    cmd = mock_run.call_args[0][0]
+    assert cmd.count("--model") == 1
+    assert cmd[cmd.index("--model") + 1] == "task-model"

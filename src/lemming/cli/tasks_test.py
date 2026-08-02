@@ -376,3 +376,71 @@ class TestCLITasks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCLITaskModel(unittest.TestCase):
+    def setUp(self):
+        self.cli_runner = click.testing.CliRunner()
+        self.test_dir = tempfile.mkdtemp()
+        self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
+        self.base_args = ["--tasks-file", str(self.test_tasks_file)]
+        tasks.save_tasks(self.test_tasks_file, tasks.Roadmap(goal="g"))
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def _add(self, *extra):
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["add", "do the thing", *extra]
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        return tasks.load_tasks(self.test_tasks_file).tasks[0]
+
+    def test_add_records_model(self):
+        """Per-task model selection is a field, not a runner-string trick."""
+        task = self._add("--model", "fast-model")
+
+        self.assertEqual(task.model, "fast-model")
+
+    def test_edit_changes_model(self):
+        task = self._add("--model", "old-model")
+
+        result = self.cli_runner.invoke(
+            cli.cli,
+            self.base_args + ["edit", task.id, "--model", "new-model"],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        updated = tasks.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertEqual(updated.model, "new-model")
+
+    def test_edit_empty_model_restores_project_default(self):
+        task = self._add("--model", "old-model")
+
+        self.cli_runner.invoke(
+            cli.cli, self.base_args + ["edit", task.id, "--model", ""]
+        )
+
+        updated = tasks.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertIsNone(updated.model)
+
+    def test_status_shows_provenance(self):
+        """After the fact, status answers which command produced the work."""
+        task = self._add("--model", "fast-model")
+        tasks.record_resolved_command(
+            self.test_tasks_file, task.id, "agy --model fast-model"
+        )
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", task.id]
+        )
+
+        self.assertIn("Custom Model:", result.output)
+        self.assertIn("agy --model fast-model", result.output)
+
+    def test_runner_help_documents_extra_arguments(self):
+        """The extra-args behaviour must be discoverable from --help."""
+        result = self.cli_runner.invoke(cli.cli, ["add", "--help"])
+
+        self.assertIn("--model", result.output)
+        self.assertIn("{{prompt}}", result.output)

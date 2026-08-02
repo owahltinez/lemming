@@ -35,6 +35,9 @@ from .lifecycle import (
     record_execution_time as record_execution_time,
 )
 from .lifecycle import (
+    record_resolved_command as record_resolved_command,
+)
+from .lifecycle import (
     reset_task as reset_task,
 )
 from .lifecycle import (

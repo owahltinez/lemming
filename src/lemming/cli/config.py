@@ -23,6 +23,7 @@ def config_list(ctx: click.Context):
 
     click.secho(f"Configuration for {tasks_file}:", bold=True)
     click.echo(f"  Runner:        {c.runner}")
+    click.echo(f"  Model:         {c.model or '(runner default)'}")
     click.echo(f"  Retries:       {c.retries}")
     click.echo(f"  Time limit:    {format_duration(c.time_limit)}")
 
@@ -37,15 +38,21 @@ def config_list(ctx: click.Context):
 @config_group.command(name="set")
 @click.argument(
     "key",
-    type=click.Choice(["runner", "retries", "time_limit"]),
+    type=click.Choice(["runner", "model", "retries", "time_limit"]),
 )
 @click.argument("value")
 @click.pass_context
 def config_set(ctx: click.Context, key: str, value: str):
     """Sets a configuration value.
 
+    The runner is the CLI to invoke; the model is a separate field so that
+    switching runners (for example from a quota hook) does not silently
+    discard the pinned model.
+
     Examples:
       lemming config set runner aider
+      lemming config set model gemini-3.6-flash-high
+      lemming config set model default
       lemming config set retries 5
       lemming config set time_limit 30m
     """
@@ -54,6 +61,9 @@ def config_set(ctx: click.Context, key: str, value: str):
 
     if key == "runner":
         data.config.runner = value
+    elif key == "model":
+        # "default" clears the pin and lets the runner choose.
+        data.config.model = None if value.lower() == "default" else value
     elif key == "retries":
         try:
             data.config.retries = int(value)

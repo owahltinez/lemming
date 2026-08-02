@@ -89,6 +89,32 @@ def record_execution_time(
         persistence.save_tasks(tasks_file, data)
 
 
+def record_resolved_command(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    command: str,
+) -> None:
+    """Records the runner command an attempt actually launched.
+
+    Without this the runner and model behind a finished task are only
+    recoverable by inspecting the live subprocess, which is impossible after
+    the fact.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task being executed.
+        command: Resolved command with the prompt elided.
+    """
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        task = next((t for t in data.tasks if t.id == task_id), None)
+        if task is None:
+            return
+
+        task.resolved_command = command
+        persistence.save_tasks(tasks_file, data)
+
+
 def mark_execution_started(
     tasks_file: pathlib.Path,
     task_id: str,

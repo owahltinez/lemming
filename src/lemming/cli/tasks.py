@@ -79,8 +79,15 @@ def _echo_task_summary(task: tasks.Task, all_tasks: list[tasks.Task]) -> None:
     "--runner",
     "runner_name",
     help=(
-        "Custom runner to use for this task (overrides the default run runner)."
+        "Custom runner for this task, overriding the project runner. May "
+        'include extra arguments (e.g. --runner "agy --model fast"), or a '
+        "{{prompt}} placeholder to control the whole command layout."
     ),
+)
+@click.option(
+    "--model",
+    "model_name",
+    help="Model for this task, overriding the project model.",
 )
 @click.option(
     "--parent",
@@ -97,6 +104,7 @@ def add(
     file: typing.Optional[typing.TextIO],
     index: int,
     runner_name: str | None,
+    model_name: str | None,
     parent: str | None,
     parent_tasks_file: str | None,
 ):
@@ -122,6 +130,7 @@ def add(
             description,
             runner_name,
             index=index,
+            model=model_name,
             parent=parent,
             parent_tasks_file=parent_tasks_file,
         )
@@ -147,6 +156,11 @@ def add(
 )
 @click.option("--runner", "runner_name", help="New custom runner for the task.")
 @click.option(
+    "--model",
+    "model_name",
+    help="New model for the task (empty string restores the project model).",
+)
+@click.option(
     "--index",
     type=int,
     help="New zero-based position in the displayed task queue.",
@@ -166,11 +180,12 @@ def edit(
     description: str | None,
     file: typing.Optional[typing.TextIO],
     runner_name: str | None,
+    model_name: str | None,
     index: int | None,
     parent: str | None,
     parent_tasks_file: str | None,
 ):
-    """Edits an existing task's description, runner, position, or parent."""
+    """Edits a task's description, runner, model, position, or parent."""
     if file:
         if description:
             click.echo("Error: Cannot provide both description and --file.")
@@ -182,13 +197,14 @@ def edit(
     if (
         description is None
         and runner_name is None
+        and model_name is None
         and index is None
         and parent is None
         and parent_tasks_file is None
     ):
         click.echo(
-            "Error: At least one of --description, --runner, --index,"
-            " --parent, or --parent-tasks-file must be provided."
+            "Error: At least one of --description, --runner, --model,"
+            " --index, --parent, or --parent-tasks-file must be provided."
         )
         ctx.exit(1)
 
@@ -200,6 +216,7 @@ def edit(
             task_id,
             description=description,
             runner=runner_name,
+            model=model_name,
             index=index,
             parent=parent,
             parent_tasks_file=parent_tasks_file,
@@ -427,6 +444,12 @@ def status(ctx: click.Context, task_id: str | None):
         click.echo(f"Parent:        {target.parent}{parent_context}")
     if target.runner:
         click.echo(f"Custom Runner: {target.runner}")
+    if target.model:
+        click.echo(f"Custom Model:  {target.model}")
+    # The resolved command is the only record of which runner and model
+    # actually produced the work.
+    if target.resolved_command:
+        click.echo(f"Last Command:  {target.resolved_command}")
     click.echo(f"Attempts:      {target.attempts}")
     if target.created_at:
         created_time = time.strftime(

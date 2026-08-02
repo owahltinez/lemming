@@ -48,6 +48,7 @@ def add_task(
     description: str,
     runner: str | None = None,
     index: int = -1,
+    model: str | None = None,
     parent: str | None = None,
     parent_tasks_file: str | None = None,
 ) -> models.Task:
@@ -58,6 +59,7 @@ def add_task(
         description: Description of the task.
         runner: Optional preferred runner for this task.
         index: Position to insert the task at (default: append).
+        model: Optional model to request for this task.
         parent: Optional parent task ID.
         parent_tasks_file: Optional parent tasks file path.
 
@@ -89,6 +91,7 @@ def add_task(
             id=task_id,
             description=description,
             runner=runner,
+            model=model,
             parent=parent,
             parent_tasks_file=parent_tasks_file,
         )
@@ -232,6 +235,7 @@ def update_task(
     runner: str | None = None,
     index: int | None = None,
     status: str | None = None,
+    model: str | None = None,
     require_progress: bool = False,
     parent: str | None = None,
     parent_tasks_file: str | None = None,
@@ -245,6 +249,7 @@ def update_task(
         description: New description.
         runner: New preferred runner.
         index: New position in the task list.
+        model: New preferred model; "" clears it back to the project default.
         status: New status.
         require_progress: If True, raises ValueError if the task has no
             progress.
@@ -281,6 +286,8 @@ def update_task(
             target.description = description
         if runner is not None:
             target.runner = runner
+        if model is not None:
+            target.model = model or None
         if parent is not None:
             if parent == "":
                 target.parent = None

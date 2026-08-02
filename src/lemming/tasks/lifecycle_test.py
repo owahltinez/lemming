@@ -476,3 +476,31 @@ def test_is_task_active(mock_is_pid_alive):
         last_heartbeat=now,
     )
     assert lifecycle.is_task_active(task_hooks_running, now)
+
+
+def test_record_resolved_command_persists_provenance(tmp_path):
+    """The runner command of the current attempt survives the process."""
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id="t1", description="d")]),
+    )
+
+    lifecycle.record_resolved_command(tasks_file, "t1", "agy --model x")
+
+    data = persistence.load_tasks(tasks_file)
+    assert data.tasks[0].resolved_command == "agy --model x"
+
+
+def test_record_resolved_command_ignores_unknown_task(tmp_path):
+    """Recording against a missing task is a no-op, not an error."""
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id="t1", description="d")]),
+    )
+
+    lifecycle.record_resolved_command(tasks_file, "nope", "agy")
+
+    data = persistence.load_tasks(tasks_file)
+    assert data.tasks[0].resolved_command is None

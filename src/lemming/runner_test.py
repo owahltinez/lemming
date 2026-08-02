@@ -209,6 +209,61 @@ def test_conflicting_boolean_flag_does_not_consume_next_flag():
     assert cmd[cmd.index("--fallback-model") + 1] == "other"
 
 
+def test_model_is_appended_for_known_runners():
+    """A configured model reaches the runner as --model."""
+    cmd = runner.build_runner_command(
+        "agy", "prompt", yolo=True, model="gemini-3.6-flash-high"
+    )
+
+    assert cmd[cmd.index("--model") + 1] == "gemini-3.6-flash-high"
+
+
+def test_model_defers_to_explicit_runner_string_flag():
+    """An explicit --model in the runner string beats the model field."""
+    cmd = runner.build_runner_command(
+        "agy --model explicit", "prompt", yolo=True, model="configured"
+    )
+
+    assert cmd.count("--model") == 1
+    assert cmd[cmd.index("--model") + 1] == "explicit"
+
+
+def test_model_overrides_global_passthrough():
+    """The model field beats a loop-wide --model, mirroring per-task args."""
+    cmd = runner.build_runner_command(
+        "codex",
+        "prompt",
+        yolo=True,
+        runner_args=("--model", "global"),
+        model="per-task",
+    )
+
+    assert cmd.count("--model") == 1
+    assert cmd[cmd.index("--model") + 1] == "per-task"
+
+
+def test_model_skipped_in_template_mode():
+    """Template mode hands full command control to the user."""
+    cmd = runner.build_runner_command(
+        "my-tool {{prompt}}", "hello", yolo=True, model="ignored"
+    )
+
+    assert cmd == ["my-tool", "hello"]
+
+
+def test_describe_command_elides_the_prompt():
+    """Provenance records the command without the full prompt text."""
+    cmd = runner.build_runner_command(
+        "agy", "a very long prompt", yolo=True, model="some-model"
+    )
+
+    described = runner.describe_command(cmd, "a very long prompt")
+
+    assert "a very long prompt" not in described
+    assert "--model some-model" in described
+    assert described.startswith("agy ")
+
+
 def test_build_runner_command_template_ignores_defaults():
     # Even though runner starts with "agy", template mode should not
     # inject --dangerously-skip-permissions etc.
