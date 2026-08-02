@@ -315,16 +315,6 @@ def run_with_heartbeat(
         if header and header.startswith("Hook: ")
         else "runner"
     )
-    try:
-        tasks.mark_execution_started(tasks_file, task_id, component)
-    except Exception:
-        logger.warning(
-            "Could not mark %s execution as active for task %s",
-            component,
-            task_id,
-            exc_info=True,
-        )
-
     full_log: list[str] = []
 
     timed_out = False
@@ -346,7 +336,19 @@ def run_with_heartbeat(
     # exits if an escaped child still holds the pipe open.
     reader_thread = threading.Thread(target=stream_output, daemon=True)
 
+    # Everything from here on runs with the child alive, so any early exit
+    # must take it down; see the except clause below.
     try:
+        try:
+            tasks.mark_execution_started(tasks_file, task_id, component)
+        except Exception:
+            logger.warning(
+                "Could not mark %s execution as active for task %s",
+                component,
+                task_id,
+                exc_info=True,
+            )
+
         # Heartbeat and cancellation management
         is_claimed = tasks.update_heartbeat(
             tasks_file, task_id, pid=process.pid
@@ -389,12 +391,7 @@ def run_with_heartbeat(
             _kill_process_tree(process)
 
         reader_thread.start()
-
-        try:
-            process.wait()
-        except BaseException:
-            _kill_process_tree(process)
-            raise
+        process.wait()
 
         # Drain remaining output, but don't wait forever: an escaped child
         # holding the pipe open must not wedge the attempt.
@@ -411,6 +408,12 @@ def run_with_heartbeat(
         if timed_out:
             returncode = RETURNCODE_TIMEOUT
         return returncode, "".join(full_log), ""
+    except BaseException:
+        # A stop request can land anywhere between spawn and exit, including
+        # the heartbeat bookkeeping above. The child runs in its own session
+        # and would otherwise survive as an orphan.
+        _kill_process_tree(process)
+        raise
     finally:
         try:
             tasks.record_execution_time(

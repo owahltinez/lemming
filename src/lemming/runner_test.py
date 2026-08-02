@@ -5,7 +5,7 @@ import sys
 import time
 import unittest.mock
 
-from lemming import paths, runner, tasks
+from lemming import models, paths, persistence, runner, tasks
 
 
 def test_build_runner_command_agy():
@@ -616,3 +616,55 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
     assert returncode == 0
     assert "runner done" in stdout
     assert time.monotonic() - start < 10
+
+
+def _run_interrupted_at(tmp_path, patched: str) -> subprocess.Popen:
+    """Interrupts a runner at a given bookkeeping call, returning the child.
+
+    The window between Popen and process.wait() covers heartbeat bookkeeping,
+    so a stop request landing anywhere in it must not leak the child.
+    """
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id="t1", description="d")]),
+    )
+    tasks.mark_task_in_progress(tasks_file, "t1")
+
+    spawned: list[subprocess.Popen] = []
+    real_popen = subprocess.Popen
+
+    def capturing_popen(*args, **kwargs):
+        process = real_popen(*args, **kwargs)
+        spawned.append(process)
+        return process
+
+    with (
+        unittest.mock.patch("subprocess.Popen", side_effect=capturing_popen),
+        unittest.mock.patch(patched, side_effect=KeyboardInterrupt),
+    ):
+        try:
+            runner.run_with_heartbeat(
+                ["sleep", "60"], tasks_file, "t1", verbose=False
+            )
+        except KeyboardInterrupt:
+            pass
+
+    assert spawned, "The runner process was never started"
+    return spawned[0]
+
+
+def test_interrupt_during_heartbeat_kills_the_child(tmp_path):
+    """A stop landing on the heartbeat write must not leak the runner."""
+    child = _run_interrupted_at(tmp_path, "lemming.tasks.update_heartbeat")
+
+    child.wait(timeout=10)
+
+
+def test_interrupt_during_marking_kills_the_child(tmp_path):
+    """The earliest bookkeeping call is inside the protected window too."""
+    child = _run_interrupted_at(
+        tmp_path, "lemming.tasks.mark_execution_started"
+    )
+
+    child.wait(timeout=10)
