@@ -1,5 +1,6 @@
 """CLI commands for managing tasks in the roadmap queue."""
 
+import json
 import math
 import time
 import typing
@@ -39,7 +40,9 @@ def _execution_time_rows(
     ]
 
 
-def _echo_task_summary(task: tasks.Task, all_tasks: list[tasks.Task]) -> None:
+def _echo_task_summary(
+    task: tasks.Task, all_tasks: list[tasks.Task], brief: bool = False
+) -> None:
     """Print one task row plus compact supersession lineage."""
     marker_by_status = {
         tasks.TaskStatus.COMPLETED: ("[x]", "green"),
@@ -52,7 +55,9 @@ def _echo_task_summary(task: tasks.Task, all_tasks: list[tasks.Task]) -> None:
     marker, status_color = marker_by_status[task.status]
     click.secho(f"{marker} ", fg=status_color, nl=False)
     parent_str = f" [parent:{task.parent}]" if task.parent else ""
-    click.echo(f"({task.id}){parent_str} {task.description}")
+    # Descriptions dominate the output; brief mode keeps rows scannable.
+    summary = "" if brief else f" {task.description}"
+    click.echo(f"({task.id}){parent_str}{summary}")
 
     if task.status == tasks.TaskStatus.SUPERSEDED:
         if task.superseded_reason:
@@ -316,14 +321,50 @@ def supersede(ctx: click.Context, task_id: str, reason: str):
         ctx.exit(1)
 
 
+def _task_payload(task: tasks.Task, brief: bool) -> dict:
+    """Serialises a task for machine consumption.
+
+    Args:
+        task: The task to serialise.
+        brief: If True, drop the description, which dominates the payload.
+
+    Returns:
+        A JSON-safe dict of the task's fields.
+    """
+    payload = task.model_dump(mode="json")
+    if brief:
+        payload.pop("description", None)
+    return payload
+
+
 @cli.command(short_help="<taskid> Show the goal and task details")
 @click.argument("task_id", required=False)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit machine-readable JSON instead of formatted text.",
+)
+@click.option(
+    "--brief",
+    is_flag=True,
+    help="Omit task descriptions, which dominate the output size.",
+)
 @click.pass_context
-def status(ctx: click.Context, task_id: str | None):
+def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
     """Displays the roadmap status or details for a specific task."""
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
     project_data = tasks.get_project_data(tasks_file)
+
+    # JSON is the whole output, so it is emitted before any human formatting.
+    if as_json and not task_id:
+        payload = project_data.model_dump(mode="json")
+        payload["tasks"] = [
+            _task_payload(task, brief) for task in project_data.tasks
+        ]
+        click.echo(json.dumps(payload, indent=2))
+        return
 
     if not task_id:
         if project_data.loop_running:
@@ -376,7 +417,7 @@ def status(ctx: click.Context, task_id: str | None):
         click.secho(queue_heading, fg="cyan", bold=True)
         if queue:
             for task in queue:
-                _echo_task_summary(task, project_data.tasks)
+                _echo_task_summary(task, project_data.tasks, brief)
         else:
             click.echo("No active tasks.")
 
@@ -384,7 +425,7 @@ def status(ctx: click.Context, task_id: str | None):
             history_heading = "\n=== History ===" if verbose else "\nHistory:"
             click.secho(history_heading, fg="magenta", bold=True)
             for task in visible_history:
-                _echo_task_summary(task, project_data.tasks)
+                _echo_task_summary(task, project_data.tasks, brief)
 
         hidden_count = len(history) - len(visible_history)
         if hidden_count:
@@ -414,6 +455,10 @@ def status(ctx: click.Context, task_id: str | None):
         return
     except tasks.AmbiguousTaskIdError as e:
         click.echo(f"Error: {e}")
+        return
+
+    if as_json:
+        click.echo(json.dumps(_task_payload(target, brief), indent=2))
         return
 
     if project_data.loop_running:
@@ -509,8 +554,14 @@ def status(ctx: click.Context, task_id: str | None):
 
 @cli.command(short_help="[<taskid>] Print a task's log to stdout")
 @click.argument("task_id", required=False)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the log wrapped in JSON instead of raw text.",
+)
 @click.pass_context
-def logs(ctx: click.Context, task_id: str | None):
+def logs(ctx: click.Context, task_id: str | None, as_json: bool):
     """Prints the execution log for a task to stdout.
 
     If no task_id is provided, it defaults to the currently running task or
@@ -576,8 +627,22 @@ def logs(ctx: click.Context, task_id: str | None):
         click.echo(f"No log for task {target.id}.")
         ctx.exit(1)
 
-    # Highlight separators for better readability in the terminal
     content = log_file.read_text(encoding="utf-8")
+
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "task_id": target.id if target else log_file.stem,
+                    "path": str(log_file),
+                    "content": content,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    # Highlight separators for better readability in the terminal
     for line in content.splitlines():
         if line.startswith("--- ") and line.endswith(" ---"):
             click.secho(line, fg="cyan", bold=True)
