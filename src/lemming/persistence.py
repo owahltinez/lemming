@@ -2,14 +2,19 @@
 
 import contextlib
 import fcntl
+import functools
 import os
 import pathlib
+import subprocess
 
 import yaml
 
 from . import models, paths
 
 STALE_THRESHOLD = 30  # seconds
+
+# Bound on the ps probe used for zombie detection off Linux.
+PS_PROBE_TIMEOUT = 5
 LOOP_LOCK_FILENAME = ".lemming_loop.lock"
 
 
@@ -176,6 +181,44 @@ def get_loop_pid(tasks_file: pathlib.Path) -> int | None:
         return None
 
 
+@functools.cache
+def _has_proc_filesystem() -> bool:
+    """Returns whether /proc exposes process state, as it does on Linux."""
+    return pathlib.Path("/proc").is_dir()
+
+
+def _is_zombie(pid: int) -> bool:
+    """Returns whether a PID has exited but not yet been reaped.
+
+    A zombie still answers ``kill(pid, 0)``, so callers that only signal-probe
+    would treat a finished process as running until its parent reaps it.
+    """
+    if _has_proc_filesystem():
+        try:
+            status_path = pathlib.Path(f"/proc/{pid}/status")
+            if status_path.exists():
+                for line in status_path.read_text().splitlines():
+                    if line.startswith("State:"):
+                        return line.split()[1] == "Z"
+        except OSError:
+            pass
+        return False
+
+    # Without /proc (macOS and the BSDs), ps reports the same state code.
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "state=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=PS_PROBE_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+    return result.stdout.strip().startswith("Z")
+
+
 def is_pid_alive(pid: int) -> bool:
     """Return whether a process is alive and is not a zombie."""
     try:
@@ -183,16 +226,7 @@ def is_pid_alive(pid: int) -> bool:
     except OSError:
         return False
 
-    try:
-        status_path = pathlib.Path(f"/proc/{pid}/status")
-        if status_path.exists():
-            for line in status_path.read_text().splitlines():
-                if line.startswith("State:") and line.split()[1] == "Z":
-                    return False
-    except OSError:
-        pass
-
-    return True
+    return not _is_zombie(pid)
 
 
 def is_loop_running(tasks_file: pathlib.Path) -> bool:

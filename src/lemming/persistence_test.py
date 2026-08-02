@@ -1,4 +1,6 @@
 import os
+import subprocess
+import time
 
 import pytest
 import yaml
@@ -162,3 +164,24 @@ def test_save_tasks_uses_block_style_for_multiline_strings(tmp_path):
     # Verify that it still loads correctly
     loaded = persistence.load_tasks(tasks_file)
     assert loaded.tasks[0].description == multiline_description
+
+
+def test_is_pid_alive_treats_unreaped_child_as_dead():
+    """An exited-but-unreaped process must not read as alive.
+
+    A supervisor that starts the loop and later calls `lemming stop` still
+    owns the zombie, so treating it as alive would hang the stop.
+    """
+    child = subprocess.Popen(["true"])
+    try:
+        # Let it exit, but do not poll(): that would reap it and remove the
+        # zombie this test is about.
+        time.sleep(1.0)
+
+        assert persistence.is_pid_alive(child.pid) is False
+    finally:
+        child.wait()
+
+
+def test_is_pid_alive_true_for_running_process():
+    assert persistence.is_pid_alive(os.getpid()) is True
