@@ -225,13 +225,22 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 ### Roadmap Management
 
 - **`status [<id>]`**: Queue/history overview or deep-dive into a specific
-  task, including supersession lineage and runner/orchestrator-hook execution
-  times. Superseded and failed history stays visible in the default overview;
-  `--verbose` also shows routine completed/cancelled history.
+  task, including supersession lineage, the last resolved runner command, and
+  runner/orchestrator-hook execution times. Superseded and failed history
+  stays visible in the default overview; `--verbose` also shows routine
+  completed/cancelled history.
+  - `--json`: Emit machine-readable JSON instead of formatted text, so
+    scripts never have to parse the internal state file.
+  - `--brief`: Omit task descriptions, which otherwise dominate the output.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
-- **`add <desc>`**: Append a new task. Supports `--index` and `--runner`.
-- **`edit <id>`**: Modify a task's description, runner, or position.
+- **`add <desc>`**: Append a new task. Supports `--index`, `--runner`, and
+  `--model`.
+- **`edit <id>`**: Modify a task's description, runner, model, or position.
+- **`brief <id> [text]`**: View or set a task's long-form brief. Unlike the
+  description it has no length cap, and it is appended to the runner prompt
+  automatically — the right home for measured timings, exact failing
+  selectors, or why a previous attempt was wrong. Supports `-f/--file`.
 - **`delete <id>`**: Remove an unstarted task while retaining its runner log.
   Tasks with execution history require `--force`; autonomous restructuring
   should use `supersede`. Supports `--all` and `--completed` for bulk cleanup,
@@ -243,9 +252,11 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
   - `add <id> <finding>`: Record a new technical detail.
   - `edit <id> <index> <text>`: Modify an existing progress entry.
   - `delete <id> <index>`: Remove a progress entry.
-- **`config`**: Manage project configuration (runner, retries).
+- **`config`**: Manage project configuration (runner, model, retries,
+  time limit).
   - `list`: View current configuration.
-  - `set <key> <value>`: Update a setting.
+  - `set <key> <value>`: Update a setting. `set model default` clears a
+    pinned model without touching the runner.
 - **`hooks`**: Manage orchestrator hooks.
   - `list`: View available and active hooks.
   - `install`: Install built-in hooks to the global directory.
@@ -273,6 +284,7 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 - **`logs [<id>]`**: Print a task's execution log to stdout, including retained
   logs for removed tasks. If no ID is provided, it defaults to the active or
   most recent task. Orchestrator hook output is automatically appended.
+  Supports `--json` to wrap the log with its task ID and path.
 
 ### Execution
 
@@ -281,7 +293,12 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
   - `--yolo`: Run the runner in auto-approve mode (default: True).
   - `--env`: Set environment variables for the runner (e.g., `--env KEY=VALUE`).
   - `--no-defaults`: Skip default flag injection for known runners.
-  - `--`: Use `--` to pass any flag directly to the underlying runner.
+  - `--`: Use `--` to pass any flag directly to the underlying runner. A
+    per-task `--runner`/`--model` overrides anything passed here.
+- **`stop`**: Stop the running loop and its runner.
+  - `--after-current-task`: Drain instead — let the running task finish, then
+    stop before claiming another. This is the safe way to change the runner
+    or model without stranding work in flight.
 - **`serve`**: Launch the interactive Web UI.
   - `--port`: The port to bind the server to (default: 8999).
   - `--host`: The host address to bind the server to (default: 127.0.0.1).
@@ -304,16 +321,52 @@ Lemming uses **fuzzy matching** to automatically inject the correct "YOLO"
 - **Codex**: Runs non-interactively via `codex exec`, adds `--json`, and, in
   YOLO mode, adds `--dangerously-bypass-approvals-and-sandbox`
 
+### Choosing a model
+
+The model is a first-class setting, separate from the runner, so switching
+provider does not silently discard it:
+
+```bash
+lemming config set model gemini-3.6-flash-high   # project default
+lemming add "Fix the flaky test" --model fast    # just this task
+lemming config set model default                 # let the runner decide
+```
+
+Precedence, highest first: an explicit `--model` inside a runner string, the
+task's `--model`, the project's `config model`, then anything passed after
+`lemming run --`. A per-task setting always wins over the loop-wide
+passthrough — the conflicting global flag is dropped rather than duplicated
+on the command line.
+
+### Runner strings
+
+A runner is not limited to a binary name: any extra arguments in the string
+are appended to the command, which is another way to pin per-task behaviour.
+
+```bash
+lemming add "Try the fast model" --runner "agy --model fast"
+```
+
 You can disable default flag injection with `--no-defaults` (`codex exec`
 remains the Codex execution interface), or use a **template** to fully control
 the command layout:
 
 ```bash
-lemming run --runner "my-tool --input={{prompt}} --json"
+lemming config set runner "my-tool --input={{prompt}} --json"
 ```
 
 When `{{prompt}}` is present in the runner string, Lemming replaces it with the
 prompt text and skips all default flag injection.
+
+### Knowing what actually ran
+
+Each attempt records the command it launched, with the prompt elided, so the
+runner and model behind a finished task stay recoverable:
+
+```bash
+lemming status <id>          # includes "Last Command:"
+lemming status --json        # same data, machine-readable
+```
 
 ---
 
