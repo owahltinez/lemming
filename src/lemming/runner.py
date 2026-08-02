@@ -94,6 +94,63 @@ def _shlex_join_pretty(cmd: list[str], max_len: int = -1) -> str:
     return " ".join(parts)
 
 
+def _flag_name(token: str) -> str | None:
+    """Returns the flag name in a token, or None if it is not a flag.
+
+    Both ``--model x`` and ``--model=x`` yield ``--model``.
+    """
+    if not token.startswith("-"):
+        return None
+    return token.split("=", 1)[0]
+
+
+def _drop_conflicting_args(
+    global_args: tuple | list, override_args: list[str]
+) -> list[str]:
+    """Removes loop-wide args whose flag the per-task runner also sets.
+
+    A per-task runner string is a deliberate override, so a flag it sets must
+    not be duplicated by the global ``lemming run -- ...`` passthrough: the
+    two land on one command line and the runner silently picks a winner.
+
+    Args:
+        global_args: Passthrough arguments shared by every task.
+        override_args: Extra arguments parsed from the per-task runner string.
+
+    Returns:
+        The global arguments that do not collide with the override.
+    """
+    override_flags = {
+        flag for token in override_args if (flag := _flag_name(token))
+    }
+    if not override_flags:
+        return list(global_args)
+
+    kept: list[str] = []
+    drop_next_value = False
+
+    for token in global_args:
+        flag = _flag_name(token)
+
+        # A flag token decides its own fate and whether a trailing value
+        # belongs to it; "--flag=value" already carries its value.
+        if flag is not None:
+            drop_next_value = flag in override_flags and "=" not in token
+            if flag in override_flags:
+                continue
+            kept.append(token)
+            continue
+
+        # A bare value is dropped only when its flag was just dropped.
+        if drop_next_value:
+            drop_next_value = False
+            continue
+
+        kept.append(token)
+
+    return kept
+
+
 def build_runner_command(
     runner_name: str,
     prompt: str,
@@ -192,10 +249,12 @@ def build_runner_command(
             # Lemming's live task log.
             cmd.append("--json")
 
+    # Global passthrough goes first so a per-task flag also wins on runners
+    # that resolve duplicates by last occurrence.
+    if runner_args:
+        cmd.extend(_drop_conflicting_args(runner_args, extra_parts))
     if extra_parts:
         cmd.extend(extra_parts)
-    if runner_args:
-        cmd.extend(runner_args)
 
     if prompt_arg:
         cmd.extend([prompt_arg, prompt])

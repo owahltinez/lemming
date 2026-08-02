@@ -155,6 +155,60 @@ def test_build_runner_command_template_with_runner_args():
     assert cmd == ["my-tool", "hello", "--extra"]
 
 
+def test_per_task_flag_overrides_global_passthrough():
+    """A per-task runner flag must defeat the same loop-wide flag."""
+    cmd = runner.build_runner_command(
+        "claude --model per-task",
+        "prompt",
+        yolo=True,
+        runner_args=("--model", "global"),
+    )
+
+    assert cmd.count("--model") == 1
+    assert "global" not in cmd
+    assert cmd[cmd.index("--model") + 1] == "per-task"
+
+
+def test_per_task_flag_overrides_global_equals_form():
+    """The --flag=value spelling is dropped as a single token."""
+    cmd = runner.build_runner_command(
+        "claude --model=per-task",
+        "prompt",
+        yolo=True,
+        runner_args=("--model=global",),
+    )
+
+    assert "--model=global" not in cmd
+    assert "--model=per-task" in cmd
+
+
+def test_global_passthrough_kept_when_no_conflict():
+    """Unrelated loop-wide args still reach the runner."""
+    cmd = runner.build_runner_command(
+        "claude --model per-task",
+        "prompt",
+        yolo=True,
+        runner_args=("--fallback-model", "other"),
+    )
+
+    assert "--fallback-model" in cmd
+    assert cmd[cmd.index("--fallback-model") + 1] == "other"
+    assert cmd[cmd.index("--model") + 1] == "per-task"
+
+
+def test_conflicting_boolean_flag_does_not_consume_next_flag():
+    """Dropping a valueless flag must not swallow the following argument."""
+    cmd = runner.build_runner_command(
+        "claude --verbose",
+        "prompt",
+        yolo=True,
+        runner_args=("--verbose", "--fallback-model", "other"),
+    )
+
+    assert "--fallback-model" in cmd
+    assert cmd[cmd.index("--fallback-model") + 1] == "other"
+
+
 def test_build_runner_command_template_ignores_defaults():
     # Even though runner starts with "agy", template mode should not
     # inject --dangerously-skip-permissions etc.
