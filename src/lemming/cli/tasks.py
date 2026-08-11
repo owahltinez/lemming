@@ -617,14 +617,17 @@ def logs(ctx: click.Context, task_id: str | None, as_json: bool):
                     ),
                 )
 
-    if not target and log_file is None:
-        click.echo("Error: No active or recently finished task found.")
-        ctx.exit(1)
-
+    # A log resolved by ID stands on its own, because the task it belonged
+    # to may have been removed. Without one, a task is needed to derive the
+    # path, so its absence is what makes the request unanswerable.
     if log_file is None:
+        if target is None:
+            click.echo("Error: No active or recently finished task found.")
+            ctx.exit(1)
         log_file = paths.get_log_file(tasks_file, target.id)
+
     if not log_file.exists():
-        click.echo(f"No log for task {target.id}.")
+        click.echo(f"No log for task {target.id if target else task_id}.")
         ctx.exit(1)
 
     content = log_file.read_text(encoding="utf-8")
