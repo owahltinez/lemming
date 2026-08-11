@@ -111,7 +111,7 @@ class TailscaleProvider(TunnelProvider):
         self.process: subprocess.Popen | None = None
 
     def start(self, local_port: int) -> str:
-        """Exposes the given local port via Tailscale serve and funnel.
+        """Exposes the given local port via Tailscale funnel.
 
         Args:
             local_port: Local port to expose through the tunnel.
@@ -132,25 +132,25 @@ class TailscaleProvider(TunnelProvider):
                 "tailscale not found in PATH. Please install it from https://tailscale.com/download"
             )
 
+        # A single backgrounded funnel replaces the older 'serve https /
+        # <target>' plus 'funnel <port> on' pair, which current CLIs reject.
         cmd = [
             "tailscale",
-            "serve",
-            "https",
-            "/",
+            "funnel",
+            "--bg",
+            "--yes",
+            "--https=443",
             f"http://127.0.0.1:{local_port}",
         ]
-        try:
-            subprocess.run(cmd, capture_output=True, check=True)
-            # funnel is enabled separately: tailscale funnel 8999
-            subprocess.run(
-                ["tailscale", "funnel", str(local_port), "on"],
-                capture_output=True,
-                check=True,
-            )
-        except subprocess.CalledProcessError as e:
+        funnel = subprocess.run(
+            cmd, capture_output=True, text=True, check=False
+        )
+        if funnel.returncode != 0:
+            details = (funnel.stderr or funnel.stdout or "").strip()
             raise RuntimeError(
-                "Failed to start tailscale serve/funnel: "
-                f"{e.stderr.decode() if e.stderr else str(e)}"
+                f"Failed to start tailscale funnel with '{' '.join(cmd)}'. "
+                "This requires a tailscale CLI supporting 'tailscale funnel "
+                f"--bg'. The CLI reported: {details}"
             )
 
         status = subprocess.run(
@@ -170,7 +170,8 @@ class TailscaleProvider(TunnelProvider):
             domain = data.get("Self", {}).get("DNSName", "").strip(".")
             if not domain:
                 raise ValueError("No DNSName found in tailscale status.")
-            return f"https://{domain}:{local_port}"
+            # Funnel terminates TLS on 443, so the public URL carries no port.
+            return f"https://{domain}"
         except Exception as e:
             self.stop()
             raise RuntimeError(f"Failed to determine tailscale domain: {e}")
@@ -178,9 +179,10 @@ class TailscaleProvider(TunnelProvider):
     def stop(self):
         """Turns off Tailscale funnel and serve for this node."""
         # We don't have a long-running process to kill, but we can turn off
-        # funnel and serve. It's cleaner to turn them off.
+        # funnel and serve. Reset is idempotent, whereas 'funnel off' errors
+        # out when no funnel is configured.
         subprocess.run(
-            ["tailscale", "funnel", "off"], capture_output=True, check=False
+            ["tailscale", "funnel", "reset"], capture_output=True, check=False
         )
         subprocess.run(
             ["tailscale", "serve", "reset"], capture_output=True, check=False
