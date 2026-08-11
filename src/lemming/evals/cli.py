@@ -178,6 +178,10 @@ def run(
             )
         click.echo(f"Building eval image '{image}'...")
         container.build_image(context, image=image, docker=docker)
+        # The image is what the trials need; the cache that produced it is
+        # dead weight, and it outgrows the image several times over across
+        # repeated runs.
+        container.prune_build_cache(docker=docker)
 
     if run_dir is None:
         run_dir = pathlib.Path(tempfile.mkdtemp(prefix="lemming-evals-"))

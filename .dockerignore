@@ -1,0 +1,30 @@
+# The image builds its own environments, so host-built ones are not just
+# wasted bytes in the context — they are the wrong platform's binaries
+# landing on top of what `uv sync` and `npm install` are about to create.
+.venv
+node_modules
+
+# History and build products the image never reads.
+.git
+.github
+dist
+test-results
+docs/screenshots
+
+# Agent worktrees are whole checkouts of this repo, each with its own
+# dependencies installed, and they dwarf the source they sit beside.
+.claude
+
+# Local state and caches.
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+.DS_Store
+
+# Roadmaps and their locks belong to whoever is running lemming, not to
+# the image; a stale one baked in would be read as that project's state.
+tasks.yml
+*.lock
+!uv.lock
+!package-lock.json

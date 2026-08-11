@@ -22,8 +22,14 @@ WORKDIR /opt/lemming
 COPY . .
 RUN uv sync --no-dev --frozen
 
-# Install frontend dependencies and Playwright browsers
-RUN npm install && npx playwright install --with-deps
+# Frontend dependencies are always needed: postinstall vendors mancha into
+# the web assets. The browsers are not, and they are more than half the
+# image, so anything that will never drive one builds without them.
+ARG INSTALL_BROWSERS=true
+RUN npm install \
+    && if [ "$INSTALL_BROWSERS" = "true" ]; then \
+         npx playwright install --with-deps; \
+       fi
 
 # Pre-create the lemming home directory so users can bind-mount a .env file into it
 RUN mkdir -p /root/.local/lemming

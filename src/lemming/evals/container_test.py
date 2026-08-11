@@ -84,3 +84,34 @@ class TestRunTrial(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuildImageTest(unittest.TestCase):
+    """The build must not carry what the eval trials never use."""
+
+    @unittest.mock.patch("subprocess.run")
+    def test_builds_without_browsers(
+        self, run: unittest.mock.MagicMock
+    ) -> None:
+        """Browsers are over half the image and no trial drives one."""
+        container.build_image(pathlib.Path("/repo"))
+
+        argv = run.call_args[0][0]
+        self.assertIn("--build-arg", argv)
+        self.assertIn("INSTALL_BROWSERS=false", argv)
+
+    @unittest.mock.patch("subprocess.run")
+    def test_prunes_the_build_cache(self, run: unittest.mock.MagicMock) -> None:
+        """Repeated eval runs accumulate cache faster than images."""
+        container.prune_build_cache()
+
+        argv = run.call_args[0][0]
+        self.assertEqual(argv[:3], ["docker", "builder", "prune"])
+        self.assertIn("--force", argv)
+
+    @unittest.mock.patch("subprocess.run", side_effect=OSError("no docker"))
+    def test_pruning_never_fails_a_run(
+        self, run: unittest.mock.MagicMock
+    ) -> None:
+        """Cleanup runs after the results are in; it must not lose them."""
+        container.prune_build_cache()

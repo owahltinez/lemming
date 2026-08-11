@@ -41,7 +41,41 @@ def build_image(
         image: Tag for the built image.
         docker: Docker-compatible CLI binary to invoke.
     """
-    subprocess.run([docker, "build", "--tag", image, str(context)], check=True)
+    # No scenario drives a browser, and they are more than half the image.
+    subprocess.run(
+        [
+            docker,
+            "build",
+            "--build-arg",
+            "INSTALL_BROWSERS=false",
+            "--tag",
+            image,
+            str(context),
+        ],
+        check=True,
+    )
+
+
+def prune_build_cache(docker: str = "docker") -> None:
+    """Discards the build cache left behind by an eval image build.
+
+    Cache accumulates faster than images do — a run rebuilding this image a
+    few times leaves tens of gigabytes behind — and nothing reuses it once
+    the trials have finished.
+
+    Args:
+        docker: Docker-compatible CLI binary to invoke.
+    """
+    try:
+        subprocess.run(
+            [docker, "builder", "prune", "--force", "--all"],
+            check=False,
+            capture_output=True,
+        )
+    except OSError:
+        # This runs after the results are in; failing to tidy up must never
+        # be the reason a completed eval run reports an error.
+        pass
 
 
 def trial_command(
