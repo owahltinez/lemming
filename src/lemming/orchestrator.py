@@ -140,6 +140,10 @@ def run_hooks(
                     click.echo(
                         f"Hook '{hook_name}' exited with code {returncode}."
                     )
+        except tasks.CorruptedTasksError:
+            # Not a hook failure: reporting it as one blames the wrong thing
+            # and lets the loop carry on writing to an unreadable roadmap.
+            raise
         except Exception as e:
             exit_codes[hook_name] = -1
             click.echo(f"Hook '{hook_name}' error: {e}")
@@ -627,6 +631,10 @@ def run_loop(
                         "2. Create an executable wrapper script for "
                         f"'{runner_name}' in your PATH."
                     )
+        except tasks.CorruptedTasksError:
+            # Retrying cannot help an unreadable roadmap, and counting the
+            # attempt would spend the task's retries on the wrong failure.
+            raise
         except Exception as e:
             click.echo(
                 f"\nAn error occurred while executing {runner_name}: {e}"

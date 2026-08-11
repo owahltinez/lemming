@@ -117,7 +117,7 @@ def _corrupt_backup_paths(tasks_file: pathlib.Path):
     """Yields the backup paths to try, in the order they should be used."""
     base = tasks_file.with_name(tasks_file.name + CORRUPT_SUFFIX)
     yield base
-    for index in range(1, MAX_CORRUPT_BACKUPS + 1):
+    for index in range(1, MAX_CORRUPT_BACKUPS):
         yield base.with_name(f"{base.name}.{index}")
 
 
@@ -188,8 +188,10 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
         A Roadmap containing the goal and list of tasks.
 
     Raises:
-        CorruptedTasksError: If the file exists but cannot be parsed. The
-            unreadable bytes are backed up and the file is left untouched.
+        CorruptedTasksError: If the file exists but does not hold a roadmap,
+            whether because it does not parse, parses to something that is not
+            a roadmap, or has been emptied. The bytes are backed up and the
+            file is left untouched.
     """
     if not tasks_file.exists():
         return models.Roadmap(
@@ -203,7 +205,16 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
     raw = tasks_file.read_bytes()
     try:
         data = yaml.safe_load(raw.decode("utf-8"))
-    except (yaml.YAMLError, UnicodeDecodeError) as e:
+        # A file that parses to nothing (empty, whitespace, "null") has lost
+        # its contents: the bootstrap in lock_tasks() writes "{}", which parses
+        # to a mapping, so None means the roadmap was truncated away rather
+        # than never written.
+        if data is None:
+            raise ValueError("file contains no roadmap")
+        # Pydantic's ValidationError is a ValueError, so YAML of the wrong
+        # shape (a bare list, prose, an HTML error page) lands here too.
+        return models.Roadmap.model_validate(data)
+    except (yaml.YAMLError, UnicodeDecodeError, ValueError) as e:
         # Corruption has to stay loud: returning an empty roadmap here would
         # let the next save_tasks() destroy the only copy of the roadmap. The
         # raised error carries the file, the backup, and the parse failure, so
@@ -211,10 +222,6 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
         raise CorruptedTasksError(
             tasks_file, e, _backup_corrupted_tasks(tasks_file, raw)
         ) from e
-
-    if not data:
-        data = {}
-    return models.Roadmap.model_validate(data)
 
 
 class _BlockStyleDumper(yaml.SafeDumper):

@@ -1053,3 +1053,48 @@ def test_run_hooks_quiet_when_hook_succeeds(mock_run, setup_env, capsys):
     )
 
     assert "reported:" not in capsys.readouterr().out
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_hooks_propagates_corrupted_tasks(mock_run, setup_env, capsys):
+    """An unreadable roadmap is not a hook failure to report and move past."""
+    test_tasks_file, _ = setup_env
+    tasks.mark_task_in_progress(test_tasks_file, "task1")
+    mock_run.side_effect = tasks.CorruptedTasksError(
+        test_tasks_file, ValueError("boom")
+    )
+
+    with pytest.raises(tasks.CorruptedTasksError):
+        run_hooks(
+            test_tasks_file,
+            "task1",
+            "agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            hooks=["roadmap"],
+        )
+
+    assert "Hook 'roadmap' error" not in capsys.readouterr().out
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_loop_propagates_corrupted_tasks(mock_run, setup_env, capsys):
+    """The same holds for the task runner: stop while the file is intact."""
+    test_tasks_file, _ = setup_env
+    mock_run.side_effect = tasks.CorruptedTasksError(
+        test_tasks_file, ValueError("boom")
+    )
+
+    with pytest.raises(tasks.CorruptedTasksError):
+        run_loop(
+            test_tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+        )
+
+    assert "An error occurred while executing" not in capsys.readouterr().out

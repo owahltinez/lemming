@@ -292,9 +292,11 @@ def serve(
                     project_data = tasks.get_project_data(tasks_file)
                 except tasks.CorruptedTasksError as e:
                     # This runs in a daemon thread: without this the shutdown
-                    # would die with a traceback and leave the server up.
+                    # would die with a traceback and leave the server up. Exit
+                    # here rather than breaking out, so the shutdown does not
+                    # go on to claim the tasks all finished.
                     click.echo(f"[ Lemming ] {e}", err=True)
-                    break
+                    os._exit(1)
                 if not project_data.loop_running:
                     break
                 time.sleep(5)

@@ -188,9 +188,52 @@ def test_load_tasks_missing_file_returns_default_roadmap(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_load_tasks_empty_file_returns_default_roadmap(tmp_path):
+@pytest.mark.parametrize(
+    "content",
+    [
+        "- a\n- b\n",
+        "just some prose\n",
+        "goal: g\ntasks:\n",
+        "<html><body>502 Bad Gateway</body></html>\n",
+    ],
+    ids=["top-level-list", "prose", "null-tasks", "html-error-page"],
+)
+def test_load_tasks_rejects_content_that_is_not_a_roadmap(tmp_path, content):
+    """Parseable YAML of the wrong shape is corruption, not an empty roadmap."""
     tasks_file = tmp_path / "tasks.yml"
-    tasks_file.write_text("", encoding="utf-8")
+    tasks_file.write_text(content, encoding="utf-8")
+
+    with pytest.raises(persistence.CorruptedTasksError) as excinfo:
+        persistence.load_tasks(tasks_file)
+
+    assert excinfo.value.backup_file == tmp_path / "tasks.yml.corrupt"
+    assert (tmp_path / "tasks.yml.corrupt").read_text() == content
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["", "   \n\n", "null\n", "---\n"],
+    ids=["zero-byte", "whitespace", "null", "document-marker"],
+)
+def test_load_tasks_rejects_emptied_file(tmp_path, content):
+    """A file truncated to nothing must not load as an empty roadmap.
+
+    Loading it "successfully" is what lets the next save overwrite the only
+    copy of the user's tasks.
+    """
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.write_text(content, encoding="utf-8")
+
+    with pytest.raises(persistence.CorruptedTasksError):
+        persistence.load_tasks(tasks_file)
+
+    assert (tmp_path / "tasks.yml.corrupt").read_text() == content
+
+
+def test_load_tasks_accepts_the_bootstrap_placeholder(tmp_path):
+    """lock_tasks() creates the file as "{}", which is a new project."""
+    tasks_file = tmp_path / "tasks.yml"
+    tasks_file.write_text("{}", encoding="utf-8")
 
     loaded = persistence.load_tasks(tasks_file)
 
