@@ -47,7 +47,10 @@ keeps quality from drifting as tasks accumulate.
     than relying on memory. A guide can exceed 100 KB, so never print one
     whole: list its sections with `--outline`, then read the one you need
     with `--section`. For wording no heading names, pipe the guide to a
-    search instead of printing it.
+    search instead of printing it. Where a guide and the project's own
+    configuration disagree, the configuration wins and `check` already
+    enforces it: do not change code or configuration to match the guide
+    against it, and do not report a configured choice as a finding.
 5.  **Fix**: Apply targeted, behavior-preserving fixes for the issues you find.
     Keep each fix small and scoped to the files under review. Do not change
     public interfaces, feature behavior, or unrelated files; record those
