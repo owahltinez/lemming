@@ -1,6 +1,7 @@
 """Tests for the one-shot exec command."""
 
 import json
+import subprocess
 from unittest import mock
 
 import pytest
@@ -27,16 +28,26 @@ def workspace(tmp_path, monkeypatch):
 def _finish(message, returncode=0, status=tasks.TaskStatus.COMPLETED):
     """Builds a run_with_heartbeat fake that finishes the claimed task.
 
-    The real runner reaches a terminal state by having the agent invoke the
-    CLI, so a fake must both write its event stream to the log and settle
-    the task the way a completed run would.
+    A real agent settles its task by invoking the CLI, which records the
+    outcome as a request for the hooks to apply rather than applying it
+    outright. Completing the task directly would skip the hooks entirely,
+    so the fake goes through the same request.
     """
     output = json.dumps({"type": "result", "result": message}) + "\n"
 
     def fake(cmd, tasks_file, task_id, *args, **kwargs):
         log_file = paths.get_log_file(tasks_file, task_id)
         log_file.write_text(f"Command: {cmd[0]}\n{output}", encoding="utf-8")
-        tasks.update_task(tasks_file, task_id, status=status, force=True)
+
+        # A hook runs against a task that already asked to finish; asking
+        # again would be the hook overriding the agent it is reviewing.
+        data = tasks.load_tasks(tasks_file)
+        task = next(t for t in data.tasks if t.id == task_id)
+        if task.requested_status:
+            return returncode, output, ""
+
+        tasks.add_progress(tasks_file, task_id, "did the work")
+        tasks.update_task(tasks_file, task_id, status=status.value)
         return returncode, output, ""
 
     return fake
@@ -224,3 +235,135 @@ def test_exec_reports_a_runner_that_produced_no_message(workspace):
     assert result.exit_code == 0
     assert result.stdout.strip() == ""
     assert "no closing message" in result.stderr.lower()
+
+
+def _git(working_dir, *args):
+    """Runs a git command in the given directory."""
+    subprocess.run(
+        ["git", *args], cwd=working_dir, check=True, capture_output=True
+    )
+
+
+@pytest.fixture
+def repo(workspace):
+    """A workspace that is also a git repository with one commit."""
+    _git(workspace, "init", "-q", "-b", "main")
+    _git(workspace, "config", "user.email", "test@example.com")
+    _git(workspace, "config", "user.name", "Test")
+    (workspace / "committed.py").write_text("x = 1\n")
+    _git(workspace, "add", "committed.py")
+    _git(workspace, "commit", "-qm", "initial")
+    return workspace
+
+
+def test_review_runs_the_hook_without_a_task_runner(repo):
+    """A review of existing work has nothing for a runner to do."""
+    (repo / "committed.py").write_text("x = 2\n")
+    headers = []
+
+    def record(cmd, tasks_file, task_id, *args, **kwargs):
+        headers.append(kwargs.get("header"))
+        return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", record):
+        result = CliRunner().invoke(cli, ["exec", "--review", "readability"])
+
+    assert result.exit_code == 0, result.stderr
+    assert headers == ["Hook: readability"]
+
+
+def test_review_tells_the_agent_what_changed(repo):
+    """The scope is resolved up front, not left for the agent to guess."""
+    (repo / "committed.py").write_text("x = 2\n")
+    prompts_seen = []
+
+    def record(cmd, tasks_file, task_id, *args, **kwargs):
+        prompts_seen.append(cmd[-1])
+        return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", record):
+        CliRunner().invoke(cli, ["exec", "--review", "readability"])
+
+    assert "- committed.py" in prompts_seen[0]
+
+
+def test_review_accepts_an_explicit_scope(repo):
+    """A path is passed through for the agent to act on."""
+    prompts_seen = []
+
+    def record(cmd, tasks_file, task_id, *args, **kwargs):
+        prompts_seen.append(cmd[-1])
+        return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", record):
+        result = CliRunner().invoke(
+            cli, ["exec", "--review", "readability", "--scope", "src/api/"]
+        )
+
+    assert result.exit_code == 0, result.stderr
+    assert "- src/api/" in prompts_seen[0]
+
+
+def test_review_refuses_the_orchestration_hook(repo):
+    """Roadmap revision would add tasks to a roadmap about to be deleted."""
+    result = CliRunner().invoke(cli, ["exec", "--review", "roadmap"])
+
+    assert result.exit_code != 0
+    assert "roadmap" in result.stderr.lower()
+
+
+def test_review_all_excludes_the_orchestration_band(repo):
+    """--review all must not require naming every review by hand."""
+    (repo / "committed.py").write_text("x = 2\n")
+    headers = []
+
+    def record(cmd, tasks_file, task_id, *args, **kwargs):
+        headers.append(kwargs.get("header"))
+        return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", record):
+        CliRunner().invoke(cli, ["exec", "--review", "all"])
+
+    assert "Hook: roadmap" not in headers
+    assert "Hook: readability" in headers
+
+
+def test_review_stops_when_nothing_changed(repo):
+    """A clean tree means no review to run, not a review of everything."""
+    calls = []
+
+    def record(cmd, tasks_file, task_id, *args, **kwargs):
+        calls.append(cmd)
+        return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", record):
+        result = CliRunner().invoke(cli, ["exec", "--review", "readability"])
+
+    assert calls == []
+    assert "no changes" in result.stderr.lower()
+
+
+def test_review_rejects_an_unresolvable_scope(repo):
+    """A typo must fail loudly rather than review the wrong thing."""
+    result = CliRunner().invoke(
+        cli,
+        ["exec", "--review", "readability", "--scope", "no-branch...HEAD"],
+    )
+
+    assert result.exit_code != 0
+
+
+def test_a_task_can_be_followed_by_reviews(repo):
+    """Doing the work and gating it is one invocation, in order."""
+    headers = []
+
+    def record(cmd, tasks_file, task_id, *args, **kwargs):
+        headers.append(kwargs.get("header"))
+        return _finish("Done.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", record):
+        CliRunner().invoke(
+            cli, ["exec", "Add pagination", "--review", "readability"]
+        )
+
+    assert headers == ["Task Runner", "Hook: readability"]

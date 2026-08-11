@@ -17,9 +17,13 @@ import typing
 
 import click
 
-from .. import paths, runner, shutdown, tasks
+from .. import paths, runner, scope, shutdown, tasks
+from ..hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
 from ..orchestrator import run_loop
 from .main import cli
+
+# Requests every review rather than making the caller name each one.
+ALL_REVIEWS = "all"
 
 # Ceiling on how much of the runner log is scanned for the closing message.
 # The message is at the end, and a log carrying every tool call can be
@@ -70,6 +74,34 @@ def _resolve_prompt(description: str | None, file: typing.TextIO | None) -> str:
     return text
 
 
+def _create_review_task(
+    exec_dir: pathlib.Path, reviews: list[str], config
+) -> str:
+    """Scaffolds a task that is already finished, so only reviews run.
+
+    A review inspects work that already exists, leaving a task runner with
+    nothing to do. The orchestrator already skips the runner for a task
+    caught mid-finalization, which is exactly this situation.
+
+    Args:
+        exec_dir: Directory holding this run's ephemeral state.
+        reviews: Names of the reviews about to run.
+        config: Roadmap configuration for the run.
+
+    Returns:
+        The new task's ID.
+    """
+    tasks_file = exec_dir / "tasks.yml"
+    task = tasks.Task(
+        id=tasks.generate_task_id(),
+        description=f"Review the workspace: {', '.join(reviews)}.",
+        status=tasks.TaskStatus.IN_PROGRESS,
+        requested_status=tasks.TaskStatus.COMPLETED,
+    )
+    tasks.save_tasks(tasks_file, tasks.Roadmap(config=config, tasks=[task]))
+    return task.id
+
+
 def _create_task(exec_dir: pathlib.Path, prompt: str, config) -> str:
     """Scaffolds the ephemeral roadmap holding this run's single task.
 
@@ -100,6 +132,57 @@ def _create_task(exec_dir: pathlib.Path, prompt: str, config) -> str:
     return task.id
 
 
+def _resolve_reviews(values: tuple[str, ...]) -> list[str]:
+    """Returns the reviews to run, in execution order.
+
+    Hooks are discovered from the built-in and global layers only. A
+    project's own hooks may be as stale as its roadmap, and the caller may
+    be standing in a repository they merely checked out.
+
+    Args:
+        values: Requested reviews, each possibly comma-separated. The value
+            "all" stands for every review.
+
+    Returns:
+        Review names ordered by hook priority.
+
+    Raises:
+        click.UsageError: If a name is unknown or orchestrates the queue.
+    """
+    requested = [
+        name.strip()
+        for value in values
+        for name in value.split(",")
+        if name.strip()
+    ]
+    available = list_hooks()
+
+    # The 9x band orchestrates the queue: it revises the roadmap. Here the
+    # roadmap holds one task and is deleted afterwards, so a hook that adds
+    # tasks to it would set unbounded work running from a one-shot.
+    reviews = [
+        name
+        for name in available
+        if get_hook_priority(name) < FAILURE_HOOK_PRIORITY
+    ]
+
+    if ALL_REVIEWS in requested:
+        return reviews
+
+    for name in requested:
+        if name in reviews:
+            continue
+        if name in available:
+            raise click.UsageError(
+                f"'{name}' orchestrates the roadmap and cannot run as a "
+                "review. Use 'lemming run' for roadmap revision."
+            )
+        raise click.UsageError(
+            f"Unknown review '{name}'. Available: {', '.join(reviews)}."
+        )
+    return [name for name in reviews if name in requested]
+
+
 def _task_status(
     tasks_file: pathlib.Path, task_id: str
 ) -> tasks.TaskStatus | None:
@@ -127,6 +210,26 @@ def _task_status(
     type=click.File("r"),
     help="Read the task description from a file (or - for stdin).",
 )
+@click.option(
+    "--review",
+    "review_values",
+    multiple=True,
+    help=(
+        "Reviews to run after the task, comma-separated or repeated. "
+        "Use 'all' for every review. With no description, only the "
+        "reviews run."
+    ),
+)
+@click.option(
+    "--scope",
+    "scope_values",
+    multiple=True,
+    help=(
+        "What the reviews look at: a path, or a git revision range. "
+        "Defaults to uncommitted work, or the whole tree outside a "
+        "repository."
+    ),
+)
 @click.option("--runner", "runner_name", help="Agent CLI to run the task.")
 @click.option("--model", "model_name", help="Model to request from the agent.")
 @click.option(
@@ -150,6 +253,8 @@ def exec_command(
     ctx: click.Context,
     description: str | None,
     file: typing.TextIO | None,
+    review_values: tuple,
+    scope_values: tuple,
     runner_name: str | None,
     model_name: str | None,
     time_limit: int,
@@ -162,12 +267,42 @@ def exec_command(
     The agent's closing message goes to stdout and everything else to
     stderr, so the output can be consumed directly by whoever called it.
 
+    With reviews but no description there is nothing for a task runner to
+    do, so only the reviews run against work that already exists.
+
     Examples:
       lemming exec "Fix the flaky test in runner_test.py" --runner codex
-      cat handoff.md | lemming exec -f - --runner agy
+      lemming exec --review readability
+      lemming exec --review testing --scope main...HEAD
+      lemming exec "Add pagination" --review all
     """
-    prompt = _resolve_prompt(description, file)
     verbose = ctx.obj["VERBOSE"]
+    reviews = _resolve_reviews(review_values)
+
+    # A description means work to do; without one, only reviews can run.
+    prompt = (
+        _resolve_prompt(description, file)
+        if description or file or not reviews
+        else None
+    )
+
+    # The runner must edit the caller's workspace, never the throwaway
+    # directory that only holds this run's bookkeeping.
+    working_dir = pathlib.Path.cwd().resolve()
+
+    scope_text = None
+    if reviews:
+        try:
+            entries = scope.resolve_scope(scope_values, working_dir)
+        except scope.ScopeError as e:
+            raise click.UsageError(str(e)) from e
+
+        # Nothing changed means nothing to review. Falling back to the
+        # whole tree would spend an agent run the caller did not ask for.
+        if not entries and prompt is None:
+            click.echo("There are no changes to review.", err=True)
+            return
+        scope_text = scope.describe(entries)
 
     # A one-shot spends one agent run: a silent retry would multiply the
     # caller's cost without their say.
@@ -179,11 +314,11 @@ def exec_command(
 
     exec_dir = paths.create_exec_dir()
     tasks_file = exec_dir / "tasks.yml"
-    task_id = _create_task(exec_dir, prompt, config)
-
-    # The runner must edit the caller's workspace, never the throwaway
-    # directory that only holds this run's bookkeeping.
-    working_dir = pathlib.Path.cwd().resolve()
+    task_id = (
+        _create_task(exec_dir, prompt, config)
+        if prompt is not None
+        else _create_review_task(exec_dir, reviews, config)
+    )
 
     shutdown.clear_drain()
     shutdown.install_handlers()
@@ -201,7 +336,8 @@ def exec_command(
                 no_defaults=False,
                 runner_args=runner_args,
                 working_dir=working_dir,
-                hooks=[],
+                hooks=reviews,
+                scope=scope_text,
             )
 
         # The loop reports that the queue drained, which a failed task does
