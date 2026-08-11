@@ -12,6 +12,10 @@ overhead.
 
 {{finished_task}}
 
+## Scope
+
+{{scope}}
+
 ## Directives
 
 1.  **Verify**: Every non-trivial code change must have corresponding unit
@@ -40,5 +44,5 @@ overhead.
 lemming --tasks-file {{tasks_file_path}} progress {{finished_task_id}} '<finding>'
 ```
 
-Limit your review ONLY to the code changed in the last task. Your goal is
-verification, not a general security or performance audit.
+Limit your review to the scope above. Your goal is verification, not a
+general security or performance audit.

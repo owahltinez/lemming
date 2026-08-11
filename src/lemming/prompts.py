@@ -5,6 +5,12 @@ import pathlib
 
 from . import hooks, paths, runner, tasks
 
+# What a review looks at when the caller named nothing. The orchestrator
+# runs hooks right after a task, so the work it left behind is the scope.
+DEFAULT_SCOPE_DESCRIPTION = (
+    "Review the files the task that just finished changed or created."
+)
+
 MAX_LOG_CONTEXT_BYTES = 16 * 1024
 MAX_DETAILED_PROGRESS_ENTRIES = 3
 MAX_DETAILED_PROGRESS_ENTRY_CHARS = 4_000
@@ -321,6 +327,7 @@ def prepare_hook_prompt(
     data: tasks.Roadmap,
     finished_task: tasks.Task,
     tasks_file: pathlib.Path,
+    scope: str | None = None,
 ) -> str:
     """Prepares the prompt for a specific orchestrator hook.
 
@@ -329,6 +336,9 @@ def prepare_hook_prompt(
         data: The current Roadmap.
         finished_task: The Task that just finished executing.
         tasks_file: Path to the tasks YAML file.
+        scope: What the hook should look at. Defaults to the work the
+            finished task left behind, which is what a hook run by the
+            orchestrator reviews.
 
     Returns:
         The fully rendered hook prompt string.
@@ -404,6 +414,7 @@ def prepare_hook_prompt(
     return (
         prompt_template.replace("{{roadmap}}", roadmap_str)
         .replace("{{finished_task}}", finished_str)
+        .replace("{{scope}}", scope or DEFAULT_SCOPE_DESCRIPTION)
         .replace("{{finished_task_id}}", finished_task.id)
         .replace("{{tasks_file_name}}", tasks_file.name)
         .replace("{{tasks_file_path}}", tasks_file_str)

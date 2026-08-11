@@ -25,6 +25,7 @@ def run_hooks(
     final_status: tasks.TaskStatus | None = None,
     time_limit: int = 0,
     model_name: str | None = None,
+    scope: str | None = None,
 ) -> dict[str, int]:
     """Executes orchestrator hooks for a finished task.
 
@@ -42,6 +43,8 @@ def run_hooks(
         final_status: If provided, mark the task with this status after hooks.
         time_limit: Time limit in minutes for each hook run (0 disables it).
         model_name: Model to request from the hook runner, if any.
+        scope: What the hooks should look at. Defaults to the work the
+            finished task left behind.
 
     Returns:
         Mapping of each executed hook name to its runner exit code (-1 when
@@ -91,7 +94,7 @@ def run_hooks(
 
         try:
             prompt = prompts.prepare_hook_prompt(
-                hook_name, data, task, tasks_file
+                hook_name, data, task, tasks_file, scope=scope
             )
         except FileNotFoundError:
             if verbose:
@@ -219,6 +222,7 @@ def _process_exhausted_retries(
     working_dir: pathlib.Path | None,
     time_limit: int,
     model_name: str | None = None,
+    scope: str | None = None,
 ) -> bool:
     """Handles tasks that have exhausted retries.
 
@@ -245,6 +249,7 @@ def _process_exhausted_retries(
         final_status=tasks.TaskStatus.FAILED,
         time_limit=time_limit,
         model_name=model_name,
+        scope=scope,
     )
 
     # Re-check: if a hook reset/edited/replaced the task, continue the loop
@@ -282,6 +287,7 @@ def _process_finalizing_task(
     working_dir: pathlib.Path | None,
     time_limit: int,
     model_name: str | None = None,
+    scope: str | None = None,
 ) -> None:
     """Runs hooks for a task that is in a finalizing state."""
     if verbose:
@@ -303,6 +309,7 @@ def _process_finalizing_task(
         final_status=requested_status,
         time_limit=time_limit,
         model_name=model_name,
+        scope=scope,
     )
 
 
@@ -323,6 +330,7 @@ def _handle_runner_exit(
     working_dir: pathlib.Path | None,
     time_limit: int,
     model_name: str | None = None,
+    scope: str | None = None,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
@@ -365,6 +373,7 @@ def _handle_runner_exit(
             final_status=post_task.requested_status,
             time_limit=time_limit,
             model_name=model_name,
+            scope=scope,
         )
 
         # A finalizing task keeps its in-progress status until the hooks
@@ -452,6 +461,7 @@ def run_loop(
     runner_args: tuple,
     working_dir: pathlib.Path | None = None,
     hooks: list[str] | None = None,
+    scope: str | None = None,
 ) -> bool:
     """Runs pending tasks, returning True only when the roadmap is complete.
 
@@ -467,6 +477,7 @@ def run_loop(
             discovery. An empty list runs none. Defaults to discovering the
             active set on every iteration, so a running loop picks up
             changes.
+        scope: What the hooks should look at, passed through to each.
 
     Returns:
         True only when the roadmap ran to completion.
@@ -547,6 +558,7 @@ def run_loop(
                 active_hooks=active_hooks,
                 working_dir=working_dir,
                 time_limit=time_limit,
+                scope=scope,
             )
             if should_abort:
                 return False
@@ -594,6 +606,7 @@ def run_loop(
                 active_hooks=active_hooks,
                 working_dir=working_dir,
                 time_limit=time_limit,
+                scope=scope,
             )
             continue
 
@@ -684,6 +697,7 @@ def run_loop(
             active_hooks=active_hooks,
             working_dir=working_dir,
             time_limit=time_limit,
+            scope=scope,
         )
         if should_abort:
             return False

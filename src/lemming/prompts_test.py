@@ -1,3 +1,5 @@
+import pathlib
+
 import pytest
 
 from lemming import models, paths, prompts, tasks
@@ -554,3 +556,47 @@ def test_hook_goal_budget_never_exceeds_the_runner_budget():
         prompts._REVIEW_HOOK_POLICY,
     ):
         assert policy.goal_chars <= runner_budget
+
+
+def _hook_prompt_with_scope(tmp_path, monkeypatch, scope=None):
+    """Renders a minimal hook prompt whose body is only the scope block."""
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    hooks_dir = tmp_path / ".lemming" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "readability.md").write_text("Scope: {{scope}}")
+
+    tasks_file = tmp_path / "tasks.yml"
+    data = tasks.Roadmap(tasks=[tasks.Task(id="task1", description="Task 1")])
+    tasks.save_tasks(tasks_file, data)
+    monkeypatch.chdir(tmp_path)
+
+    return prompts.prepare_hook_prompt(
+        "readability", data, data.tasks[0], tasks_file, scope=scope
+    )
+
+
+def test_scope_defaults_to_the_finished_task(tmp_path, monkeypatch):
+    """A hook run by the loop reviews what the task just changed."""
+    prompt = _hook_prompt_with_scope(tmp_path, monkeypatch)
+
+    assert prompts.DEFAULT_SCOPE_DESCRIPTION in prompt
+
+
+def test_scope_is_rendered_when_supplied(tmp_path, monkeypatch):
+    """A review run on its own is told exactly what to look at."""
+    prompt = _hook_prompt_with_scope(
+        tmp_path, monkeypatch, scope="Review the following:\n- src/a.py"
+    )
+
+    assert "- src/a.py" in prompt
+    assert prompts.DEFAULT_SCOPE_DESCRIPTION not in prompt
+
+
+@pytest.mark.parametrize("hook_name", sorted(prompts._REVIEW_HOOKS))
+def test_review_hooks_take_their_breadth_from_the_scope(hook_name):
+    """Breadth is the scope's job, so no review may hardcode its own."""
+    body = pathlib.Path(prompts.__file__).parent / "prompts" / "hooks"
+    prompt = next(body.glob(f"*-{hook_name}.md")).read_text()
+
+    assert "{{scope}}" in prompt
+    assert "in the last task" not in prompt
