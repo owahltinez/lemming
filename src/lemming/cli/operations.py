@@ -262,6 +262,8 @@ def serve(
             "[ Lemming ] 🌐 Share this exact, secure link with the remote user:"
         )
         click.echo(f"[ Lemming ] 👉 {public_url}?token={token}")
+        # The token is required locally too, so echo a usable local link.
+        click.echo(f"[ Lemming ] 🖥️  Local: http://{host}:{port}?token={token}")
         click.echo("")
     else:
         click.echo(f"Launching Lemming UI at http://{host}:{port}")
