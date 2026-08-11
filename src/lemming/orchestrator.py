@@ -462,6 +462,7 @@ def run_loop(
     working_dir: pathlib.Path | None = None,
     hooks: list[str] | None = None,
     scope: str | None = None,
+    once: bool = False,
 ) -> bool:
     """Runs pending tasks, returning True only when the roadmap is complete.
 
@@ -478,12 +479,23 @@ def run_loop(
             active set on every iteration, so a running loop picks up
             changes.
         scope: What the hooks should look at, passed through to each.
+        once: Stop after handling a single task instead of draining the
+            queue. A task requeued by a failed finalization would otherwise
+            come back around and be handed to a task runner, which for a
+            caller that asked for one unit of work is a second agent run
+            they did not ask for.
 
     Returns:
         True only when the roadmap ran to completion.
     """
+    handled = False
     while True:
         returncode = 0
+
+        # Stopping here rather than before the claim lets the task that
+        # was handled finish its hooks first.
+        if once and handled:
+            return False
 
         # A drain request stops the loop between tasks, so the task that was
         # already running is never stranded mid-flight.
@@ -577,6 +589,8 @@ def run_loop(
                     "Skipping."
                 )
             continue
+
+        handled = True
 
         if verbose:
             click.echo(

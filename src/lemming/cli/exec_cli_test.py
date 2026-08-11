@@ -367,3 +367,25 @@ def test_a_task_can_be_followed_by_reviews(repo):
         )
 
     assert headers == ["Task Runner", "Hook: readability"]
+
+
+def test_a_failing_review_does_not_become_a_task_run(repo):
+    """Reverting a failed finalization must not spawn a real agent run.
+
+    A hook failure sends the task back to pending, and a pending task with
+    attempts left is what the loop hands to a task runner. Here that would
+    run an agent against the review's own placeholder description.
+    """
+    (repo / "committed.py").write_text("x = 2\n")
+    headers = []
+
+    def failing(cmd, tasks_file, task_id, *args, **kwargs):
+        headers.append(kwargs.get("header"))
+        paths.get_log_file(tasks_file, task_id).write_text("", encoding="utf-8")
+        return 1, "", ""
+
+    with mock.patch("lemming.runner.run_with_heartbeat", failing):
+        result = CliRunner().invoke(cli, ["exec", "--review", "readability"])
+
+    assert result.exit_code != 0
+    assert "Task Runner" not in headers

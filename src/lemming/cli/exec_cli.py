@@ -338,6 +338,7 @@ def exec_command(
                 working_dir=working_dir,
                 hooks=reviews,
                 scope=scope_text,
+                once=True,
             )
 
         # The loop reports that the queue drained, which a failed task does
