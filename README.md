@@ -121,6 +121,26 @@ else goes to stderr, so the output can be consumed directly.
 Note that the agent runs unattended (`--yolo` by default), so it does not
 inherit the permission prompts of whatever launched it.
 
+### Teaching Your Agent to Use It
+
+Lemming ships an Agent Skill so that an agent already running — Claude Code,
+Gemini CLI, Cursor — can reach any other agent CLI without knowing how each
+one spells its flags. Install it once:
+
+```bash
+# Cross-tool location (~/.agents/skills), and report any tool-specific ones
+lemming skill install
+
+# Cover every agent tool detected on this machine
+lemming skill install --all
+
+# This repository only
+lemming skill install --to .agents/skills
+```
+
+`lemming skill uninstall` reverses it. Both refuse to touch a directory that
+does not hold this skill, so a mistyped `--to` fails instead of deleting work.
+
 ---
 
 ## The Web Dashboard
@@ -366,6 +386,16 @@ These come before the subcommand and apply to all of them.
     limit).
   - `--yolo/--no-yolo`: Run the agent unattended (default: True).
   - `--keep`: Keep the run's state directory even when it succeeds.
+- **`skill install`**: Install the packaged Agent Skill so agents discover
+  Lemming. Writes to `~/.agents/skills` by default and names any tool-specific
+  directories it found.
+  - `--to <dir>`: Install into a specific skills directory.
+  - `--all`: Also cover every detected tool's own skills directory.
+  - `--link`: Symlink instead of copying, so upgrades take effect immediately.
+  - `--force`: Replace an existing installation of this skill.
+  - `--dry-run`: Print what would happen, refusals included.
+- **`skill uninstall`**: Remove it again. Same `--to`, `--all`, and
+  `--dry-run`.
 - **`stop`**: Stop the running loop and its runner.
   - `--after-current-task`: Drain instead — let the running task finish, then
     stop before claiming another. This is the safe way to change the runner

@@ -50,6 +50,11 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/lemming"]
 
+# SKILL.md is authored at the repository root, where it stays visible, and
+# mapped into the package so `lemming skill install` can find it in a wheel.
+[tool.hatch.build.targets.wheel.force-include]
+"SKILL.md" = "lemming/skills/lemming/SKILL.md"
+
 [tool.ruff]
 line-length = 80
 
