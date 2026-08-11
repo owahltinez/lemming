@@ -21,8 +21,8 @@ from .main import cli
 def brief(
     ctx: click.Context,
     task_id: str,
-    text: typing.Optional[str],
-    file: typing.Optional[typing.TextIO],
+    text: str | None,
+    file: typing.TextIO | None,
 ):
     """Views or sets the long-form brief delivered with a task.
 

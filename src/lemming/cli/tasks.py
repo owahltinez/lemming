@@ -106,7 +106,7 @@ def _echo_task_summary(
 def add(
     ctx: click.Context,
     description: str | None,
-    file: typing.Optional[typing.TextIO],
+    file: typing.TextIO | None,
     index: int,
     runner_name: str | None,
     model_name: str | None,
@@ -183,7 +183,7 @@ def edit(
     ctx: click.Context,
     task_id: str,
     description: str | None,
-    file: typing.Optional[typing.TextIO],
+    file: typing.TextIO | None,
     runner_name: str | None,
     model_name: str | None,
     index: int | None,

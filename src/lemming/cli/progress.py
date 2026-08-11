@@ -21,8 +21,8 @@ from .main import cli
 def progress(
     ctx: click.Context,
     task_id: str,
-    text: typing.Optional[str],
-    file: typing.Optional[typing.TextIO],
+    text: str | None,
+    file: typing.TextIO | None,
 ):
     """Records a progress entry or finding for a specific task."""
     tasks_file = ctx.obj["TASKS_FILE"]
