@@ -288,7 +288,13 @@ def serve(
 
             tasks_file = api.app.state.tasks_file
             while True:
-                project_data = tasks.get_project_data(tasks_file)
+                try:
+                    project_data = tasks.get_project_data(tasks_file)
+                except tasks.CorruptedTasksError as e:
+                    # This runs in a daemon thread: without this the shutdown
+                    # would die with a traceback and leave the server up.
+                    click.echo(f"[ Lemming ] {e}", err=True)
+                    break
                 if not project_data.loop_running:
                     break
                 time.sleep(5)

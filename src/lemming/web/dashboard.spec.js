@@ -454,4 +454,34 @@ test.describe('Dashboard E2E', () => {
       page.locator('input[placeholder="Folder name"]'),
     ).not.toBeVisible();
   });
+
+  test('reports an unreadable tasks file through a toast', async ({ page }) => {
+    let dataRequests = 0;
+    await page.route('**/api/data', async (route) => {
+      dataRequests++;
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        json: {
+          detail:
+            'Tasks file /mock/tasks.yml could not be parsed: while scanning' +
+            ' a quoted scalar. Refusing to continue so it is not overwritten' +
+            ' with an empty roadmap.',
+        },
+      });
+    });
+
+    await gotoAndAwaitMancha(page);
+
+    const alerts = page.locator('div[role="alert"]');
+    await expect(alerts).toContainText('Could not load tasks');
+    // The server's full reason is far too long for a toast.
+    expect((await alerts.first().innerText()).length).toBeLessThan(60);
+
+    // Polling runs every second, so a persistent failure must report once
+    // rather than stack up a toast per tick.
+    await page.waitForTimeout(2500);
+    expect(dataRequests).toBeGreaterThan(1);
+    await expect(alerts).toHaveCount(1);
+  });
 });

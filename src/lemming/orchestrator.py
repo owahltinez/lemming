@@ -191,6 +191,10 @@ def run_hooks(
                 "finalized — the orchestrator likely restructured "
                 "the plan."
             )
+        except tasks.CorruptedTasksError:
+            # An unreadable roadmap is not a finalization failure to log and
+            # move past: let it stop the loop while the file is still intact.
+            raise
         except Exception as e:
             click.echo(f"Error finalizing task {task_id}: {e}")
             traceback.print_exc()

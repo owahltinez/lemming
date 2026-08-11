@@ -516,24 +516,37 @@ def run_with_heartbeat(
             """Updates the task heartbeat while the process is running."""
             nonlocal timed_out
             while process.poll() is None:
-                if not tasks.update_heartbeat(tasks_file, task_id):
-                    # Task was cancelled or finished.
-                    _kill_process_tree(process)
-                    return
-
-                # Check time limit
-                if time_limit > 0:
-                    elapsed = time.monotonic() - start_time
-                    if elapsed >= time_limit * 60:
-                        timed_out = True
-                        tasks.add_progress(
-                            tasks_file,
-                            task_id,
-                            f"Task killed: time limit of {time_limit}"
-                            " minutes reached.",
-                        )
+                try:
+                    if not tasks.update_heartbeat(tasks_file, task_id):
+                        # Task was cancelled or finished.
                         _kill_process_tree(process)
                         return
+
+                    # Check time limit
+                    if time_limit > 0:
+                        elapsed = time.monotonic() - start_time
+                        if elapsed >= time_limit * 60:
+                            timed_out = True
+                            tasks.add_progress(
+                                tasks_file,
+                                task_id,
+                                f"Task killed: time limit of {time_limit}"
+                                " minutes reached.",
+                            )
+                            _kill_process_tree(process)
+                            return
+                except tasks.CorruptedTasksError:
+                    # This thread owns cancellation and the time limit, so
+                    # letting it die would leave the child running
+                    # unsupervised and unkillable. Stop the process and let
+                    # the main thread surface the corruption.
+                    logger.error(
+                        "Stopping task %s: its tasks file became unreadable",
+                        task_id,
+                        exc_info=True,
+                    )
+                    _kill_process_tree(process)
+                    return
 
                 time.sleep(tasks.STALE_THRESHOLD // 2)
 

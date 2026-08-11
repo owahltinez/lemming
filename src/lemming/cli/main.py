@@ -4,10 +4,25 @@ import pathlib
 
 import click
 
-from .. import paths
+from .. import paths, persistence
 
 
-@click.group()
+class CorruptionAwareGroup(click.Group):
+    """Click group that turns an unreadable tasks file into a clean error.
+
+    Nearly every command loads the roadmap, so reporting it once here keeps
+    the message consistent instead of repeating a handler in each command.
+    """
+
+    def invoke(self, ctx: click.Context):
+        """Invokes the subcommand, reporting corruption without a traceback."""
+        try:
+            return super().invoke(ctx)
+        except persistence.CorruptedTasksError as e:
+            raise click.ClickException(str(e)) from e
+
+
+@click.group(cls=CorruptionAwareGroup)
 @click.option(
     "--tasks-file",
     type=click.Path(path_type=pathlib.Path),

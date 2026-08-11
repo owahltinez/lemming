@@ -1,15 +1,18 @@
 """FastAPI application setup: middleware, routers, and static files."""
 
 import importlib.resources
+import logging
 import pathlib
 
 import fastapi
 import fastapi.responses
 import fastapi.staticfiles
 
-from .. import paths
+from .. import paths, persistence
 from . import auth, config, directories, files, hooks, tasks
 from . import logging as lemming_logging
+
+logger = logging.getLogger(__name__)
 
 # Re-exported so logging configs can reference lemming.api.QuietPollFilter
 QuietPollFilter = lemming_logging.QuietPollFilter
@@ -39,6 +42,22 @@ app.include_router(files.router)
 app.include_router(directories.router)
 app.include_router(hooks.router)
 app.include_router(config.router)
+
+
+@app.exception_handler(persistence.CorruptedTasksError)
+def handle_corrupted_tasks(
+    request: fastapi.Request, exc: Exception
+) -> fastapi.responses.JSONResponse:
+    """Reports an unreadable tasks file in the shape the UI already expects.
+
+    Without this every route touching the roadmap would answer a corrupt file
+    with a raw stack trace instead of an actionable message.
+    """
+    logger.error("%s could not read the tasks file: %s", request.url.path, exc)
+    return fastapi.responses.JSONResponse(
+        status_code=500, content={"detail": str(exc)}
+    )
+
 
 # Static files and root routes
 web_dir = pathlib.Path(

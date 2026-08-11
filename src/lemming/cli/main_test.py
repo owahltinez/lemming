@@ -1,8 +1,11 @@
+import pathlib
+import tempfile
 import unittest
 
 import click.testing
 
-from lemming.cli.main import cli
+# Imported from the package so that every command is registered.
+from lemming.cli import cli
 
 
 class TestCLIMain(unittest.TestCase):
@@ -23,6 +26,24 @@ class TestCLIMain(unittest.TestCase):
                 self.assertEqual(result.exit_code, 0)
                 self.assertNotIn("Args:", result.output)
                 self.assertNotIn("ctx: The click context", result.output)
+
+    def test_corrupted_tasks_file_reports_actionable_error(self):
+        with tempfile.TemporaryDirectory() as test_dir:
+            tasks_file = pathlib.Path(test_dir) / "tasks.yml"
+            tasks_file.write_text("tasks: [unclosed\n", encoding="utf-8")
+
+            result = self.cli_runner.invoke(
+                cli, ["--tasks-file", str(tasks_file), "status"]
+            )
+
+            self.assertEqual(result.exit_code, 1)
+            self.assertIn(str(tasks_file), result.output)
+            self.assertIn("tasks.yml.corrupt", result.output)
+            self.assertNotIn("Traceback", result.output)
+            # The unreadable file is reported, never rewritten.
+            self.assertEqual(
+                tasks_file.read_text(encoding="utf-8"), "tasks: [unclosed\n"
+            )
 
 
 if __name__ == "__main__":
