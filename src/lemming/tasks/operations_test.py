@@ -310,6 +310,21 @@ def test_delete_tasks_retains_runner_log(tmp_path, monkeypatch):
     assert log_file.read_text() == "runner output"
 
 
+def test_add_task_refuses_to_replace_a_corrupted_roadmap(tmp_path):
+    """A corrupt roadmap must survive a mutation instead of being replaced."""
+    tasks_file = tmp_path / "tasks.yml"
+    operations.add_task(tasks_file, "Task 1")
+    corrupt = "tasks: [unclosed\n"
+    tasks_file.write_text(corrupt, encoding="utf-8")
+
+    with pytest.raises(persistence.CorruptedTasksError):
+        operations.add_task(tasks_file, "Task 2")
+
+    assert tasks_file.read_text(encoding="utf-8") == corrupt
+    backup = tmp_path / "tasks.yml.corrupt"
+    assert backup.read_text(encoding="utf-8") == corrupt
+
+
 def test_delete_started_task_requires_explicit_force(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task = operations.add_task(tasks_file, "Started task")

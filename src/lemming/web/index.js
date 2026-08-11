@@ -407,7 +407,17 @@
 
       $.fetchData = async () => {
         const response = await fetch(apiUrl('/api/data'));
-        if (!response.ok) return;
+        if (!response.ok) {
+          // An unreadable tasks file fails every poll, so report an outage
+          // once and re-arm on recovery instead of one toast per second.
+          // The full reason is too long for a toast; it is in the server log.
+          if (!$.dataErrorReported) {
+            $.dataErrorReported = true;
+            $.addToast('Could not load tasks — see server log', 'error');
+          }
+          return;
+        }
+        $.dataErrorReported = false;
         const data = await response.json();
         const newTasks = data.tasks || [];
 

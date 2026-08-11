@@ -100,6 +100,7 @@ LOOP_LOCK_FILENAME = persistence.LOOP_LOCK_FILENAME
 TaskNotFoundError = models.TaskNotFoundError
 AmbiguousTaskIdError = models.AmbiguousTaskIdError
 LoopAlreadyRunningError = persistence.LoopAlreadyRunningError
+CorruptedTasksError = persistence.CorruptedTasksError
 Task = models.Task
 TaskStatus = models.TaskStatus
 ProjectData = models.ProjectData

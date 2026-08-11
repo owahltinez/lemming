@@ -470,3 +470,28 @@ def test_cancel_task_endpoint(client, test_tasks):
     with patch("lemming.tasks.cancel_task", return_value=False):
         response = client.post("/api/tasks/nonexistent/cancel")
         assert response.status_code == 404
+
+
+def test_get_data_reports_corrupted_tasks_file(client, test_tasks):
+    corrupt = "tasks: [unclosed\n"
+    test_tasks.write_text(corrupt, encoding="utf-8")
+
+    response = client.get("/api/data")
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert str(test_tasks) in detail
+    assert f"{test_tasks}.corrupt" in detail
+    # The route must not rewrite the file it could not read.
+    assert test_tasks.read_text(encoding="utf-8") == corrupt
+
+
+def test_add_task_refuses_corrupted_tasks_file(client, test_tasks):
+    corrupt = "tasks: [unclosed\n"
+    test_tasks.write_text(corrupt, encoding="utf-8")
+
+    response = client.post("/api/tasks", json={"description": "New task"})
+
+    assert response.status_code == 500
+    assert str(test_tasks) in response.json()["detail"]
+    assert test_tasks.read_text(encoding="utf-8") == corrupt

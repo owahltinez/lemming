@@ -3,6 +3,7 @@
 import contextlib
 import fcntl
 import functools
+import logging
 import os
 import pathlib
 import subprocess
@@ -11,15 +12,60 @@ import yaml
 
 from . import models, paths
 
+logger = logging.getLogger(__name__)
+
 STALE_THRESHOLD = 30  # seconds
 
 # Bound on the ps probe used for zombie detection off Linux.
 PS_PROBE_TIMEOUT = 5
 LOOP_LOCK_FILENAME = ".lemming_loop.lock"
 
+# Unparseable tasks files are copied to "<tasks file>.corrupt", then to
+# ".corrupt.1", ".corrupt.2", ... so a later corruption never overwrites the
+# evidence from an earlier one.
+CORRUPT_SUFFIX = ".corrupt"
+MAX_CORRUPT_BACKUPS = 100
+
 
 class LoopAlreadyRunningError(RuntimeError):
     """Raised when another process owns the orchestrator loop lock."""
+
+
+class CorruptedTasksError(RuntimeError):
+    """Raised when a tasks file exists but cannot be parsed.
+
+    Callers must never downgrade this to "no tasks yet": inferring an empty
+    roadmap makes the next save overwrite the only copy of the user's tasks.
+    """
+
+    def __init__(
+        self,
+        tasks_file: pathlib.Path,
+        error: Exception,
+        backup_file: pathlib.Path | None = None,
+    ):
+        """Builds an actionable message naming the file and its backup.
+
+        Args:
+            tasks_file: Path to the tasks file that could not be parsed.
+            error: The underlying parse error.
+            backup_file: Path holding a copy of the unparseable bytes, if one
+                could be written.
+        """
+        self.tasks_file = tasks_file
+        self.error = error
+        self.backup_file = backup_file
+        recovery = (
+            f"a copy of the unreadable bytes is at {backup_file}"
+            if backup_file
+            else "the unreadable file was left untouched"
+        )
+        super().__init__(
+            f"Tasks file {tasks_file} could not be parsed: {error}. "
+            "Refusing to continue so it is not overwritten with an empty "
+            f"roadmap ({recovery}). Repair the YAML by hand or restore a "
+            "backup, then retry."
+        )
 
 
 @contextlib.contextmanager
@@ -67,6 +113,71 @@ def read_lock_tasks(tasks_file: pathlib.Path):
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+def _corrupt_backup_paths(tasks_file: pathlib.Path):
+    """Yields the backup paths to try, in the order they should be used."""
+    base = tasks_file.with_name(tasks_file.name + CORRUPT_SUFFIX)
+    yield base
+    for index in range(1, MAX_CORRUPT_BACKUPS + 1):
+        yield base.with_name(f"{base.name}.{index}")
+
+
+def _backup_corrupted_tasks(
+    tasks_file: pathlib.Path, raw: bytes
+) -> pathlib.Path | None:
+    """Preserves the bytes of an unparseable tasks file beside the original.
+
+    Backups are only ever created, never overwritten, so a second corruption
+    cannot destroy the evidence from the first. Bytes that are already
+    preserved reuse their backup, so repeatedly loading the same broken file
+    does not pile up copies.
+
+    Args:
+        tasks_file: Path to the tasks file that failed to parse.
+        raw: The exact bytes read from that file.
+
+    Returns:
+        The backup holding these bytes, or None if none could be written.
+    """
+    for candidate in _corrupt_backup_paths(tasks_file):
+        try:
+            # Exclusive creation keeps a concurrent loader from clobbering a
+            # backup between the existence check and the write.
+            with open(candidate, "xb") as backup_file:
+                backup_file.write(raw)
+        except FileExistsError:
+            # Anything already occupying the path (including a stale backup of
+            # different bytes, or a directory) is left alone.
+            with contextlib.suppress(OSError):
+                if candidate.read_bytes() == raw:
+                    logger.info(
+                        "Corrupted tasks file %s already backed up at %s",
+                        tasks_file,
+                        candidate,
+                    )
+                    return candidate
+            continue
+        except OSError as e:
+            logger.error(
+                "Failed to back up corrupted tasks file %s to %s: %s",
+                tasks_file,
+                candidate,
+                e,
+            )
+            return None
+
+        logger.info(
+            "Backed up corrupted tasks file %s to %s", tasks_file, candidate
+        )
+        return candidate
+
+    logger.error(
+        "Ran out of backup slots for corrupted tasks file %s (limit %d)",
+        tasks_file,
+        MAX_CORRUPT_BACKUPS,
+    )
+    return None
+
+
 def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
     """Loads tasks from a YAML file.
 
@@ -75,6 +186,10 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
 
     Returns:
         A Roadmap containing the goal and list of tasks.
+
+    Raises:
+        CorruptedTasksError: If the file exists but cannot be parsed. The
+            unreadable bytes are backed up and the file is left untouched.
     """
     if not tasks_file.exists():
         return models.Roadmap(
@@ -83,20 +198,19 @@ def load_tasks(tasks_file: pathlib.Path) -> models.Roadmap:
             tasks=[],
         )
 
+    # Read the bytes up front so the exact on-disk content can be preserved
+    # even when it is not valid UTF-8 (e.g. a truncated or clobbered file).
+    raw = tasks_file.read_bytes()
     try:
-        with open(tasks_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except (yaml.scanner.ScannerError, yaml.parser.ParserError) as e:
-        # If the file is corrupted, return an empty roadmap.
-        # This allows the user to continue, but may cause loss of some data.
-        # In a real-world scenario, we might want to back up the corrupted file.
-        print(f"Warning: Failed to load corrupted tasks file: {e}")
-        return models.Roadmap(
-            goal="# Long-Term Goal (Corrupted File Recovery)\n\n"
-            "The tasks file was corrupted and could not be fully loaded.\n"
-            "Check the server logs or the original file for details.",
-            tasks=[],
-        )
+        data = yaml.safe_load(raw.decode("utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as e:
+        # Corruption has to stay loud: returning an empty roadmap here would
+        # let the next save_tasks() destroy the only copy of the roadmap. The
+        # raised error carries the file, the backup, and the parse failure, so
+        # it is logged where it is handled instead of twice.
+        raise CorruptedTasksError(
+            tasks_file, e, _backup_corrupted_tasks(tasks_file, raw)
+        ) from e
 
     if not data:
         data = {}
