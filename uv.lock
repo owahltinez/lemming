@@ -251,7 +251,7 @@ requires-dist = [
     { name = "markdownify", specifier = ">=0.14.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "readability-cli", specifier = ">=0.6.0" },
+    { name = "readability-cli", specifier = ">=0.7.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "uvicorn", specifier = ">=0.33.0" },
 ]
@@ -453,7 +453,7 @@ wheels = [
 
 [[package]]
 name = "readability-cli"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -461,9 +461,9 @@ dependencies = [
     { name = "markdownify" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/46/33/ab1779d517ab10f06d8809a61a850cd3026711e0061251fe14a768ce3338/readability_cli-0.6.0.tar.gz", hash = "sha256:feeb530088706f5394ba9fa6892bab09c983f469548daf94f62a85e49df2b07a", size = 313732, upload-time = "2026-08-11T06:34:45.589Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/6c/2ded982a3c880b789fadbd959b80142c96652b2ccf4e677d224f88ef1463/readability_cli-0.7.0.tar.gz", hash = "sha256:1a5ef12a48df786a61e94fbce81d928d5e22a4a7f9e0fb4dea088a433e53cbfc", size = 325789, upload-time = "2026-08-11T08:20:07.76Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/5d/7fc911130589419708e65a6264a456dacb2898c0266e9450316eb23bb324/readability_cli-0.6.0-py3-none-any.whl", hash = "sha256:705d3fa8160676da80495a7a4874dcb4271e59aa3882c2af8f87cd1f05a63988", size = 306816, upload-time = "2026-08-11T06:34:44.132Z" },
+    { url = "https://files.pythonhosted.org/packages/36/27/ece19cbebe624d25ccf161c342769e41f52d4d742896ff9990cb2b39b4d2/readability_cli-0.7.0-py3-none-any.whl", hash = "sha256:140c771b8b332e8fd713049d8e8e2545f8b688a86a8b9aea5fd7551600da170f", size = 313286, upload-time = "2026-08-11T08:20:06.321Z" },
 ]
 
 [[package]]

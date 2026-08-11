@@ -44,9 +44,10 @@ keeps quality from drifting as tasks accumulate.
     - **Inconsistency**: code that diverges from the conventions of the
       surrounding codebase, or comments that no longer match the code.
 4.  **Consult**: Cite the relevant style guide rule in your findings rather
-    than relying on memory. `lemming readability guide <language> --path`
-    prints the location of a guide, which can run past 100 KB, so it is
-    searchable without printing it.
+    than relying on memory. A guide can exceed 100 KB, so never print one
+    whole: list its sections with `--outline`, then read the one you need
+    with `--section`. For wording no heading names, pipe the guide to a
+    search instead of printing it.
 5.  **Fix**: Apply targeted, behavior-preserving fixes for the issues you find.
     Keep each fix small and scoped to the files under review. Do not change
     public interfaces, feature behavior, or unrelated files; record those
@@ -69,8 +70,11 @@ keeps quality from drifting as tasks accumulate.
 ```bash
 # Fix formatting/linting
 lemming readability check <path> --fix
-# Locate the style guide for a language, to search it
-lemming readability guide <language> --path
+# List a style guide's sections, then read just one
+lemming readability guide <language> --outline --depth 2
+lemming readability guide <language> --section <ref>
+# Find wording that no heading names, without printing the guide
+lemming readability guide <language> | grep -n "<pattern>"
 # Record progress
 lemming --tasks-file {{tasks_file_path}} progress {{finished_task_id}} '<finding>'
 ```
