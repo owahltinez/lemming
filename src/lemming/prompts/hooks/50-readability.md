@@ -45,9 +45,10 @@ keeps quality from drifting as tasks accumulate.
       surrounding codebase, or comments that no longer match the code.
 4.  **Consult**: Fetch the style guide with
     `lemming readability guide <language>` when reviewing and cite the relevant
-    rule in your findings. Do not rely on memory for style rules. Read its
-    output directly; it prints to stdout, and redirecting it into a file
-    leaves a large artifact in the workspace.
+    rule in your findings. Do not rely on memory for style rules. A guide can
+    run past 100 KB, so save it outside the workspace with
+    `-o {{tasks_dir}}/<language>-style.md` and search that copy for the rules
+    you need, rather than reading it whole or leaving it in the repository.
 5.  **Fix**: Apply targeted, behavior-preserving fixes for the issues you find.
     Keep each fix small and scoped to the files under review. Do not change
     public interfaces, feature behavior, or unrelated files; record those
