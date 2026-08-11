@@ -9,8 +9,8 @@ from . import hooks, paths, runner, tasks
 # runs hooks right after a task, so the work it left behind is the scope.
 DEFAULT_SCOPE_DESCRIPTION = (
     "ONLY the files the task that just finished changed or created. Do not "
-    "modify any other file, including documentation and style guides you "
-    "consult."
+    "touch any other file, and do not leave new ones behind: write scratch "
+    "output outside the workspace, never into it."
 )
 
 MAX_LOG_CONTEXT_BYTES = 16 * 1024

@@ -164,6 +164,6 @@ def describe(entries: list[str]) -> str:
     return (
         "ONLY the following, relative to the project root:\n"
         f"{listed}\n"
-        "Do not modify any other file, including documentation and style "
-        "guides you consult."
+        "Do not touch any other file, and do not leave new ones behind: "
+        "write scratch output outside the workspace, never into it."
     )
