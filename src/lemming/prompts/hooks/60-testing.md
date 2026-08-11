@@ -44,5 +44,5 @@ overhead.
 lemming --tasks-file {{tasks_file_path}} progress {{finished_task_id}} '<finding>'
 ```
 
-Limit your review to the scope above. Your goal is verification, not a
+Limit your review ONLY to the scope above. Your goal is verification, not a
 general security or performance audit.

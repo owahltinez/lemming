@@ -8,7 +8,9 @@ from . import hooks, paths, runner, tasks
 # What a review looks at when the caller named nothing. The orchestrator
 # runs hooks right after a task, so the work it left behind is the scope.
 DEFAULT_SCOPE_DESCRIPTION = (
-    "Review the files the task that just finished changed or created."
+    "ONLY the files the task that just finished changed or created. Do not "
+    "modify any other file, including documentation and style guides you "
+    "consult."
 )
 
 MAX_LOG_CONTEXT_BYTES = 16 * 1024

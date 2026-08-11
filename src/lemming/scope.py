@@ -161,4 +161,9 @@ def describe(entries: list[str]) -> str:
         return "There are no changes to review."
 
     listed = "\n".join(f"- {entry}" for entry in entries)
-    return f"Review the following, relative to the project root:\n{listed}"
+    return (
+        "ONLY the following, relative to the project root:\n"
+        f"{listed}\n"
+        "Do not modify any other file, including documentation and style "
+        "guides you consult."
+    )
