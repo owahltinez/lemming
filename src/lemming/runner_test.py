@@ -841,7 +841,88 @@ def test_extract_error_message_is_bounded():
 
     message = runner.extract_error_message(output)
 
+    assert message is not None
     assert len(message) <= 200
+
+
+# Final-message fixtures trimmed from real runs of each supported runner.
+# The three CLIs share no envelope, so each shape is pinned by its own test.
+_CLAUDE_FINAL = (
+    '{"type":"assistant","message":{"content":'
+    '[{"type":"text","text":"HELLO"}]}}\n'
+    '{"is_error":false,"stop_reason":"end_turn","subtype":"success",'
+    '"result":"All tests pass.","type":"result"}\n'
+)
+_CODEX_FINAL = (
+    '{"type":"thread.started","thread_id":"019f"}\n'
+    '{"type":"item.completed","item":{"id":"item_0",'
+    '"type":"agent_message","text":"All tests pass."}}\n'
+    '{"type":"turn.completed","usage":{"output_tokens":6}}\n'
+)
+_AGY_FINAL = (
+    '{"event":"step_update","step_update":{"step_index":3,"state":"DONE",'
+    '"step_type":"agent_response","text_delta":"All tests pass."}}\n'
+    '{"event":"result","result":{"status":"SUCCESS",'
+    '"response":"All tests pass.\\n","num_turns":1}}\n'
+)
+
+
+def test_extract_final_message_from_claude_result_event():
+    """Claude reports the final text in a flat result event."""
+    assert runner.extract_final_message(_CLAUDE_FINAL) == "All tests pass."
+
+
+def test_extract_final_message_from_codex_agent_message():
+    """Codex reports the final text as a completed agent_message item."""
+    assert runner.extract_final_message(_CODEX_FINAL) == "All tests pass."
+
+
+def test_extract_final_message_from_agy_result_event():
+    """Agy nests the final text under its own result envelope."""
+    assert runner.extract_final_message(_AGY_FINAL) == "All tests pass."
+
+
+def test_extract_final_message_skips_non_json_preamble():
+    """Codex prints a plain-text notice before its first event."""
+    output = "Reading additional input from stdin...\n" + _CODEX_FINAL
+
+    assert runner.extract_final_message(output) == "All tests pass."
+
+
+def test_extract_final_message_prefers_the_last_agent_message():
+    """A multi-turn run ends with the message that concluded it."""
+    output = (
+        '{"type":"item.completed","item":{"type":"agent_message",'
+        '"text":"first"}}\n'
+        '{"type":"item.completed","item":{"type":"agent_message",'
+        '"text":"second"}}\n'
+    )
+
+    assert runner.extract_final_message(output) == "second"
+
+
+def test_extract_final_message_ignores_non_message_items():
+    """Only agent messages are the agent speaking; tool items are not."""
+    output = (
+        '{"type":"item.completed","item":{"type":"command_execution",'
+        '"text":"ls -la"}}\n'
+    )
+
+    assert runner.extract_final_message(output) is None
+
+
+def test_extract_final_message_returns_none_without_one():
+    """A killed or empty run has no final message to report."""
+    assert runner.extract_final_message('{"type":"turn.started"}\n') is None
+    assert runner.extract_final_message("") is None
+    assert runner.extract_final_message("not json at all\n") is None
+
+
+def test_extract_final_message_ignores_a_non_string_result():
+    """Claude's result field is absent or structured on some failures."""
+    output = '{"type":"result","result":{"nested":true},"is_error":true}\n'
+
+    assert runner.extract_final_message(output) is None
 
 
 def test_run_with_heartbeat_kills_the_child_when_tasks_file_is_corrupted(

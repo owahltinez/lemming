@@ -344,6 +344,77 @@ def extract_error_message(
     return None
 
 
+def _final_message_text(event: dict) -> str | None:
+    """Returns the agent's closing text from one event, or None.
+
+    The supported runners share no envelope, so each is matched on its own
+    terms rather than through a common shape that does not exist.
+
+    Args:
+        event: A single decoded event from the runner's output stream.
+
+    Returns:
+        The event's agent-authored text, or None if it carries none.
+    """
+    # Claude closes with a flat result event holding the text directly.
+    if event.get("type") == "result":
+        result = event.get("result")
+        return result if isinstance(result, str) else None
+
+    # Codex emits one item per step; only an agent_message is the agent
+    # speaking, so tool and reasoning items must not be mistaken for it.
+    if event.get("type") == "item.completed":
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") != "agent_message":
+            return None
+        text = item.get("text")
+        return text if isinstance(text, str) else None
+
+    # Agy nests everything under its own envelope and names the field
+    # "response"; its stream is not Claude-compatible despite the shared
+    # "stream-json" spelling.
+    if event.get("event") == "result":
+        result = event.get("result")
+        if isinstance(result, dict):
+            response = result.get("response")
+            return response if isinstance(response, str) else None
+
+    return None
+
+
+def extract_final_message(output: str) -> str | None:
+    """Returns the agent's closing message, if the run produced one.
+
+    This is the runner's return value: what the agent said when it finished.
+    A run killed by a timeout or a crash never reaches that point and yields
+    None, so callers must report those outcomes on their own.
+
+    Args:
+        output: Captured runner output, one JSON event per line.
+
+    Returns:
+        The final agent-authored message, stripped, or None if absent.
+    """
+    for raw_line in reversed(output.splitlines()):
+        line = raw_line.strip()
+
+        # Runners interleave plain-text notices with their event stream.
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+
+        text = _final_message_text(event)
+        if text and text.strip():
+            return text.strip()
+
+    return None
+
+
 def describe_command(cmd: list[str], prompt: str) -> str:
     """Renders a runner command for provenance, eliding the prompt text.
 
