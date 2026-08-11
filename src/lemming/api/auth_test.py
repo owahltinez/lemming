@@ -29,12 +29,45 @@ def test_share_token_middleware():
         response = client.get("/api/data")
         assert response.status_code == 200
 
-        # Local bypass via host header
-        response = client.get("/api/data", headers={"host": "127.0.0.1:8999"})
-        assert response.status_code == 200
+        # A client-supplied local host header must not bypass the token
+        client.cookies.clear()
+        for host in ("127.0.0.1:8999", "localhost:8999", "localhost"):
+            response = client.get("/api/data", headers={"host": host})
+            assert response.status_code == 401, host
+    finally:
+        # Restore
+        api.app.state.share_token = original_token
 
-        response = client.get("/api/data", headers={"host": "localhost:8999"})
+
+def test_share_token_middleware_rejects_exotic_tokens():
+    """Odd tokens must be rejected, not crash the comparison."""
+    original_token = getattr(api.app.state, "share_token", None)
+    try:
+        api.app.state.share_token = "secret123"
+        client = fastapi.testclient.TestClient(api.app)
+
+        # Non-ASCII and differing lengths must stay a clean 401. A digest
+        # comparison rejects both only if the values are encoded first.
+        for token in ("sécret123", "secret1234567890", "s", ""):
+            response = client.get("/api/data", params={"token": token})
+            assert response.status_code == 401, token
+    finally:
+        # Restore
+        api.app.state.share_token = original_token
+
+
+def test_share_token_middleware_inert_without_token():
+    """Local (non-tunnel) mode sets no share token, so nothing is required."""
+    original_token = getattr(api.app.state, "share_token", None)
+    try:
+        api.app.state.share_token = None
+        client = fastapi.testclient.TestClient(api.app)
+
+        response = client.get("/api/data")
         assert response.status_code == 200
+        assert "lemming_share_token" not in response.headers.get(
+            "set-cookie", ""
+        )
     finally:
         # Restore
         api.app.state.share_token = original_token
