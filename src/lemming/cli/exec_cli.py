@@ -312,6 +312,10 @@ def exec_command(
     if model_name:
         config.model = model_name
 
+    # A run that failed kept its directory on purpose; retire the ones old
+    # enough that nobody is going to read their logs now.
+    paths.prune_exec_dirs()
+
     exec_dir = paths.create_exec_dir()
     tasks_file = exec_dir / "tasks.yml"
     task_id = (

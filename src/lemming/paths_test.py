@@ -3,6 +3,7 @@ import os
 import pathlib
 import stat
 import subprocess
+import time
 from unittest import mock
 
 from lemming import paths
@@ -217,3 +218,72 @@ class TestCheckPermissions:
         with caplog.at_level(logging.WARNING):
             paths._check_permissions(env_file)
         assert "permissive" in caplog.text
+
+
+def _age(path: pathlib.Path, days: float) -> None:
+    """Backdates a path's modification time by the given number of days."""
+    stale = time.time() - days * 86400
+    os.utime(path, (stale, stale))
+
+
+def test_prune_exec_dirs_removes_stale_state(tmp_path, monkeypatch):
+    """A failed run keeps its directory, so something has to retire it."""
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path))
+    stale = paths.create_exec_dir()
+    (stale / "tasks.yml").write_text("tasks: []")
+    _age(stale, paths.EXEC_DIR_RETENTION_DAYS + 1)
+
+    removed = paths.prune_exec_dirs()
+
+    assert removed == 1
+    assert not stale.exists()
+
+
+def test_prune_exec_dirs_keeps_a_recent_failure(tmp_path, monkeypatch):
+    """The log of a run that just failed is the reason it was kept."""
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path))
+    recent = paths.create_exec_dir()
+    _age(recent, paths.EXEC_DIR_RETENTION_DAYS - 1)
+
+    assert paths.prune_exec_dirs() == 0
+    assert recent.exists()
+
+
+def test_prune_exec_dirs_touches_nothing_else(tmp_path, monkeypatch):
+    """Pruning must never reach a project's own state or its hooks."""
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path))
+    project = tmp_path / "abc123def456"
+    project.mkdir()
+    (project / "tasks.yml").write_text("tasks: []")
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    (hooks / "50-custom.md").write_text("custom")
+    for path in (project, hooks):
+        _age(path, paths.EXEC_DIR_RETENTION_DAYS + 10)
+
+    assert paths.prune_exec_dirs() == 0
+    assert (project / "tasks.yml").exists()
+    assert (hooks / "50-custom.md").exists()
+
+
+def test_prune_exec_dirs_survives_an_unremovable_directory(
+    tmp_path, monkeypatch
+):
+    """A directory that cannot be removed must not fail the run."""
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path))
+    stale = paths.create_exec_dir()
+    _age(stale, paths.EXEC_DIR_RETENTION_DAYS + 1)
+
+    with mock.patch("shutil.rmtree", side_effect=OSError("denied")):
+        assert paths.prune_exec_dirs() == 0
+
+    assert stale.exists()
+
+
+def test_prune_exec_dirs_with_no_home(tmp_path, monkeypatch):
+    """A first run has nothing to prune and must not create anything."""
+    missing = tmp_path / "not-created-yet"
+    monkeypatch.setenv("LEMMING_HOME", str(missing))
+
+    assert paths.prune_exec_dirs() == 0
+    assert not missing.exists()

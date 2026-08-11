@@ -115,7 +115,9 @@ to the whole tree outside a git repository.
 Each run is self-contained: nothing is read from the project's roadmap or its
 local hooks, one agent run is attempted, and the run's state directory is
 removed unless it failed — in which case it is kept, and its path printed, so
-the log can be read. Stdout carries the agent's message alone and everything
+the log can be read. Kept directories live in `~/.local/lemming/exec-*` and
+are retired automatically a week later, so a recent failure is always still
+there to inspect. Stdout carries the agent's message alone and everything
 else goes to stderr, so the output can be consumed directly.
 
 Note that the agent runs unattended (`--yolo` by default), so it does not

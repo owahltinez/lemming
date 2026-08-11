@@ -5,9 +5,11 @@ import hashlib
 import logging
 import os
 import pathlib
+import shutil
 import stat
 import subprocess
 import tempfile
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,55 @@ def get_project_dir(tasks_file: pathlib.Path) -> pathlib.Path:
     return lemming_home / path_hash
 
 
+# Prefix marking a directory as one exec run's throwaway state, and how long
+# one survives after the run that failed and kept it.
+EXEC_DIR_PREFIX = "exec-"
+EXEC_DIR_RETENTION_DAYS = 7
+
+
+def prune_exec_dirs(
+    retention_days: int = EXEC_DIR_RETENTION_DAYS,
+) -> int:
+    """Removes the state directories of exec runs that failed long ago.
+
+    A failed run keeps its directory so its log stays readable, which means
+    nothing ever removes it. Pruning on the way into a new run keeps a recent
+    failure available for inspection while stopping them accumulating in the
+    user's home directory indefinitely.
+
+    Args:
+        retention_days: Age in days past which a directory is removed.
+
+    Returns:
+        How many directories were removed.
+    """
+    home = get_lemming_home()
+    if not home.is_dir():
+        return 0
+
+    cutoff = time.time() - retention_days * 86_400
+    removed = 0
+    for path in home.glob(f"{EXEC_DIR_PREFIX}*"):
+        # Only this command's own directories are ever candidates: a project's
+        # isolated state and the global hooks live alongside them.
+        if not path.is_dir():
+            continue
+        try:
+            if path.stat().st_mtime >= cutoff:
+                continue
+            shutil.rmtree(path)
+        except OSError:
+            # Failing a run over undeletable leftovers would be worse than
+            # leaving them; the next run tries again.
+            logger.debug("Could not prune %s", path, exc_info=True)
+            continue
+        removed += 1
+
+    if removed:
+        logger.debug("Pruned %d stale exec state director(ies)", removed)
+    return removed
+
+
 def create_exec_dir() -> pathlib.Path:
     """Creates a private directory holding one exec run's ephemeral state.
 
@@ -150,7 +201,7 @@ def create_exec_dir() -> pathlib.Path:
     """
     home = get_lemming_home()
     home.mkdir(parents=True, exist_ok=True)
-    return pathlib.Path(tempfile.mkdtemp(prefix="exec-", dir=home))
+    return pathlib.Path(tempfile.mkdtemp(prefix=EXEC_DIR_PREFIX, dir=home))
 
 
 def get_tasks_file_for_dir(directory: pathlib.Path) -> pathlib.Path:

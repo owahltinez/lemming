@@ -1,7 +1,9 @@
 """Tests for the one-shot exec command."""
 
 import json
+import os
 import subprocess
+import time
 from unittest import mock
 
 import pytest
@@ -389,3 +391,28 @@ def test_a_failing_review_does_not_become_a_task_run(repo):
 
     assert result.exit_code != 0
     assert "Task Runner" not in headers
+
+
+def test_exec_retires_state_kept_by_an_old_failure(workspace):
+    """Directories kept on failure must not accumulate forever."""
+    stale = paths.create_exec_dir()
+    (stale / "tasks.yml").write_text("tasks: []")
+    old = time.time() - (paths.EXEC_DIR_RETENTION_DAYS + 1) * 86_400
+    os.utime(stale, (old, old))
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
+        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+
+    assert result.exit_code == 0, result.stderr
+    assert not stale.exists()
+
+
+def test_exec_leaves_a_recent_failure_alone(workspace):
+    """The log of a run that just failed is why it was kept."""
+    recent = paths.create_exec_dir()
+    (recent / "tasks.yml").write_text("tasks: []")
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
+        CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+
+    assert recent.exists()
