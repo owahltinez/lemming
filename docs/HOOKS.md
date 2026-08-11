@@ -158,6 +158,9 @@ Your hook template can use the following placeholders:
   description, recent progress, and a recent execution-log excerpt capped at
   16 KiB).
 - `{{finished_task_id}}`: The ID of the task that just finished.
+- `{{scope}}`: What the hook should look at, and how broadly. Under `lemming
+  run` this names the work the finished task left behind; under `lemming exec
+  --review` it is whatever `--scope` resolved to.
 - `{{tasks_file_name}}`: The filename of the tasks YAML file.
 - `{{tasks_file_path}}`: The full path to the tasks YAML file.
 
@@ -165,6 +168,12 @@ Roadmap context is size-bounded and prioritizes current and actionable tasks
 over older completed history. Readability, testing, and UX hooks receive a
 smaller roadmap summary because their primary context is the finished task and
 the workspace.
+
+A review hook should take its breadth from `{{scope}}` rather than narrowing
+itself in prose. Hardcoding "the files changed in the last task" makes the hook
+unusable outside the orchestrator loop, where there is no last task. Depth
+limits are different and belong in the prompt: "verification, not a security
+audit" describes the kind of review, not its extent.
 
 ## Developer Ergonomics
 

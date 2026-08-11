@@ -80,6 +80,49 @@ lemming run -- --model claude-3-5-sonnet
 
 ---
 
+## One-Off Tasks Without a Roadmap
+
+`lemming exec` runs a single task and exits. It is the same agent-CLI
+normalization the orchestrator uses, addressable on its own: name a task and a
+runner, and the agent's closing message comes back on stdout.
+
+```bash
+# Delegate one task to a different agent, e.g. to spare another's quota
+lemming exec "Fix the flaky test in runner_test.py" --runner codex
+
+# Pipe a longer handoff instead of fighting shell quoting
+cat handoff.md | lemming exec -f - --runner agy
+```
+
+With no description there is nothing for a task runner to do, so only the
+reviews run — against work that already exists.
+
+```bash
+# Review uncommitted work before opening a pull request
+lemming exec --review readability
+
+# Review someone else's branch, checked out in a worktree
+lemming exec -C ../review-worktree --review testing --scope main...HEAD
+
+# Do the work, then gate it
+lemming exec "Add pagination to the tasks API" --review all
+```
+
+`--scope` takes paths, which pass through untouched, or a git revision range,
+which is resolved to the files it changed. It defaults to uncommitted work, or
+to the whole tree outside a git repository.
+
+Each run is self-contained: nothing is read from the project's roadmap or its
+local hooks, one agent run is attempted, and the run's state directory is
+removed unless it failed — in which case it is kept, and its path printed, so
+the log can be read. Stdout carries the agent's message alone and everything
+else goes to stderr, so the output can be consumed directly.
+
+Note that the agent runs unattended (`--yolo` by default), so it does not
+inherit the permission prompts of whatever launched it.
+
+---
+
 ## The Web Dashboard
 
 Lemming includes a modern, fast Web UI to monitor your projects.
@@ -306,6 +349,23 @@ These come before the subcommand and apply to all of them.
   - `--no-defaults`: Skip default flag injection for known runners.
   - `--`: Use `--` to pass any flag directly to the underlying runner. A
     per-task `--runner`/`--model` overrides anything passed here.
+- **`exec [<description>]`**: Run one task, or one set of reviews, outside any
+  roadmap. Prints the agent's closing message to stdout and everything else to
+  stderr. Exits non-zero if the task did not complete. See
+  [One-off tasks](#one-off-tasks-without-a-roadmap).
+  - `-f/--file`: Read the description from a file, or `-` for stdin. Unlike
+    `add`, there is no length cap.
+  - `--review <names>`: Reviews to run after the task, comma-separated or
+    repeated; `all` selects every one. With no description, only the reviews
+    run. Hooks that revise the roadmap cannot be selected.
+  - `--scope <path|range>`: What the reviews look at. Paths pass through; a
+    git revision range is resolved to the files it changed. Defaults to
+    uncommitted work, or the whole tree outside a repository.
+  - `--runner`, `--model`: Which agent CLI and model to use.
+  - `--time-limit`: Minutes before the agent is killed (default 60, 0 for no
+    limit).
+  - `--yolo/--no-yolo`: Run the agent unattended (default: True).
+  - `--keep`: Keep the run's state directory even when it succeeds.
 - **`stop`**: Stop the running loop and its runner.
   - `--after-current-task`: Drain instead — let the running task finish, then
     stop before claiming another. This is the safe way to change the runner
