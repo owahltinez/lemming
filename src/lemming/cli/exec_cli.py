@@ -1,0 +1,231 @@
+"""CLI command for a single one-shot task, run outside any roadmap.
+
+Where ``run`` drives a persistent roadmap, ``exec`` normalizes the agent
+CLIs behind one interface for a single unit of work: the caller names a
+task and a runner, and gets the agent's closing message back on stdout.
+
+The run is hermetic. Nothing is read from the project's own roadmap, whose
+goal and progress may describe work abandoned long ago, and the state it
+does keep lives in a directory removed when the run succeeds.
+"""
+
+import contextlib
+import pathlib
+import shutil
+import sys
+import typing
+
+import click
+
+from .. import paths, runner, shutdown, tasks
+from ..orchestrator import run_loop
+from .main import cli
+
+# Ceiling on how much of the runner log is scanned for the closing message.
+# The message is at the end, and a log carrying every tool call can be
+# large enough that reading it whole is wasteful.
+MAX_LOG_TAIL_BYTES = 256 * 1024
+
+
+def _read_log_tail(
+    log_file: pathlib.Path, max_bytes: int = MAX_LOG_TAIL_BYTES
+) -> str:
+    """Returns the end of a runner log, or an empty string if unreadable.
+
+    Args:
+        log_file: Path to the runner log.
+        max_bytes: Most bytes to read from the end of the file.
+
+    Returns:
+        The tail of the log, decoded leniently. A leading partial line is
+        harmless: the extractor skips anything that is not a whole event.
+    """
+    try:
+        with open(log_file, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - max_bytes))
+            return f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _resolve_prompt(description: str | None, file: typing.TextIO | None) -> str:
+    """Returns the prompt text from an argument or a file.
+
+    Args:
+        description: Prompt given as a command-line argument.
+        file: Open file (or stdin) to read the prompt from.
+
+    Returns:
+        The prompt text, stripped.
+
+    Raises:
+        click.UsageError: If neither or both sources were given.
+    """
+    if description and file:
+        raise click.UsageError("Cannot provide both a description and --file.")
+    text = (file.read() if file else description or "").strip()
+    if not text:
+        raise click.UsageError("Provide a task description or --file.")
+    return text
+
+
+def _create_task(exec_dir: pathlib.Path, prompt: str, config) -> str:
+    """Scaffolds the ephemeral roadmap holding this run's single task.
+
+    A delegating agent's prompt routinely exceeds the roadmap description
+    limit, which exists to protect context shared across many tasks. There
+    is no such budget here, so the overflow goes to the brief, which has no
+    cap and reaches the runner just the same.
+
+    Args:
+        exec_dir: Directory holding this run's ephemeral state.
+        prompt: The full prompt text.
+        config: Roadmap configuration for the run.
+
+    Returns:
+        The new task's ID.
+    """
+    tasks_file = exec_dir / "tasks.yml"
+    tasks.save_tasks(tasks_file, tasks.Roadmap(config=config))
+
+    limit = tasks.MAX_TASK_DESCRIPTION_CHARS
+    fits = len(prompt) <= limit
+    description = prompt if fits else f"{prompt[: limit - 1]}…"
+    task = tasks.add_task(tasks_file, description)
+    if not fits:
+        paths.get_brief_file(tasks_file, task.id).write_text(
+            prompt, encoding="utf-8"
+        )
+    return task.id
+
+
+def _task_status(
+    tasks_file: pathlib.Path, task_id: str
+) -> tasks.TaskStatus | None:
+    """Returns the task's status, or None if it is no longer there.
+
+    Args:
+        tasks_file: Path to the run's ephemeral tasks file.
+        task_id: ID of the task this run created.
+
+    Returns:
+        The task's current status, or None if it could not be read.
+    """
+    try:
+        data = tasks.load_tasks(tasks_file)
+    except Exception:
+        return None
+    return next((t.status for t in data.tasks if t.id == task_id), None)
+
+
+@cli.command("exec", short_help="[description] Run a single task and exit")
+@click.argument("description", required=False)
+@click.option(
+    "--file",
+    "-f",
+    type=click.File("r"),
+    help="Read the task description from a file (or - for stdin).",
+)
+@click.option("--runner", "runner_name", help="Agent CLI to run the task.")
+@click.option("--model", "model_name", help="Model to request from the agent.")
+@click.option(
+    "--time-limit",
+    default=60,
+    help="Minutes before the agent is killed (0 disables the limit).",
+)
+@click.option(
+    "--yolo/--no-yolo",
+    default=True,
+    help="Run the agent in unattended (auto-approve) mode.",
+)
+@click.option(
+    "--keep",
+    is_flag=True,
+    help="Keep the run's state directory even when it succeeds.",
+)
+@click.argument("runner_args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def exec_command(
+    ctx: click.Context,
+    description: str | None,
+    file: typing.TextIO | None,
+    runner_name: str | None,
+    model_name: str | None,
+    time_limit: int,
+    yolo: bool,
+    keep: bool,
+    runner_args: tuple,
+) -> None:
+    """Runs one task with an agent CLI and prints what it reported.
+
+    The agent's closing message goes to stdout and everything else to
+    stderr, so the output can be consumed directly by whoever called it.
+
+    Examples:
+      lemming exec "Fix the flaky test in runner_test.py" --runner codex
+      cat handoff.md | lemming exec -f - --runner agy
+    """
+    prompt = _resolve_prompt(description, file)
+    verbose = ctx.obj["VERBOSE"]
+
+    # A one-shot spends one agent run: a silent retry would multiply the
+    # caller's cost without their say.
+    config = tasks.RoadmapConfig(retries=1, time_limit=time_limit)
+    if runner_name:
+        config.runner = runner_name
+    if model_name:
+        config.model = model_name
+
+    exec_dir = paths.create_exec_dir()
+    tasks_file = exec_dir / "tasks.yml"
+    task_id = _create_task(exec_dir, prompt, config)
+
+    # The runner must edit the caller's workspace, never the throwaway
+    # directory that only holds this run's bookkeeping.
+    working_dir = pathlib.Path.cwd().resolve()
+
+    shutdown.clear_drain()
+    shutdown.install_handlers()
+
+    succeeded = False
+    try:
+        # The loop reports progress with click.echo; stdout is reserved for
+        # the agent's message, so its chatter is sent to stderr instead.
+        with contextlib.redirect_stdout(sys.stderr):
+            run_loop(
+                tasks_file,
+                verbose,
+                retry_delay=0,
+                yolo=yolo,
+                no_defaults=False,
+                runner_args=runner_args,
+                working_dir=working_dir,
+                hooks=[],
+            )
+
+        # The loop reports that the queue drained, which a failed task does
+        # just as well as a finished one. Only the task's own status says
+        # whether the work the caller asked for actually happened.
+        status = _task_status(tasks_file, task_id)
+        succeeded = status == tasks.TaskStatus.COMPLETED
+        if not succeeded:
+            click.echo(f"Task {status or 'lost'}.", err=True)
+
+        message = runner.extract_final_message(
+            _read_log_tail(paths.get_log_file(tasks_file, task_id))
+        )
+        if message:
+            click.echo(message)
+        else:
+            click.echo("The agent produced no closing message.", err=True)
+    finally:
+        # A run worth investigating keeps its log, and an interrupt counts:
+        # the caller may need to see how far the agent got.
+        if succeeded and not keep:
+            shutil.rmtree(exec_dir, ignore_errors=True)
+        else:
+            click.echo(f"State kept in {exec_dir}", err=True)
+
+    if not succeeded:
+        ctx.exit(1)

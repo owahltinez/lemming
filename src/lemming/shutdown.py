@@ -46,8 +46,13 @@ def install_handlers() -> None:
     survives as an orphan; once the task heartbeat goes stale a restarted
     loop reclaims the same task and two agents write to one directory.
 
+    SIGHUP gets the same treatment, because a loop launched by another
+    agent receives it when that parent dies; its default action would end
+    the process outright and leave the same orphan behind.
+
     ``DRAIN_SIGNAL`` instead lets the current task finish and stops the loop
     before it claims another.
     """
     signal.signal(signal.SIGTERM, _handle_terminate)
+    signal.signal(signal.SIGHUP, _handle_terminate)
     signal.signal(DRAIN_SIGNAL, _handle_drain)

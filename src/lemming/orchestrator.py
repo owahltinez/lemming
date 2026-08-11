@@ -442,8 +442,26 @@ def run_loop(
     no_defaults: bool,
     runner_args: tuple,
     working_dir: pathlib.Path | None = None,
+    hooks: list[str] | None = None,
 ) -> bool:
-    """Runs pending tasks, returning True only when the roadmap is complete."""
+    """Runs pending tasks, returning True only when the roadmap is complete.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        verbose: Whether to echo prompts and runner output.
+        retry_delay: Seconds to wait before retrying an incomplete task.
+        yolo: Whether to run the runner in unattended (yolo) mode.
+        no_defaults: Whether to skip the runner's default arguments.
+        runner_args: Extra arguments forwarded to the runner CLI.
+        working_dir: Working directory for the runner processes.
+        hooks: Explicit hooks to run after each task, bypassing filesystem
+            discovery. An empty list runs none. Defaults to discovering the
+            active set on every iteration, so a running loop picks up
+            changes.
+
+    Returns:
+        True only when the roadmap ran to completion.
+    """
     while True:
         returncode = 0
 
@@ -461,7 +479,7 @@ def run_loop(
         time_limit = data.config.time_limit
         runner_name = data.config.runner
         model_name = data.config.model
-        active_hooks = list_hooks(tasks_file)
+        active_hooks = list_hooks(tasks_file) if hooks is None else hooks
 
         current_task = tasks.get_pending_task(data)
 

@@ -7,6 +7,7 @@ import os
 import pathlib
 import stat
 import subprocess
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,24 @@ def get_project_dir(tasks_file: pathlib.Path) -> pathlib.Path:
     # project dir.
     path_hash = hashlib.sha256(str(tasks_file_abs).encode()).hexdigest()[:12]
     return lemming_home / path_hash
+
+
+def create_exec_dir() -> pathlib.Path:
+    """Creates a private directory holding one exec run's ephemeral state.
+
+    Sitting directly under Lemming home is what makes the two path helpers
+    do the right thing without a special case: get_project_dir treats the
+    directory as its own project, so the roadmap, log, and brief are
+    self-contained and removable as a unit, while get_working_dir resolves
+    to the caller's directory, so the agent still edits the real workspace
+    rather than the throwaway one.
+
+    Returns:
+        A new, empty directory owned by this run.
+    """
+    home = get_lemming_home()
+    home.mkdir(parents=True, exist_ok=True)
+    return pathlib.Path(tempfile.mkdtemp(prefix="exec-", dir=home))
 
 
 def get_tasks_file_for_dir(directory: pathlib.Path) -> pathlib.Path:

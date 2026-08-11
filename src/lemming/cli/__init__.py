@@ -2,6 +2,7 @@
 
 from . import brief as _brief_cmds  # noqa: F401
 from . import config as _config_cmds  # noqa: F401
+from . import exec_cli as _exec_cmds  # noqa: F401
 from . import goal as _goal_cmds  # noqa: F401
 from . import hooks as _hooks_cmds  # noqa: F401
 from . import operations as _ops_cmds  # noqa: F401
