@@ -39,6 +39,23 @@ def test_share_token_middleware():
         api.app.state.share_token = original_token
 
 
+def test_share_token_middleware_rejects_exotic_tokens():
+    """Odd tokens must be rejected, not crash the comparison."""
+    original_token = getattr(api.app.state, "share_token", None)
+    try:
+        api.app.state.share_token = "secret123"
+        client = fastapi.testclient.TestClient(api.app)
+
+        # Non-ASCII and differing lengths must stay a clean 401. A digest
+        # comparison rejects both only if the values are encoded first.
+        for token in ("sécret123", "secret1234567890", "s", ""):
+            response = client.get("/api/data", params={"token": token})
+            assert response.status_code == 401, token
+    finally:
+        # Restore
+        api.app.state.share_token = original_token
+
+
 def test_share_token_middleware_inert_without_token():
     """Local (non-tunnel) mode sets no share token, so nothing is required."""
     original_token = getattr(api.app.state, "share_token", None)
