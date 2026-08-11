@@ -229,7 +229,9 @@ def build_runner_command(
             # Print mode buffers the response until the run completes, so
             # stream JSON events (agent messages, tool calls and their
             # output) for live visibility in the task log. The flag is
-            # undocumented but mirrors claude's stream-json format.
+            # undocumented, and despite the shared "stream-json" spelling
+            # the events are agy's own: an "event" key wrapping a nested
+            # payload, with none of claude's top-level "type".
             cmd.extend(["--output-format", "stream-json"])
 
             # agy caps print mode at 5 minutes by default; extend it to the
@@ -305,6 +307,10 @@ def extract_error_message(
     also carries an error flag, but reporting that as the runner's failure
     would be actively misleading.
 
+    The result is recorded in durable task progress that later agents read,
+    so an unrecognized event shape yields None rather than a guess. Raw
+    output belongs on the console and in the log, not in the roadmap.
+
     Args:
         output: Captured runner output, one JSON event per line.
         max_chars: Ceiling for the returned message.
@@ -333,6 +339,12 @@ def extract_error_message(
                 message = nested.get("message")
             elif isinstance(nested, str):
                 message = nested
+        elif event.get("event") == "result":
+            # Agy carries no top-level "type" at all; its terminal event
+            # nests the reason, and a successful run simply omits it.
+            result = event.get("result")
+            if isinstance(result, dict):
+                message = result.get("error")
         if not isinstance(message, str) or not message.strip():
             continue
 

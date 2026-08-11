@@ -827,6 +827,56 @@ def test_extract_error_message_returns_none_without_an_error():
     assert runner.extract_error_message("not json at all\n") is None
 
 
+def test_extract_error_message_from_agy_result_envelope():
+    """Agy reports the reason inside its own envelope, with no "type" key."""
+    output = (
+        '{"event":"result","result":{"status":"ERROR","response":"",'
+        '"error":"invalid model selection"}}\n'
+    )
+
+    assert runner.extract_error_message(output) == "invalid model selection"
+
+
+def test_extract_error_message_ignores_a_successful_agy_run():
+    """A successful run carries no error field and must not report one."""
+    output = (
+        '{"event":"result","result":{"status":"SUCCESS",'
+        '"response":"All tests pass.","duration_seconds":6.5}}\n'
+    )
+
+    assert runner.extract_error_message(output) is None
+
+
+def test_extract_error_message_degrades_to_none_on_an_unknown_schema():
+    """A well-formed stream we cannot read must not be guessed at.
+
+    Every line here is a valid event, so the tail is bookkeeping rather
+    than a diagnosis, and the reason is recorded in durable task progress.
+    Reporting a usage record as the failure would mislead later agents.
+    """
+    output = (
+        '{"event":"outcome","outcome":{"state":"ERROR",'
+        '"failure":"invalid model selection"}}\n'
+        '{"event":"usage","usage":{"input_tokens":13838}}\n'
+    )
+
+    assert runner.extract_error_message(output) is None
+
+
+def test_extract_error_message_ignores_a_plain_text_notice():
+    """Runners print plain-text notices that are not failure reasons.
+
+    Codex opens with one on every run, so treating unparsed output as a
+    diagnosis would report it as the cause of an unrelated failure.
+    """
+    output = (
+        "Reading additional input from stdin...\n"
+        '{"type":"turn.completed","usage":{"output_tokens":6}}\n'
+    )
+
+    assert runner.extract_error_message(output) is None
+
+
 def test_extract_error_message_prefers_the_last_error():
     output = (
         '{"type":"error","message":"first"}\n'
