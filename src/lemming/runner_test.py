@@ -842,3 +842,33 @@ def test_extract_error_message_is_bounded():
     message = runner.extract_error_message(output)
 
     assert len(message) <= 200
+
+
+def test_run_with_heartbeat_kills_the_child_when_tasks_file_is_corrupted(
+    tmp_path,
+):
+    """A corruption mid-run must not strand an unsupervised child process."""
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "test_task"
+    tasks.save_tasks(
+        tasks_file,
+        tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test")]),
+    )
+    tasks.mark_task_in_progress(tasks_file, task_id)
+
+    # The claim succeeds, then the file becomes unreadable on the next
+    # heartbeat: the thread that owns cancellation and the time limit.
+    corrupted = tasks.CorruptedTasksError(tasks_file, ValueError("boom"))
+    with unittest.mock.patch.object(
+        tasks, "update_heartbeat", side_effect=[True, corrupted]
+    ):
+        start = time.monotonic()
+        returncode, _, _ = runner.run_with_heartbeat(
+            ["sleep", "15"], tasks_file, task_id, verbose=False
+        )
+        elapsed = time.monotonic() - start
+
+    # Without a guard the heartbeat thread dies silently and the child runs
+    # to completion, unkillable by cancellation or the time limit.
+    assert elapsed < 5
+    assert returncode != 0
