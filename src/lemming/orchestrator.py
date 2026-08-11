@@ -367,6 +367,15 @@ def _handle_runner_exit(
             model_name=model_name,
         )
 
+        # A finalizing task keeps its in-progress status until the hooks
+        # apply the one it requested, so the outcome only becomes readable
+        # here. Judging it from the pre-hook object treats every completed
+        # task as a failure and replays its whole log.
+        refreshed = tasks.load_tasks(tasks_file)
+        post_task = next(
+            (t for t in refreshed.tasks if t.id == task_id), post_task
+        )
+
     if post_task.status == tasks.TaskStatus.COMPLETED:
         if verbose:
             click.echo("Runner successfully reported task completion.")

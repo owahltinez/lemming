@@ -985,6 +985,40 @@ def test_run_loop_surfaces_runner_error(
     assert any("usage limit" in entry for entry in progress), progress
 
 
+@mock.patch("time.sleep", return_value=None)
+def test_run_loop_does_not_dump_the_log_of_a_successful_task(
+    mock_sleep, setup_env, capsys
+):
+    """A task that finished is reported, not replayed.
+
+    The agent requests completion and hooks apply it, so the status read
+    right after the runner exits still says in-progress. Treating that as
+    a failure replays the whole runner log on every successful task.
+    """
+    test_tasks_file, _ = setup_env
+
+    def fake(cmd, tasks_file, task_id, verbose, **kwargs):
+        tasks.add_progress(tasks_file, task_id, "did the thing")
+        tasks.update_task(tasks_file, task_id, status="completed")
+        return 0, "VERBATIM RUNNER LOG LINE\n" * 3, ""
+
+    with mock.patch("lemming.runner.run_with_heartbeat", fake):
+        completed = run_loop(
+            test_tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            hooks=[],
+        )
+
+    out = capsys.readouterr().out
+    assert completed
+    assert "VERBATIM RUNNER LOG LINE" not in out
+    assert "Task completed successfully" in out
+
+
 @mock.patch("lemming.runner.run_with_heartbeat")
 @mock.patch("time.sleep", return_value=None)
 def test_run_loop_failure_without_a_reason_is_unchanged(
