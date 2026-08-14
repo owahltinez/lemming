@@ -80,9 +80,48 @@ def test_build_runner_command_time_limit_ignored_by_other_runners():
 
 
 def test_build_runner_command_aider():
+    """Explicit legacy Aider configurations remain usable."""
     cmd = runner.build_runner_command("aider", "my prompt", yolo=True)
     assert "--yes" in cmd
     assert "--message" in cmd
+
+
+def test_build_runner_command_opencode():
+    cmd = runner.build_runner_command("opencode", "my prompt", yolo=True)
+    assert cmd == [
+        "opencode",
+        "run",
+        "--auto",
+        "--format",
+        "json",
+        "my prompt",
+    ]
+
+
+def test_build_runner_command_opencode_without_yolo():
+    cmd = runner.build_runner_command("opencode", "my prompt", yolo=False)
+    assert cmd == ["opencode", "run", "--format", "json", "my prompt"]
+
+
+def test_build_runner_command_opencode_without_defaults_still_uses_run():
+    cmd = runner.build_runner_command(
+        "opencode", "my prompt", yolo=True, no_defaults=True
+    )
+    assert cmd == ["opencode", "run", "my prompt"]
+
+
+def test_build_runner_command_opencode_does_not_duplicate_explicit_run():
+    cmd = runner.build_runner_command(
+        "opencode run --pure", "my prompt", yolo=False
+    )
+    assert cmd == [
+        "opencode",
+        "run",
+        "--format",
+        "json",
+        "--pure",
+        "my prompt",
+    ]
 
 
 def test_build_runner_command_codex():
@@ -214,10 +253,13 @@ def test_conflicting_boolean_flag_does_not_consume_next_flag():
 def test_model_is_appended_for_known_runners():
     """A configured model reaches the runner as --model."""
     cmd = runner.build_runner_command(
-        "agy", "prompt", yolo=True, model="gemini-3.6-flash-high"
+        "opencode",
+        "prompt",
+        yolo=True,
+        model="google/gemini-flash-latest",
     )
 
-    assert cmd[cmd.index("--model") + 1] == "gemini-3.6-flash-high"
+    assert cmd[cmd.index("--model") + 1] == "google/gemini-flash-latest"
 
 
 def test_model_defers_to_explicit_runner_string_flag():
@@ -442,6 +484,42 @@ def test_run_with_heartbeat_log_header(tmp_path):
     assert "--- Attempt started at" in content_2
     assert "started at" not in content_2.replace("Attempt started at", "")
     assert "=" * 80 not in content_2
+
+
+def test_opencode_environment_aliases_google_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "existing-key")
+    monkeypatch.delenv("GOOGLE_GENERATIVE_AI_API_KEY", raising=False)
+
+    env = runner._runner_environment(
+        ["/usr/local/bin/opencode", "run"], tmp_path / "tasks.yml", "abc"
+    )
+
+    assert env["GOOGLE_GENERATIVE_AI_API_KEY"] == "existing-key"
+
+
+def test_opencode_environment_preserves_native_google_key(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("GOOGLE_API_KEY", "legacy-key")
+    monkeypatch.setenv("GOOGLE_GENERATIVE_AI_API_KEY", "native-key")
+
+    env = runner._runner_environment(
+        ["opencode", "run"], tmp_path / "tasks.yml", "abc"
+    )
+
+    assert env["GOOGLE_GENERATIVE_AI_API_KEY"] == "native-key"
+
+
+def test_opencode_environment_accepts_gemini_api_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_GENERATIVE_AI_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+    env = runner._runner_environment(
+        ["opencode", "run"], tmp_path / "tasks.yml", "abc"
+    )
+
+    assert env["GOOGLE_GENERATIVE_AI_API_KEY"] == "gemini-key"
 
 
 def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):
@@ -814,6 +892,15 @@ def test_extract_error_message_from_turn_failed():
     assert runner.extract_error_message(output) == "quota exhausted"
 
 
+def test_extract_error_message_from_opencode_error_event():
+    output = (
+        '{"type":"error","sessionID":"ses_123","error":'
+        '{"name":"ProviderError","data":{"message":"quota exhausted"}}}\n'
+    )
+
+    assert runner.extract_error_message(output) == "quota exhausted"
+
+
 def test_extract_error_message_ignores_tool_failures():
     """A failed shell command inside the agent is not the runner failing."""
     output = (
@@ -917,6 +1004,15 @@ _AGY_FINAL = (
     '{"event":"result","result":{"status":"SUCCESS",'
     '"response":"All tests pass.\\n","num_turns":1}}\n'
 )
+_OPENCODE_FINAL = (
+    '{"type":"step_start","sessionID":"ses_123","part":'
+    '{"type":"step-start"}}\n'
+    '{"type":"text","sessionID":"ses_123","part":'
+    '{"type":"text","text":"All tests pass.",'
+    '"time":{"start":1,"end":2}}}\n'
+    '{"type":"step_finish","sessionID":"ses_123","part":'
+    '{"type":"step-finish"}}\n'
+)
 
 
 def test_extract_final_message_from_claude_result_event():
@@ -932,6 +1028,11 @@ def test_extract_final_message_from_codex_agent_message():
 def test_extract_final_message_from_agy_result_event():
     """Agy nests the final text under its own result envelope."""
     assert runner.extract_final_message(_AGY_FINAL) == "All tests pass."
+
+
+def test_extract_final_message_from_opencode_text_event():
+    """OpenCode reports completed assistant text in a text-part event."""
+    assert runner.extract_final_message(_OPENCODE_FINAL) == "All tests pass."
 
 
 def test_extract_final_message_skips_non_json_preamble():

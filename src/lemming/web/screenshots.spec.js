@@ -58,7 +58,7 @@ const mockTasks = [
     attempts: 0,
     has_runner_log: false,
     pid: null,
-    runner: 'aider',
+    runner: 'opencode',
     parent: 'd4e5f6',
     completed_at: null,
     run_time: null,
@@ -200,7 +200,7 @@ test.describe('Screenshot Generation', () => {
         await page.route('**/api/runners', async (route) => {
           await route.fulfill({
             contentType: 'application/json',
-            json: ['agy', 'aider', 'claude', 'codex'],
+            json: ['agy', 'opencode', 'claude', 'codex'],
           });
         });
         await page.route('**/api/hooks', async (route) => {

@@ -1,13 +1,13 @@
 ---
 name: lemming
-description: One interface over the AI coding agent CLIs (agy, claude, codex). Delegate a single task to another agent to spare a quota or play to its strengths; run a readability, testing, or UX review over changed files, a branch, or a path; or drive a multi-task project through a roadmap that survives context limits. Use whenever work should run under a different agent than the current one, when reviewing a diff before opening a pull request, or when a job is too large for one agent run.
+description: One interface over the AI coding agent CLIs (agy, claude, codex, opencode). Delegate a single task to another agent to spare a quota or play to its strengths; run a readability, testing, or UX review over changed files, a branch, or a path; or drive a multi-task project through a roadmap that survives context limits. Use whenever work should run under a different agent than the current one, when reviewing a diff before opening a pull request, or when a job is too large for one agent run.
 license: MIT
 ---
 
 # lemming
 
 One interface over several agent CLIs. You do not need to know how `agy`,
-`claude`, or `codex` spell their flags — only `lemming`.
+`claude`, `codex`, or `opencode` spell their flags — only `lemming`.
 
 Use `exec` for one unit of work, and a roadmap for anything larger than a
 single agent run can hold.

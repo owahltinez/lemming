@@ -55,7 +55,7 @@ test.describe('Dashboard E2E', () => {
       } else if (url.includes('/api/runners')) {
         await route.fulfill({
           contentType: 'application/json',
-          json: ['agy', 'aider'],
+          json: ['agy', 'opencode'],
         });
       } else if (url.includes('/api/hooks')) {
         await route.fulfill({

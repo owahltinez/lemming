@@ -50,7 +50,7 @@ def config_set(ctx: click.Context, key: str, value: str):
     discard the pinned model.
 
     Examples:
-      lemming config set runner aider
+      lemming config set runner opencode
       lemming config set model gemini-3.6-flash-high
       lemming config set model default
       lemming config set retries 5

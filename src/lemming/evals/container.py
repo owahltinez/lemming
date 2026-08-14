@@ -19,6 +19,7 @@ DEFAULT_FORWARD_ENV = (
     "CLAUDE_CODE_OAUTH_TOKEN",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
+    "GOOGLE_GENERATIVE_AI_API_KEY",
 )
 
 # Paths inside the container; the harness mounts host dirs onto these.

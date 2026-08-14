@@ -8,7 +8,7 @@ import time
 import pydantic
 
 # Runner CLIs the orchestrator knows how to drive, in default-preference order.
-KNOWN_RUNNERS = ("agy", "aider", "claude", "codex")
+KNOWN_RUNNERS = ("agy", "opencode", "claude", "codex")
 
 
 @functools.cache

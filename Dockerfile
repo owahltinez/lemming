@@ -11,7 +11,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Install AI coding CLIs (antigravity ships a native binary, not an npm package)
-RUN npm install -g @openai/codex @anthropic-ai/claude-code \
+RUN npm install -g --allow-scripts=opencode-ai \
+      @openai/codex @anthropic-ai/claude-code opencode-ai \
     && curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin
 
 # Copy cloudflared and uv binaries directly from their official images

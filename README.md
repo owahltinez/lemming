@@ -16,8 +16,8 @@ human-readable `tasks.yml` file.
   update is recorded in a human-readable `tasks.yml` file. You can step in,
   adjust the roadmap, or swap agents at any time.
 - **Tool Agnostic**: Lemming doesn't care which agent you use. It works
-  out-of-the-box with `agy`, `aider`, `claude`, `codex`, or even your own custom
-  scripts.
+  out-of-the-box with `agy`, `opencode`, `claude`, `codex`, or even your own
+  custom scripts.
 - **Resilient Execution**: With built-in heartbeat monitoring, automatic
   retries, and progress tracking, Lemming handles process crashes and rate
   limits gracefully.
@@ -71,7 +71,7 @@ Start the autonomous loop.
 
 ```bash
 # Run using the project's configured agent (defaults to the first
-# supported runner found on PATH: agy, aider, claude, or codex)
+# supported runner found on PATH: agy, opencode, claude, or codex)
 lemming run
 
 # Flags passed after -- are sent directly to the underlying runner
@@ -271,7 +271,7 @@ lemming hooks list
 lemming config list
 
 # Persist configuration to tasks.yml
-lemming config set runner aider
+lemming config set runner opencode
 ```
 
 ### Evaluating Prompt Changes
@@ -453,7 +453,10 @@ Lemming uses **fuzzy matching** to automatically inject the correct "YOLO"
 
 - **Antigravity (`agy`)**: Adds `--dangerously-skip-permissions` and exposes
   the project workspace with `--add-dir`
-- **Aider**: Adds `--yes --quiet`
+- **OpenCode**: Runs non-interactively via `opencode run`, adds `--format json`,
+  and, in YOLO mode, adds `--auto`. For its Google provider, Lemming makes an
+  existing `GOOGLE_API_KEY` or `GEMINI_API_KEY` available under OpenCode's
+  native `GOOGLE_GENERATIVE_AI_API_KEY` name.
 - **Claude**: Adds `--dangerously-skip-permissions`
 - **Codex**: Runs non-interactively via `codex exec`, adds `--json`, and, in
   YOLO mode, adds `--dangerously-bypass-approvals-and-sandbox`

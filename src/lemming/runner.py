@@ -209,15 +209,21 @@ def build_runner_command(
 
     runner_base = os.path.basename(parts[0])
     is_codex = runner_base.startswith("codex")
+    is_opencode = runner_base.startswith("opencode")
 
-    # Codex's non-interactive interface is the ``exec`` subcommand. Accept an
-    # explicitly configured ``codex exec``/``codex e`` without duplicating the
-    # subcommand, while still making a bare ``codex`` suitable for automation.
+    # Codex and OpenCode expose their non-interactive interfaces as
+    # subcommands. Accept explicitly configured forms without duplicating the
+    # subcommand, while still making a bare executable suitable for automation.
     if is_codex:
         if extra_parts and extra_parts[0] in {"exec", "e"}:
             cmd.append(extra_parts.pop(0))
         else:
             cmd.append("exec")
+    elif is_opencode:
+        if extra_parts and extra_parts[0] == "run":
+            cmd.append(extra_parts.pop(0))
+        else:
+            cmd.append("run")
 
     if not no_defaults:
         if runner_base.startswith("agy"):
@@ -252,11 +258,19 @@ def build_runner_command(
 
             prompt_arg = "--prompt"
         elif runner_base.startswith("aider"):
+            # Backward compatibility for persisted/custom Aider runners. Aider
+            # is no longer advertised as a first-class runner.
             if yolo:
                 cmd.append("--yes")
             if not verbose:
                 cmd.append("--quiet")
             prompt_arg = "--message"
+        elif is_opencode:
+            if yolo:
+                cmd.append("--auto")
+            # Raw JSON events expose completed text, tool activity, and errors
+            # in Lemming's live task log.
+            cmd.extend(["--format", "json"])
         elif runner_base.startswith("claude"):
             if yolo:
                 cmd.append("--dangerously-skip-permissions")
@@ -342,8 +356,19 @@ def extract_error_message(
 
         kind = event.get("type")
         message = None
-        if kind == "error" and isinstance(event.get("message"), str):
-            message = event["message"]
+        if kind == "error":
+            if isinstance(event.get("message"), str):
+                message = event["message"]
+            else:
+                # OpenCode's JSON stream carries the provider error object
+                # under ``error``, usually with its text in ``data.message``.
+                nested = event.get("error")
+                if isinstance(nested, dict):
+                    data = nested.get("data")
+                    if isinstance(data, dict):
+                        message = data.get("message")
+                    if not isinstance(message, str):
+                        message = nested.get("message")
         elif kind == "turn.failed":
             nested = event.get("error")
             if isinstance(nested, dict):
@@ -401,6 +426,16 @@ def _final_message_text(event: dict) -> str | None:
         if isinstance(result, dict):
             response = result.get("response")
             return response if isinstance(response, str) else None
+
+    # OpenCode emits completed assistant text as its own event type. Partial
+    # text is not emitted in JSON mode, so the last such event is the closing
+    # response even when tool and step events follow it.
+    if event.get("type") == "text":
+        part = event.get("part")
+        if not isinstance(part, dict) or part.get("type") != "text":
+            return None
+        text = part.get("text")
+        return text if isinstance(text, str) else None
 
     return None
 
@@ -493,6 +528,30 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
             pass
 
 
+def _runner_environment(
+    cmd: list[str], tasks_file: pathlib.Path, task_id: str
+) -> dict[str, str]:
+    """Builds the subprocess environment, including runner compatibility.
+
+    OpenCode's native Google provider uses the longer environment variable
+    name, while existing Lemming eval and user environments commonly expose
+    ``GOOGLE_API_KEY`` or ``GEMINI_API_KEY``. Preserve an explicitly
+    configured native value and otherwise make the existing key available
+    under OpenCode's spelling.
+    """
+    env = os.environ.copy()
+    env["LEMMING_PARENT_TASK_ID"] = task_id
+    env["LEMMING_PARENT_TASKS_FILE"] = str(tasks_file.resolve())
+
+    runner_base = os.path.basename(cmd[0]) if cmd else ""
+    if runner_base.startswith("opencode"):
+        google_api_key = env.get("GOOGLE_API_KEY") or env.get("GEMINI_API_KEY")
+        if google_api_key and not env.get("GOOGLE_GENERATIVE_AI_API_KEY"):
+            env["GOOGLE_GENERATIVE_AI_API_KEY"] = google_api_key
+
+    return env
+
+
 def run_with_heartbeat(
     cmd: list[str],
     tasks_file: pathlib.Path,
@@ -545,9 +604,7 @@ def run_with_heartbeat(
 
     # Start the process in a new session so we can kill its entire process
     # tree if needed.
-    env = os.environ.copy()
-    env["LEMMING_PARENT_TASK_ID"] = task_id
-    env["LEMMING_PARENT_TASKS_FILE"] = str(tasks_file.resolve())
+    env = _runner_environment(cmd, tasks_file, task_id)
 
     process = subprocess.Popen(
         cmd,
