@@ -128,15 +128,15 @@ inherit the permission prompts of whatever launched it.
 
 ### Teaching Your Agent to Use It
 
-Lemming ships an Agent Skill so that an agent already running — Claude Code,
-Gemini CLI, Cursor — can reach any other agent CLI without knowing how each
-one spells its flags. Install it once:
+Lemming ships an Agent Skill so that an agent already running — Codex, Claude
+Code, Gemini CLI, Cursor — can reach any other agent CLI without knowing how
+each one spells its flags. Install it once:
 
 ```bash
 # Cross-tool location (~/.agents/skills), and report any tool-specific ones
 lemming skill install
 
-# Cover every agent tool detected on this machine
+# Cover detected tools that require their own skill directory too
 lemming skill install --all
 
 # This repository only
