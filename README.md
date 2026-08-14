@@ -515,10 +515,16 @@ pushing a `v*` tag triggers the `publish.yml` GitHub Actions workflow, which
 builds the package with `uv build` and uploads it.
 
 ```bash
-# 1. Bump the version in pyproject.toml, commit, and push
-# 2. Tag the release and push the tag
-git tag v0.1.1
-git push origin v0.1.1
+# 1. Bump pyproject.toml and uv.lock together, commit, and push
+uv version --bump patch --no-sync
+version="$(uv version --short)"
+git add pyproject.toml uv.lock
+git commit -m "Bump version to $version"
+git push origin main
+
+# 2. After CI passes, tag the release and push the tag
+git tag "v$version"
+git push origin "v$version"
 ```
 
 ---

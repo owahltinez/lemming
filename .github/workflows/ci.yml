@@ -19,7 +19,7 @@ jobs:
           python-version: '3.14'
 
       - name: Install Python dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Run Python linting
         run: uv run ruff check .
