@@ -29,6 +29,10 @@ KILL_GRACE_SECONDS = 5
 # inherit the pipe and hold it open indefinitely.
 OUTPUT_DRAIN_SECONDS = 5
 
+# Headroom between the task time limit and a runner's own print-mode timeout,
+# so the two never race to end the same run.
+PRINT_TIMEOUT_GRACE_MINUTES = 5
+
 
 def _pretty_quote(s: str) -> str:
     """Quotes a string for shell execution, preferring readable quoting.
@@ -234,9 +238,16 @@ def build_runner_command(
             # payload, with none of claude's top-level "type".
             cmd.extend(["--output-format", "stream-json"])
 
-            # agy caps print mode at 5 minutes by default; extend it to the
-            # task time limit (or effectively unlimited when there is none).
-            print_timeout = f"{time_limit}m" if time_limit > 0 else "24h"
+            # agy caps print mode at 5 minutes by default; extend it past the
+            # task time limit (or make it effectively unlimited when there is
+            # none). The headroom leaves Lemming's own kill to end an
+            # overrunning task, which records why it stopped; agy's expiry
+            # reports an empty response instead, losing the run's outcome.
+            print_timeout = (
+                f"{time_limit + PRINT_TIMEOUT_GRACE_MINUTES}m"
+                if time_limit > 0
+                else "24h"
+            )
             cmd.extend(["--print-timeout", print_timeout])
 
             prompt_arg = "--prompt"

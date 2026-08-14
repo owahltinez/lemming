@@ -48,11 +48,13 @@ def test_build_runner_command_agy_streams_json_events():
     assert "--log-file" not in cmd
 
 
-def test_build_runner_command_agy_print_timeout_matches_time_limit():
+def test_build_runner_command_agy_print_timeout_clears_time_limit():
+    # The runner's own timeout must not race Lemming's kill: Lemming records
+    # why it stopped the task, whereas agy's expiry yields an empty response.
     cmd = runner.build_runner_command(
         "agy", "my prompt", yolo=True, time_limit=45
     )
-    assert cmd[cmd.index("--print-timeout") + 1] == "45m"
+    assert cmd[cmd.index("--print-timeout") + 1] == "50m"
 
 
 def test_build_runner_command_agy_print_timeout_without_time_limit():
