@@ -80,6 +80,24 @@ def test_exec_keeps_progress_chatter_off_stdout(workspace):
     assert "Attempt" in result.stderr
 
 
+def test_exec_announces_monitoring_coordinates_on_stderr(workspace):
+    """A supervisor can inspect an active exec without guessing its state."""
+    seen = {}
+
+    def finish(cmd, tasks_file, task_id, *args, **kwargs):
+        seen["tasks_file"] = tasks_file
+        seen["task_id"] = task_id
+        return _finish("Done.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", finish):
+        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.strip() == "Done."
+    assert f"Tasks file: {seen['tasks_file']}" in result.stderr
+    assert f"Task ID: {seen['task_id']}" in result.stderr
+
+
 def test_exec_removes_its_state_directory_on_success(workspace):
     """A one-shot leaves nothing behind when it worked."""
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):

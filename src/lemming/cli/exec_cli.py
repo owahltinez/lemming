@@ -324,6 +324,12 @@ def exec_command(
         else _create_review_task(exec_dir, reviews, config)
     )
 
+    # A supervising process needs an exact, race-free handle to the ephemeral
+    # roadmap while the run is active. Keep it on stderr so stdout remains the
+    # agent's closing-message interface.
+    click.echo(f"Tasks file: {tasks_file}", err=True)
+    click.echo(f"Task ID: {task_id}", err=True)
+
     shutdown.clear_drain()
     shutdown.install_handlers()
 

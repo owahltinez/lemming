@@ -118,7 +118,10 @@ removed unless it failed — in which case it is kept, and its path printed, so
 the log can be read. Kept directories live in `~/.local/lemming/exec-*` and
 are retired automatically a week later, so a recent failure is always still
 there to inspect. Stdout carries the agent's message alone and everything
-else goes to stderr, so the output can be consumed directly.
+else goes to stderr, so the output can be consumed directly. Stderr reports
+the ephemeral tasks file and task ID at startup; pass those to `lemming
+--tasks-file <path> status <id>` or `logs <id>` to inspect an active run. Use
+the global verbose flag (`lemming -v exec ...`) to stream runner activity.
 
 Note that the agent runs unattended (`--yolo` by default), so it does not
 inherit the permission prompts of whatever launched it.
@@ -373,8 +376,9 @@ These come before the subcommand and apply to all of them.
     per-task `--runner`/`--model` overrides anything passed here.
 - **`exec [<description>]`**: Run one task, or one set of reviews, outside any
   roadmap. Prints the agent's closing message to stdout and everything else to
-  stderr. Exits non-zero if the task did not complete. See
-  [One-off tasks](#one-off-tasks-without-a-roadmap).
+  stderr, including its tasks file and task ID at startup. Use `lemming -v
+  exec ...` to stream runner activity. Exits non-zero if the task did not
+  complete. See [One-off tasks](#one-off-tasks-without-a-roadmap).
   - `-f/--file`: Read the description from a file, or `-` for stdin. Unlike
     `add`, there is no length cap.
   - `--review <names>`: Reviews to run after the task, comma-separated or

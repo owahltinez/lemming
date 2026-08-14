@@ -15,15 +15,31 @@ single agent run can hold.
 ## Delegate one task
 
 ```sh
-lemming exec "Fix the flaky heartbeat test in src/runner_test.py" --runner codex
+lemming -v exec "Fix the flaky heartbeat test in src/runner_test.py" --runner codex
 
 # Pipe a longer handoff rather than fighting shell quoting; no length limit
-cat handoff.md | lemming exec -f - --runner agy
+cat handoff.md | lemming -v exec -f - --runner agy
 ```
 
 The agent's closing message comes back on **stdout**, everything else on
 stderr, and the exit code is 0 only if the task completed. Read that message
 instead of hunting through logs.
+
+When you launch `exec` as a subprocess, use the global `-v` flag (before
+`exec`) and continue monitoring its output until it exits. Verbose mode streams
+the runner's activity on stderr. At startup, stderr also reports the exact
+`Tasks file` and `Task ID`; use them from another process to inspect the
+agent's durable findings or full log without guessing which `exec-*` directory
+belongs to the run:
+
+```sh
+lemming --tasks-file <reported-path> status <reported-task-id>
+lemming --tasks-file <reported-path> logs <reported-task-id>
+```
+
+The task runner is required to record its approach first and concise findings
+as it works. These entries are checkpoints rather than a continuous trace, so
+use verbose output or the log to tell whether it is actively making progress.
 
 The task starts with an empty context and sees nothing of your conversation,
 so give it everything it needs.
@@ -94,9 +110,10 @@ turns one off for the project.
   atomicity to rely on.
 - **Concurrent runs in one checkout interleave their edits.** Give each
   writing run its own worktree and address it with `-C`.
-- **Failures keep their state.** The directory is printed on stderr and holds
-  the run's log directly, so `cat <that dir>/*-runner.log` is the whole
-  recovery. It is retired automatically after a week.
+- **Every run reports its state.** The tasks file and task ID are printed on
+  stderr at startup. Successful state is removed on exit unless `--keep` is
+  used; failures keep their directory and print it again for recovery. Kept
+  failure state is retired automatically after a week.
 - **`--tasks-file` and `-C` are group options.** They go before the
   subcommand — `lemming -C ../other exec ...`, never `exec -C ../other`.
 
