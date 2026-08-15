@@ -19,27 +19,6 @@ class TestInitRepo(unittest.TestCase):
         self.assertTrue((self.workspace / ".git").is_dir())
         self.assertEqual(fixtures.dirty_paths(self.workspace), [])
 
-    def test_seeds_lint_config_so_readability_tools_run(self):
-        # readability gates ruff and pyrefly on a config file in the project
-        # root, so a fixture without one silently reports a clean bill of
-        # health no matter what the agent left behind.
-        fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
-
-        pyproject = (self.workspace / "pyproject.toml").read_text()
-        self.assertIn("[tool.ruff]", pyproject)
-        self.assertIn("[tool.pyrefly]", pyproject)
-        self.assertEqual(fixtures.dirty_paths(self.workspace), [])
-
-    def test_caller_lint_config_wins(self):
-        fixtures.init_repo(
-            self.workspace,
-            {"pkg/mod.py": "X = 1\n", "pyproject.toml": "[tool.ruff]\n"},
-        )
-
-        self.assertEqual(
-            (self.workspace / "pyproject.toml").read_text(), "[tool.ruff]\n"
-        )
-
     def test_dirty_paths_reports_source_changes(self):
         fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
 

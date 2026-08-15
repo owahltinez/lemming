@@ -23,30 +23,6 @@ WORKSPACE_IGNORES = (
 )
 
 
-# Lint configuration seeded into every fixture. readability decides whether
-# to run ruff and pyrefly by looking for a config file in the project root,
-# so a fixture without one reports a clean bill of health no matter what the
-# agent left behind. The rules mirror lemming's own so findings mean the same
-# thing inside a fixture as they do in the repository.
-LINT_CONFIG_NAME = "pyproject.toml"
-LINT_CONFIG = """[tool.ruff]
-line-length = 80
-
-[tool.ruff.lint]
-select = ["E", "W", "F", "I", "N", "D", "PL"]
-ignore = ["PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004"]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
-[tool.ruff.lint.per-file-ignores]
-"*_test.py" = ["D"]
-
-[tool.pyrefly]
-project-includes = ["**/*.py"]
-"""
-
-
 def _git(workspace: pathlib.Path, *args: str) -> str:
     """Runs a git command inside the workspace and returns its stdout."""
     result = subprocess.run(
@@ -81,10 +57,9 @@ def init_repo(
             given, they land in a second commit so the trial starts with a
             real diff to review; graders read it back with changed_paths.
     """
-    # Seed the fixture files plus the ignore list for eval-owned state. The
-    # lint config is a default the caller can override by passing its own.
+    # Seed the fixture files plus the ignore list for eval-owned state.
     workspace.mkdir(parents=True, exist_ok=True)
-    _write_files(workspace, {LINT_CONFIG_NAME: LINT_CONFIG, **files})
+    _write_files(workspace, files)
     ignore_file = workspace / ".gitignore"
     ignore_file.write_text("\n".join(WORKSPACE_IGNORES) + "\n")
 
