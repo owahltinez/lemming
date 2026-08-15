@@ -2,6 +2,7 @@ import pathlib
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 
 from lemming.evals import fixtures, metrics
 
@@ -50,40 +51,59 @@ class MetricsTestCase(unittest.TestCase):
         target.write_text(content)
 
 
-class TestRuffFindingCodes(MetricsTestCase):
-    def test_clean_source_has_no_findings(self):
+class TestUnresolvedFindings(MetricsTestCase):
+    def test_clean_source_reports_nothing(self):
         self.seed({"pkg/mod.py": _CLEAN})
 
-        codes = metrics.ruff_finding_codes(self.workspace, ["pkg/mod.py"])
+        self.assertEqual(
+            metrics.unresolved_findings(self.workspace, ["pkg/mod.py"]), ""
+        )
 
-        self.assertEqual(codes, [])
-
-    def test_reports_the_rules_lemming_configures(self):
-        # Pinning the codes proves the grader uses lemming's own rule set
-        # rather than ruff's much smaller default selection.
+    def test_reports_the_rules_the_agent_was_told_to_run(self):
+        # The grader defers to readability rather than restating its rules,
+        # so a fixture dirty by that tool's standard must come back dirty.
         self.seed({"pkg/mod.py": _DIRTY})
 
-        codes = metrics.ruff_finding_codes(self.workspace, ["pkg/mod.py"])
+        outstanding = metrics.unresolved_findings(
+            self.workspace, ["pkg/mod.py"]
+        )
 
-        self.assertEqual(sorted(codes), ["D103", "F401", "F401", "I001"])
+        self.assertIn("D103", outstanding)
 
-    def test_test_files_are_exempt_from_docstring_rules(self):
-        # The grader must apply the same per-file ignores the agent sees, or
-        # it would demand docstrings the tool never asked for.
+    def test_test_files_follow_the_tools_own_per_file_ignores(self):
+        # Docstring rules are waived for tests by the configuration
+        # readability applies; the grader inherits that instead of
+        # maintaining its own copy.
         self.seed({"pkg/mod_test.py": "def helper():\n    return 1\n"})
 
-        codes = metrics.ruff_finding_codes(self.workspace, ["pkg/mod_test.py"])
-
-        self.assertEqual(codes, [])
+        self.assertEqual(
+            metrics.unresolved_findings(self.workspace, ["pkg/mod_test.py"]),
+            "",
+        )
 
     def test_skips_paths_that_are_not_python_files(self):
         self.seed({"README.md": "# Title\n"})
 
-        codes = metrics.ruff_finding_codes(
-            self.workspace, ["README.md", "pkg/gone.py"]
+        self.assertEqual(
+            metrics.unresolved_findings(
+                self.workspace, ["README.md", "pkg/gone.py"]
+            ),
+            "",
         )
 
-        self.assertEqual(codes, [])
+    def test_being_unable_to_check_is_not_a_clean_result(self):
+        # A tool that never ran verified nothing. Reporting that as clean is
+        # how a lint gate becomes a silent no-op.
+        self.seed({"pkg/mod.py": _CLEAN})
+
+        with unittest.mock.patch.object(
+            metrics.subprocess, "run", side_effect=OSError("not installed")
+        ):
+            outstanding = metrics.unresolved_findings(
+                self.workspace, ["pkg/mod.py"]
+            )
+
+        self.assertIn("could not run", outstanding)
 
 
 class TestSourceFacts(unittest.TestCase):
