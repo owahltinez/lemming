@@ -23,6 +23,15 @@ only the fixture workspace and a per-trial `LEMMING_HOME` mounted. The agent
 under eval cannot touch the host, and concurrent trials share no state, so
 trials run in parallel safely.
 
+### Hook and Task Scenarios
+
+A scenario declares a `mode`. The default, `hook`, is the flow above: an
+orchestrator hook reacts to a task that just finished. A `task` scenario instead
+sets a `prompt` and no hook fields; the trial runs that prompt as a one-shot
+through `lemming exec` against the fixture workspace, and the grader judges the
+code the agent actually wrote. Everything else — isolation, runner config, infra
+failure classification — is identical in both modes.
+
 ## Running
 
 Evals invoke real agents: expect minutes of wall clock and real token spend.

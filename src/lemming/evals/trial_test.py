@@ -1,9 +1,11 @@
 import json
+import os
 import pathlib
 import shutil
 import stat
 import tempfile
 import unittest
+import unittest.mock
 
 import click.testing
 
@@ -32,9 +34,9 @@ class TrialTestCase(unittest.TestCase):
                 "--tasks-file",
                 str(fixtures.tasks_file(self.workspace)),
                 "--task-id",
-                scenario.task_id,
+                str(scenario.task_id),
                 "--hook",
-                scenario.hook,
+                str(scenario.hook),
                 "--outcome",
                 str(scenario.outcome),
                 "--runner",
@@ -181,6 +183,133 @@ class TestTrialWithScriptedRunner(TrialTestCase):
         checks = scenario.grade(self.workspace)
         failed = {c.name for c in checks if not c.passed}
         self.assertIn("no-source-changes", failed)
+
+
+# What the fake agent is asked to do, and the word it proves it read.
+_TASK_PROMPT = "Create marker.txt containing the word beacon."
+
+# Where the fake agent records the argv it was launched with, so a grader
+# can tell "the prompt reached the agent" from "the agent did the work".
+_ARGV_FILE = "agent-argv.txt"
+
+
+def _task_scenario() -> scenarios.Scenario:
+    """Builds a task scenario graded purely from the finished workspace."""
+
+    def build(workspace: pathlib.Path) -> None:
+        fixtures.init_repo(workspace, {"calc/ops.py": "def add(a, b):\n"})
+
+    def grade(workspace: pathlib.Path) -> list[scenarios.Check]:
+        argv = workspace / _ARGV_FILE
+        marker = workspace / "marker.txt"
+        return [
+            scenarios.Check(
+                name="prompt-delivered",
+                passed=argv.is_file() and _TASK_PROMPT in argv.read_text(),
+            ),
+            scenarios.Check(
+                name="marker-written",
+                passed=marker.is_file() and "beacon" in marker.read_text(),
+            ),
+        ]
+
+    return scenarios.Scenario(
+        name="task-demo",
+        summary="Writes the file the prompt asks for.",
+        build=build,
+        grade=grade,
+        mode="task",
+        prompt=_TASK_PROMPT,
+    )
+
+
+class TestTaskModeTrial(TrialTestCase):
+    def setUp(self):
+        super().setUp()
+
+        # The one-shot keeps its ephemeral roadmap and log under
+        # LEMMING_HOME; a test must never write into the real one.
+        home = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        patcher = unittest.mock.patch.dict(
+            os.environ, {"LEMMING_HOME": str(home)}
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        self.scenario = _task_scenario()
+        self.scenario.build(self.workspace)
+        self.result_file = self.workspace / ".lemming" / "result.json"
+
+    def run_task_trial(self, runner: str):
+        return click.testing.CliRunner().invoke(
+            trial.main,
+            [
+                "--mode",
+                "task",
+                "--workspace",
+                str(self.workspace),
+                "--prompt",
+                _TASK_PROMPT,
+                "--runner",
+                runner,
+                "--time-limit",
+                "1",
+                "--result-file",
+                str(self.result_file),
+            ],
+            catch_exceptions=False,
+        )
+
+    def read_result(self) -> dict:
+        return json.loads(self.result_file.read_text())
+
+    def test_runs_the_prompt_and_grades_the_workspace(self):
+        # A fake agent that records its prompt, does the work, and reports
+        # completion through the CLI, exactly as a real one would.
+        agent = self.write_runner_script(
+            f'printf "%s\\n" "$*" > {_ARGV_FILE}\n'
+            "echo beacon > marker.txt\n"
+            'lemming --tasks-file "$LEMMING_PARENT_TASKS_FILE" progress '
+            "\"$LEMMING_PARENT_TASK_ID\" 'wrote the marker'\n"
+            'lemming --tasks-file "$LEMMING_PARENT_TASKS_FILE" complete '
+            '"$LEMMING_PARENT_TASK_ID"\n'
+        )
+
+        result = self.run_task_trial(agent)
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        checks = self.scenario.grade(self.workspace)
+        self.assertTrue(scenarios.passed(checks), checks)
+        self.assertEqual(self.read_result()["exit_codes"], {"task": 0})
+
+    def test_distinguishes_an_agent_that_never_started(self):
+        # A one-shot reports only whether the task finished, which cannot
+        # tell a missing binary from an agent that declined to finish.
+        result = self.run_task_trial("/nonexistent/agent")
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertTrue(self.read_result()["launch_failed"])
+
+    def test_an_agent_that_does_nothing_is_not_an_infra_failure(self):
+        result = self.run_task_trial("true")
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertFalse(self.read_result()["launch_failed"])
+        # The agent ran and did nothing; that is the grader's verdict to
+        # give, not an infrastructure error.
+        checks = self.scenario.grade(self.workspace)
+        self.assertFalse(scenarios.passed(checks), checks)
+
+    def test_missing_hook_options_are_reported(self):
+        # The hook options stopped being click-level requirements so task
+        # scenarios need not fake them; a hook trial must still say so.
+        result = click.testing.CliRunner().invoke(
+            trial.main, ["--runner", "true"]
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("--tasks-file", result.output)
 
 
 if __name__ == "__main__":
