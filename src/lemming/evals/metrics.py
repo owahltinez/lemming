@@ -26,6 +26,8 @@ import pathlib
 import subprocess
 import sys
 
+import readability
+
 
 def unresolved_findings(workspace: pathlib.Path, paths: list[str]) -> str:
     """Returns what `readability check` still reports, empty when clean.
@@ -35,44 +37,45 @@ def unresolved_findings(workspace: pathlib.Path, paths: list[str]) -> str:
     clean result from one where the tools never ran; duplicating any of
     that here would grade the agent against a different standard than the
     one its prompt told it to meet, and would drift the moment either side
-    changed. It is also the exact command the hook is told to run.
+    changed. It is also the exact check the hook is told to run.
 
     Args:
         workspace: Root of the workspace repository.
         paths: Repo-relative paths to check.
 
     Returns:
-        The tool's report of what is outstanding, or an empty string when
-        it verified the paths and found nothing. Being unable to verify is
-        not a clean result and returns a reason.
+        Why the paths are not clean, or an empty string when the tools
+        verified them and found nothing. Being unable to verify is not a
+        clean result and returns a reason.
     """
+    # The tools resolve path arguments themselves, so these must be
+    # absolute: project_root only says where the configuration lives.
     targets = [
-        path
+        workspace / path
         for path in paths
         if path.endswith(".py") and (workspace / path).is_file()
     ]
     if not targets:
         return ""
 
-    try:
-        result = subprocess.run(
-            ["readability", "check", *targets],
-            cwd=workspace,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            check=False,
-        )
-    except OSError as exc:
-        return f"could not run readability check: {exc}"
+    # Running in process leaves the tools' findings on this process's own
+    # streams. They stay there rather than being captured into the detail
+    # below: graders run on a thread pool, so redirecting the process-wide
+    # streams would need a lock to be correct.
+    report = readability.check_paths(targets, project_root=workspace)
 
-    # readability announces a verified-clean run explicitly, precisely so a
-    # caller cannot read "no output" as approval. Anything else -- findings,
-    # a tool that could not start, no tool applying at all -- leaves the
-    # paths unverified, which is not the same as clean.
-    if result.returncode == 0 and "No findings in" in result.stderr:
-        return ""
-    return (result.stdout + result.stderr).strip()[-400:]
+    # Clean means the tools verified the paths and found nothing. A skipped
+    # tool is not installed and a failed one could not finish, so both leave
+    # the paths unverified, and a report where nothing ran at all is the
+    # shape a lint gate takes once it has silently become a no-op.
+    unverified = sorted(report.skipped | report.failed)
+    if unverified:
+        return f"readability could not verify the paths: {unverified}"
+    if not report.ran:
+        return "no readability tool checked the paths"
+    if report.findings:
+        return f"readability reported findings via {sorted(report.ran)}"
+    return ""
 
 
 def _parse(source: str) -> ast.Module | None:

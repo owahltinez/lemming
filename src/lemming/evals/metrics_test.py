@@ -4,6 +4,8 @@ import tempfile
 import unittest
 import unittest.mock
 
+import readability
+
 from lemming.evals import fixtures, metrics
 
 _CLEAN = '''"""A clean module."""
@@ -61,14 +63,15 @@ class TestUnresolvedFindings(MetricsTestCase):
 
     def test_reports_the_rules_the_agent_was_told_to_run(self):
         # The grader defers to readability rather than restating its rules,
-        # so a fixture dirty by that tool's standard must come back dirty.
+        # so a fixture dirty by that tool's standard must come back dirty --
+        # as findings, not as a run that failed to verify anything.
         self.seed({"pkg/mod.py": _DIRTY})
 
         outstanding = metrics.unresolved_findings(
             self.workspace, ["pkg/mod.py"]
         )
 
-        self.assertIn("D103", outstanding)
+        self.assertIn("findings", outstanding)
 
     def test_test_files_follow_the_tools_own_per_file_ignores(self):
         # Docstring rules are waived for tests by the configuration
@@ -93,17 +96,29 @@ class TestUnresolvedFindings(MetricsTestCase):
 
     def test_being_unable_to_check_is_not_a_clean_result(self):
         # A tool that never ran verified nothing. Reporting that as clean is
-        # how a lint gate becomes a silent no-op.
+        # how a lint gate becomes a silent no-op. Each of these reports has
+        # no findings, and none of them is a pass.
         self.seed({"pkg/mod.py": _CLEAN})
+        unverified = {
+            "no tool ran at all": readability.CheckReport(),
+            "an applicable tool was missing": readability.CheckReport(
+                ran={"ruff"}, skipped={"pyrefly"}
+            ),
+            "a tool could not finish": readability.CheckReport(
+                ran={"ruff"}, failed={"pyrefly"}
+            ),
+        }
 
-        with unittest.mock.patch.object(
-            metrics.subprocess, "run", side_effect=OSError("not installed")
-        ):
-            outstanding = metrics.unresolved_findings(
-                self.workspace, ["pkg/mod.py"]
-            )
+        for label, report in unverified.items():
+            with self.subTest(label):
+                with unittest.mock.patch.object(
+                    metrics.readability, "check_paths", return_value=report
+                ):
+                    outstanding = metrics.unresolved_findings(
+                        self.workspace, ["pkg/mod.py"]
+                    )
 
-        self.assertIn("could not run", outstanding)
+                self.assertTrue(outstanding, f"{label} was read as clean")
 
 
 class TestSourceFacts(unittest.TestCase):
