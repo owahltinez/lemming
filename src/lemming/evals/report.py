@@ -103,6 +103,56 @@ def wilson_interval(passed: int, total: int) -> tuple[float, float]:
     return (max(0.0, centre - margin), min(1.0, centre + margin))
 
 
+def fisher_exact(
+    left_passed: int,
+    left_failed: int,
+    right_passed: int,
+    right_failed: int,
+) -> float:
+    """Returns the two-sided Fisher exact p-value for two arms.
+
+    Whether two confidence intervals overlap is the wrong question to ask
+    of two proportions: the test is conservative, so overlapping intervals
+    routinely hide a real difference. Fisher is exact at the trial counts
+    an eval run produces, where the normal approximations do not hold.
+
+    Args:
+        left_passed: Trials the first arm passed.
+        left_failed: Trials the first arm failed.
+        right_passed: Trials the second arm passed.
+        right_failed: Trials the second arm failed.
+
+    Returns:
+        Probability of a split at least this extreme when the arms are
+        equivalent. An empty table has nothing to test and returns 1.
+    """
+    left_total = left_passed + left_failed
+    right_total = right_passed + right_failed
+    passed = left_passed + right_passed
+    total = left_total + right_total
+    if not total or not left_total or not right_total:
+        return 1.0
+
+    def probability(top_left: int) -> float:
+        return (
+            math.comb(left_total, top_left)
+            * math.comb(right_total, passed - top_left)
+            / math.comb(total, passed)
+        )
+
+    observed = probability(left_passed)
+    low = max(0, passed - right_total)
+    high = min(left_total, passed)
+    return min(
+        1.0,
+        sum(
+            candidate
+            for value in range(low, high + 1)
+            if (candidate := probability(value)) <= observed + 1e-12
+        ),
+    )
+
+
 def summarize(report: Report) -> Summary:
     """Aggregates one arm's trials into the figures a comparison needs.
 

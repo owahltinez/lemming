@@ -315,12 +315,25 @@ def compare(left: pathlib.Path, right: pathlib.Path) -> None:
             f"   median trial: {arm.median_duration:.0f}s"
         )
 
-    # Overlapping intervals mean the run is consistent with no difference
-    # at all. Saying so is the difference between a result and a number.
-    bounds = [report.wilson_interval(arm.passed, arm.total) for arm in arms]
-    if bounds[0][0] <= bounds[1][1] and bounds[1][0] <= bounds[0][1]:
+    # Comparing the two intervals by eye is the wrong test: it is
+    # conservative and hides real differences, so ask the question directly.
+    p_value = report.fisher_exact(
+        arms[0].passed,
+        arms[0].total - arms[0].passed,
+        arms[1].passed,
+        arms[1].total - arms[1].passed,
+    )
+    click.echo()
+    if p_value < 0.05:
         click.secho(
-            "\nIntervals overlap: this run does not separate the arms.",
+            f"Arms differ: Fisher exact p={p_value:.3f}. The per-scenario "
+            "counts are still directional at this many trials.",
+            fg="green",
+        )
+    else:
+        click.secho(
+            f"No separation: Fisher exact p={p_value:.3f}. Consistent with "
+            "the arms performing the same.",
             fg="yellow",
         )
     if degenerate:

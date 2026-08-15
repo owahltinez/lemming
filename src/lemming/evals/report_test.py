@@ -95,6 +95,27 @@ class TestWilsonInterval(unittest.TestCase):
         self.assertEqual(report.wilson_interval(0, 0), (0.0, 0.0))
 
 
+class TestFisherExact(unittest.TestCase):
+    def test_a_clear_difference_is_significant(self):
+        self.assertLess(report.fisher_exact(12, 0, 7, 5), 0.05)
+
+    def test_identical_arms_are_not(self):
+        self.assertGreater(report.fisher_exact(5, 5, 5, 5), 0.9)
+
+    def test_detects_a_difference_that_overlapping_intervals_hide(self):
+        # Comparing two proportions by whether their confidence intervals
+        # overlap is conservative: it misses real differences. This is the
+        # pilot's actual result, where the intervals overlapped.
+        left = report.wilson_interval(27, 30)
+        right = report.wilson_interval(19, 30)
+        self.assertLessEqual(right[0], left[1])
+
+        self.assertLess(report.fisher_exact(27, 3, 19, 11), 0.05)
+
+    def test_an_empty_arm_is_not_a_division_error(self):
+        self.assertEqual(report.fisher_exact(0, 0, 0, 0), 1.0)
+
+
 class TestSummarize(ReportTestCase):
     def test_counts_per_scenario_and_pooled(self):
         loaded = report.load(

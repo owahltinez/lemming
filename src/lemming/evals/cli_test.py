@@ -244,7 +244,7 @@ class TestCompareCommand(unittest.TestCase):
 
         self.assertIn("degenerate", outcome.output)
 
-    def test_says_when_the_intervals_overlap(self):
+    def test_says_when_the_run_cannot_separate_the_arms(self):
         # Small runs rarely separate two arms, and the report has to say so
         # rather than let a raw percentage gap look like a finding.
         outcome = self.invoke(
@@ -252,7 +252,17 @@ class TestCompareCommand(unittest.TestCase):
             [self.trial("one", False), self.trial("one", False)],
         )
 
-        self.assertIn("overlap", outcome.output)
+        self.assertIn("No separation", outcome.output)
+
+    def test_reports_a_real_difference_rather_than_hiding_it(self):
+        # Intervals overlap here, but the arms genuinely differ; reporting
+        # "no separation" would be the wrong call.
+        outcome = self.invoke(
+            [self.trial("one", True)] * 12,
+            [self.trial("one", True)] * 7 + [self.trial("one", False)] * 5,
+        )
+
+        self.assertIn("Arms differ", outcome.output)
 
     def test_counts_infra_failures_separately(self):
         outcome = self.invoke(
