@@ -1,3 +1,4 @@
+import json
 import pathlib
 import unittest
 import unittest.mock
@@ -161,6 +162,105 @@ class TestRunCommand(unittest.TestCase):
 
         self.assertIn('"scenario": "fast-exit-healthy"', report)
         self.assertIn('"passed": true', report)
+
+    def test_json_report_records_how_the_run_was_configured(self):
+        # Two reports from a comparison are indistinguishable without it,
+        # and a run is worth hours of wall clock to reproduce.
+        runner = click.testing.CliRunner()
+        results = [_result("fast-exit-healthy", 0, True)]
+        with runner.isolated_filesystem():
+            with (
+                unittest.mock.patch.object(
+                    cli.harness, "run_suite", return_value=results
+                ),
+                unittest.mock.patch.object(cli.container, "build_image"),
+            ):
+                outcome = runner.invoke(
+                    cli.cli,
+                    [
+                        "run",
+                        "--skip-build",
+                        "--runner",
+                        "opencode --variant high",
+                        "--trials",
+                        "2",
+                        "--json-report",
+                        "report.json",
+                    ],
+                )
+            self.assertEqual(outcome.exit_code, 0, outcome.output)
+            payload = json.loads(pathlib.Path("report.json").read_text())
+
+        self.assertEqual(payload["config"]["runner"], "opencode --variant high")
+        self.assertEqual(payload["config"]["trials"], 2)
+        self.assertEqual(payload["config"]["suite"], "roadmap")
+        self.assertIn("started_at", payload["config"])
+        self.assertEqual(len(payload["results"]), 1)
+
+
+class TestCompareCommand(unittest.TestCase):
+    def write(self, directory, name, trials, runner):
+        path = pathlib.Path(directory) / name
+        path.write_text(
+            json.dumps({"config": {"runner": runner}, "results": trials})
+        )
+        return str(path)
+
+    def trial(self, scenario, passed, **extra):
+        row = {
+            "scenario": scenario,
+            "trial": 0,
+            "passed": passed,
+            "checks": [],
+            "duration": 60.0,
+            "workspace": "/runs/x",
+            "infra_failure": False,
+        }
+        row.update(extra)
+        return row
+
+    def invoke(self, left_trials, right_trials):
+        runner = click.testing.CliRunner()
+        with runner.isolated_filesystem() as directory:
+            left = self.write(directory, "a.json", left_trials, "agy")
+            right = self.write(directory, "b.json", right_trials, "opencode")
+            return runner.invoke(cli.cli, ["compare", left, right])
+
+    def test_shows_both_arms_per_scenario(self):
+        outcome = self.invoke(
+            [self.trial("one", True), self.trial("two", False)],
+            [self.trial("one", False), self.trial("two", False)],
+        )
+
+        self.assertEqual(outcome.exit_code, 0, outcome.output)
+        self.assertIn("agy", outcome.output)
+        self.assertIn("opencode", outcome.output)
+        self.assertIn("one", outcome.output)
+
+    def test_marks_scenarios_that_cannot_separate_the_arms(self):
+        outcome = self.invoke(
+            [self.trial("same", True)], [self.trial("same", True)]
+        )
+
+        self.assertIn("degenerate", outcome.output)
+
+    def test_says_when_the_intervals_overlap(self):
+        # Small runs rarely separate two arms, and the report has to say so
+        # rather than let a raw percentage gap look like a finding.
+        outcome = self.invoke(
+            [self.trial("one", True), self.trial("one", False)],
+            [self.trial("one", False), self.trial("one", False)],
+        )
+
+        self.assertIn("overlap", outcome.output)
+
+    def test_counts_infra_failures_separately(self):
+        outcome = self.invoke(
+            [self.trial("one", False, infra_failure=True)],
+            [self.trial("one", True)],
+        )
+
+        self.assertIn("infra", outcome.output)
 
 
 if __name__ == "__main__":

@@ -1,14 +1,16 @@
 """Command-line interface for the containerized prompt eval harness."""
 
 import dataclasses
+import datetime
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 
 import click
 
-from . import container, harness, scenarios, suites
+from . import container, harness, report, scenarios, suites
 
 # Repo root when running from a source checkout (src/lemming/evals/cli.py).
 _DEFAULT_CONTEXT = pathlib.Path(__file__).resolve().parents[3]
@@ -105,20 +107,58 @@ def _report(results: list[harness.TrialResult], min_pass_rate: float) -> bool:
     return success
 
 
+def _git_revision() -> str:
+    """Returns the current commit, or empty when git cannot answer."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip()
+
+
 def _write_json_report(
-    results: list[harness.TrialResult], path: pathlib.Path
+    results: list[harness.TrialResult],
+    path: pathlib.Path,
+    config: harness.HarnessConfig,
+    suite_name: str,
 ) -> None:
-    """Writes the full trial results to a JSON file."""
+    """Writes the trial results and how the run was configured.
+
+    Two reports from a comparison are indistinguishable without the
+    configuration, and a run costs hours of wall clock to reproduce.
+
+    Args:
+        results: Graded trials to record.
+        path: File to write.
+        config: The harness configuration the run used.
+        suite_name: Name of the suite that was run.
+    """
     # infra_failure is a derived property, so asdict does not carry it; the
     # report is the only place downstream consumers see these results.
-    payload = [
-        {
-            **dataclasses.asdict(result),
-            "workspace": str(result.workspace),
-            "infra_failure": result.infra_failure,
-        }
-        for result in results
-    ]
+    payload = {
+        "config": {
+            **dataclasses.asdict(config),
+            "suite": suite_name,
+            "started_at": datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat(),
+            "revision": _git_revision(),
+        },
+        "results": [
+            {
+                **dataclasses.asdict(result),
+                "workspace": str(result.workspace),
+                "infra_failure": result.infra_failure,
+            }
+            for result in results
+        ],
+    }
     path.write_text(json.dumps(payload, indent=2))
 
 
@@ -226,6 +266,66 @@ def run(
     results = harness.run_suite(suite, run_dir, config)
 
     if json_report:
-        _write_json_report(results, json_report)
+        _write_json_report(results, json_report, config, suite_name)
     if not _report(results, min_pass_rate):
         sys.exit(1)
+
+
+def _format_rate(passed: int, total: int) -> str:
+    """Renders a pass count with its rate and 95% interval."""
+    if not total:
+        return "-"
+    low, high = report.wilson_interval(passed, total)
+    return f"{passed}/{total} ({passed / total:.0%}) CI {low:.0%}-{high:.0%}"
+
+
+@cli.command()
+@click.argument("left", type=click.Path(path_type=pathlib.Path, exists=True))
+@click.argument("right", type=click.Path(path_type=pathlib.Path, exists=True))
+def compare(left: pathlib.Path, right: pathlib.Path) -> None:
+    """Compares two eval reports scenario by scenario.
+
+    Agents are stochastic and eval runs are small, so the interval matters
+    more than the gap between two percentages: a comparison that cannot
+    separate the arms has to say so rather than let the raw numbers read
+    like a result.
+    """
+    arms = [report.summarize(report.load(path)) for path in (left, right)]
+    for arm in arms:
+        click.secho(arm.label, bold=True)
+
+    degenerate = set(report.degenerate_scenarios(*arms))
+    names = sorted(set(arms[0].by_scenario) | set(arms[1].by_scenario))
+    width = max((len(name) for name in names), default=0)
+
+    click.echo()
+    for name in names:
+        cells = []
+        for arm in arms:
+            passed, total = arm.by_scenario.get(name, (0, 0))
+            cells.append(f"{passed}/{total}" if total else "-")
+        note = "  degenerate" if name in degenerate else ""
+        click.echo(f"{name:<{width}}  {cells[0]:>7}  {cells[1]:>7}{note}")
+
+    click.echo()
+    for arm in arms:
+        click.echo(f"{arm.label}: {_format_rate(arm.passed, arm.total)}")
+        click.echo(
+            f"  infra failures: {arm.infra_failures}"
+            f"   median trial: {arm.median_duration:.0f}s"
+        )
+
+    # Overlapping intervals mean the run is consistent with no difference
+    # at all. Saying so is the difference between a result and a number.
+    bounds = [report.wilson_interval(arm.passed, arm.total) for arm in arms]
+    if bounds[0][0] <= bounds[1][1] and bounds[1][0] <= bounds[0][1]:
+        click.secho(
+            "\nIntervals overlap: this run does not separate the arms.",
+            fg="yellow",
+        )
+    if degenerate:
+        click.secho(
+            f"{len(degenerate)} scenario(s) scored identically at an "
+            "extreme in both arms and cannot discriminate.",
+            fg="yellow",
+        )
