@@ -255,12 +255,24 @@ def _check_no_new_abstractions(workspace: pathlib.Path) -> scenarios.Check:
 
 
 def _check_no_lint_findings(workspace: pathlib.Path) -> scenarios.Check:
-    """Checks the agent left the files it touched clean by lemming's rules."""
+    """Checks the agent left the files it touched clean by lemming's rules.
+
+    Advisory, unlike everywhere else this check appears. The task runner
+    prompt never tells the agent to run `readability check`, and the
+    standard is not discoverable from the fixture: a solution identical to
+    the reference except for writing 'empty' instead of "empty" fails on
+    ruff formatting alone. This scenario measures restraint, so a style
+    red here is noise in the signal it exists to produce -- worth seeing,
+    not worth failing a trial over.
+    """
     outstanding = metrics.unresolved_findings(
         workspace, list(fixtures.changed_since_baseline(workspace))
     )
     return scenarios.Check(
-        name="no-lint-findings", passed=not outstanding, detail=outstanding
+        name="no-lint-findings",
+        passed=not outstanding,
+        detail=outstanding,
+        advisory=True,
     )
 
 
