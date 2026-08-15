@@ -12,14 +12,20 @@ from .. import models, tasks
 
 TASKS_FILE_NAME = "tasks.yml"
 
-# Files owned by the eval machinery rather than the agent under eval. They
-# are gitignored in fixtures so dirty_paths only reports agent-made changes.
+# Files owned by the eval machinery or by the tools an agent runs, rather
+# than by the agent under eval. They are gitignored in fixtures so the path
+# helpers below only report agent-made changes. The tool caches matter
+# because a scenario that grades restraint would otherwise read "the agent
+# ran pytest" as "the agent left a stray directory behind".
 WORKSPACE_IGNORES = (
     TASKS_FILE_NAME,
     ".lemming/",
     "*.log",
     "*.lock",
     "__pycache__/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    ".mypy_cache/",
 )
 
 
@@ -108,6 +114,56 @@ def dirty_paths(workspace: pathlib.Path) -> list[str]:
     """
     output = _git(workspace, "status", "--porcelain")
     return [line[3:].strip() for line in output.splitlines() if line.strip()]
+
+
+def _baseline_commit(workspace: pathlib.Path) -> str:
+    """Returns the fixture's baseline commit, i.e. the repository root."""
+    output = _git(workspace, "rev-list", "--max-parents=0", "HEAD")
+    return output.split()[0]
+
+
+def changed_since_baseline(workspace: pathlib.Path) -> list[str]:
+    """Returns every path that differs from the fixture as it was built.
+
+    dirty_paths only sees the working tree, so an agent that commits its
+    work leaves it empty and looks like an agent that did nothing. Task
+    scenarios grade the code an agent wrote, which makes that difference
+    the whole result, so the comparison is anchored to the baseline commit
+    instead of to HEAD.
+
+    Args:
+        workspace: The workspace repository to inspect.
+
+    Returns:
+        Sorted repo-relative paths, covering committed edits, working-tree
+        edits, and untracked files. Gitignored eval-owned files are
+        excluded, exactly as in dirty_paths.
+    """
+    baseline = _baseline_commit(workspace)
+    tracked = _git(workspace, "diff", "--name-only", baseline)
+    untracked = _git(workspace, "ls-files", "--others", "--exclude-standard")
+    lines = tracked.splitlines() + untracked.splitlines()
+    return sorted({line.strip() for line in lines if line.strip()})
+
+
+def added_lines_since_baseline(workspace: pathlib.Path) -> int:
+    """Returns how many lines were added on top of the baseline commit.
+
+    Size alone says nothing -- doing nothing scores a perfect zero -- so
+    this is only meaningful next to a check that the work was actually
+    done. Untracked files are not counted; a scenario reading this is
+    expected to bound new files separately.
+
+    Args:
+        workspace: The workspace repository to inspect.
+
+    Returns:
+        Total added lines across tracked files, committed or not.
+    """
+    output = _git(workspace, "diff", "--numstat", _baseline_commit(workspace))
+    counts = (line.split()[:1] for line in output.splitlines() if line.strip())
+    # Binary files report "-" instead of a count and contribute nothing.
+    return sum(int(count[0]) for count in counts if count[0].isdigit())
 
 
 def changed_paths(workspace: pathlib.Path) -> list[str]:

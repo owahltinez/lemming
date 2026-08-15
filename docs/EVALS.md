@@ -41,9 +41,10 @@ They are a manual gate for prompt changes, not part of the unit test suite.
 # List available suites and scenarios
 uv run python -m lemming.evals list
 
-# Run a suite (roadmap or readability): scenarios x 3 trials in parallel
+# Run a suite (roadmap, readability, or task): scenarios x 3 trials
 uv run python -m lemming.evals run --suite roadmap
 uv run python -m lemming.evals run --suite readability
+uv run python -m lemming.evals run --suite task
 
 # Iterate on a single scenario with fewer trials
 uv run python -m lemming.evals run \
@@ -139,6 +140,15 @@ running a constant policy in either direction should score 50% across the pair.
 `false-reuse-restraint` exists for exactly this reason: it is the inverse of
 `consolidate-or-report-live-duplication`, with two functions that share a shape
 but not a concept, and folding them together is the failure.
+
+The `task` suite carries the same idea into the code an agent writes rather than
+reviews. `minimal-change-restraint` hands it one well-specified function to add
+to a healthy project, then requires both halves: hidden tests prove the function
+works, and the remaining checks fail an agent that also wrote a summary
+document, added a speculative module, factored out an unrequested helper, tidied
+the function next door, or padded the suite. The size bound is generous by
+design — roughly three times a documented reference solution — because a check
+that reds a reasonable answer is worse than no check at all.
 
 `lemming.evals.metrics` holds graders computed from tool output rather than
 hand-written fixture knowledge: ruff findings under lemming's own rule set,

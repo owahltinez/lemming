@@ -40,7 +40,14 @@ class TestInitRepo(unittest.TestCase):
         (self.workspace / ".lemming" / "state").write_text("x")
         (self.workspace / "runner.log").write_text("log")
 
+        # Tool byproducts belong to whatever the agent ran, not to the
+        # agent's judgement: a scenario that bans stray files must not go
+        # red because pytest left a cache directory behind.
+        (self.workspace / ".pytest_cache").mkdir()
+        (self.workspace / ".pytest_cache" / "v").write_text("x")
+
         self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+        self.assertEqual(fixtures.changed_since_baseline(self.workspace), [])
 
     def test_changes_land_in_a_second_commit(self):
         # Hook scenarios review "the work the finished task left behind", so
@@ -64,6 +71,41 @@ class TestInitRepo(unittest.TestCase):
 
         self.assertEqual(fixtures.changed_paths(self.workspace), [])
         self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+
+    def test_baseline_diff_survives_the_agent_committing(self):
+        # An agent that commits its work leaves a clean git status, so a
+        # grader reading only dirty_paths would score it as having done
+        # nothing at all. Everything since the baseline has to count.
+        fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
+        (self.workspace / "pkg/mod.py").write_text("X = 1\nY = 2\n")
+        (self.workspace / "REPORT.md").write_text("# Report\n")
+        fixtures._git(self.workspace, "add", "--all")
+        fixtures._git(self.workspace, "commit", "--quiet", "-m", "Agent work")
+
+        self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+        self.assertEqual(
+            fixtures.changed_since_baseline(self.workspace),
+            ["REPORT.md", "pkg/mod.py"],
+        )
+        self.assertEqual(fixtures.added_lines_since_baseline(self.workspace), 2)
+
+    def test_baseline_diff_sees_uncommitted_and_untracked_work(self):
+        fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
+        (self.workspace / "pkg/mod.py").write_text("X = 1\nY = 2\nZ = 3\n")
+        (self.workspace / "PLAN.md").write_text("# Plan\n")
+
+        self.assertEqual(
+            fixtures.changed_since_baseline(self.workspace),
+            ["PLAN.md", "pkg/mod.py"],
+        )
+        self.assertEqual(fixtures.added_lines_since_baseline(self.workspace), 2)
+
+    def test_baseline_diff_is_empty_for_an_untouched_workspace(self):
+        fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
+        fixtures.save_roadmap(self.workspace, models.Roadmap(goal="g"))
+
+        self.assertEqual(fixtures.changed_since_baseline(self.workspace), [])
+        self.assertEqual(fixtures.added_lines_since_baseline(self.workspace), 0)
 
     def test_roadmap_round_trip(self):
         fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
