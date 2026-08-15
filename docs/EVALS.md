@@ -75,12 +75,17 @@ vendored CLI under `antigravity-cli/` and any `node_modules` — the container
 installs its own agents, and those directories are hundreds of megabytes that
 would otherwise be copied once per trial. Auth state is always kept.
 
-Copying each runner's own config is also what makes a comparison between two
-runners meaningful. Global instructions, skills, and extensions live in these
-directories, so an arm that ran from a bare container would be a differently
-equipped agent rather than the same agent in a different harness. When comparing
-runners, check that both sides carry equivalent global context — a `GEMINI.md`
-with no opencode counterpart is a confound, not a result.
+What each copy carries is also what makes a comparison between two runners
+meaningful, and the rule is parity: every arm gets its global instructions and
+its credentials, and anything one runner has no counterpart for is left behind.
+agy's `skills/` and `extensions/` are excluded for exactly that reason. An arm
+running with extra tooling is a differently equipped agent, and a result that
+turns on the difference measures the equipment rather than the runner.
+
+Global instructions are the one piece of context both arms are expected to
+share, so point them at the same file — for example symlinking `~/AGENTS.md`
+to both `~/.gemini/GEMINI.md` and `~/.config/opencode/AGENTS.md`. A trial copy
+dereferences the symlink, so the container sees the real contents.
 
 For API-key runners, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
 `GEMINI_API_KEY`, and `GOOGLE_API_KEY` are forwarded into the container when set

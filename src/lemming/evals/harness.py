@@ -43,31 +43,41 @@ class _RunnerHome:
         host: Path of the config directory relative to the host home.
         mount: Absolute path the copy is mounted at inside the container.
         copy_name: Name of the per-trial copy under the trial directory.
-        bulk: Paths, relative to the config directory, holding caches or
-            vendored binaries too large to copy once per trial. Matched by
-            exact path rather than by name so a small directory that
-            happens to share a name is kept.
+        exclude_paths: Paths, relative to the config directory, that a
+            trial must not inherit. Matched by exact path rather than by
+            name so a small directory that happens to share a name is
+            kept. Two reasons qualify: bulk that would be copied once per
+            trial, and capabilities one runner has no counterpart for.
     """
 
     host: str
     mount: str
     copy_name: str
-    bulk: tuple[str, ...] = ()
+    exclude_paths: tuple[str, ...] = ()
 
 
-# Comparing two runners is only meaningful when both bring the same kind of
-# context. agy reads global instructions, skills, and extensions from
-# ~/.gemini; giving opencode a bare container would compare differently
-# equipped agents rather than different harnesses.
+# Comparing two runners is only meaningful when both bring the same context.
+# Each runner therefore gets its own global instructions and auth, and
+# anything one runner has no counterpart for is left behind: otherwise the
+# result measures how the agents were equipped rather than how they behave.
 _RUNNER_HOMES = {
     "agy": _RunnerHome(
         ".gemini",
         "/root/.gemini",
         "agy-home",
-        # A model cache and a vendored copy of the CLI, together hundreds
-        # of megabytes. The container installs its own agy, so neither is
-        # needed and copying them per trial dominates the run's disk I/O.
-        bulk=("antigravity-cli/brain", "antigravity-cli/bin"),
+        exclude_paths=(
+            # A model cache and a vendored copy of the CLI, together
+            # hundreds of megabytes. The container installs its own agy,
+            # so neither is needed and copying them per trial would
+            # dominate the run's disk I/O.
+            "antigravity-cli/brain",
+            "antigravity-cli/bin",
+            # Capabilities with no opencode counterpart. Leaving them in
+            # would measure an agent that has extra tooling against one
+            # that does not, which is not a comparison of runners.
+            "skills",
+            "extensions",
+        ),
     ),
     "opencode": _RunnerHome(
         ".config/opencode", "/root/.config/opencode", "opencode-home"
@@ -96,7 +106,7 @@ class HarnessConfig:
     runner: str = "agy"
     trials: int = 3
     jobs: int = 4
-    time_limit: int = 15
+    time_limit: int = 10
     image: str = container.DEFAULT_IMAGE
     docker: str = "docker"
     volumes: tuple[str, ...] = ()
@@ -198,7 +208,7 @@ def _ignore_excluded(
         ignored = set(by_name(directory, names))
         relative = pathlib.Path(directory).relative_to(source)
         for name in names:
-            if str(relative / name) in runner_home.bulk:
+            if str(relative / name) in runner_home.exclude_paths:
                 ignored.add(name)
         return ignored
 

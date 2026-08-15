@@ -190,8 +190,12 @@ class TestRunnerHomes(HarnessTestCase):
         (gemini / "antigravity-cli" / "antigravity-oauth-token").write_text(
             "tok"
         )
-        (gemini / "extensions" / "ext" / "bin").mkdir(parents=True)
-        (gemini / "extensions" / "ext" / "bin" / "helper").write_text("keep")
+        (gemini / "extensions" / "ext").mkdir(parents=True)
+        (gemini / "extensions" / "ext" / "manifest.json").write_text("{}")
+        (gemini / "skills" / "skill").mkdir(parents=True)
+        (gemini / "skills" / "skill" / "SKILL.md").write_text("skill")
+        (gemini / "config" / "bin").mkdir(parents=True)
+        (gemini / "config" / "bin" / "helper").write_text("keep")
         opencode = home / ".config" / "opencode"
         (opencode / "node_modules" / "pkg").mkdir(parents=True)
         (opencode / "node_modules" / "pkg" / "index.js").write_text("x")
@@ -230,12 +234,29 @@ class TestRunnerHomes(HarnessTestCase):
         copy = trial_dir / "agy-home"
         self.assertFalse((copy / "antigravity-cli" / "brain").exists())
         self.assertFalse((copy / "antigravity-cli" / "bin").exists())
-        # Only those exact paths: a bin/ belonging to an extension is not
-        # bulk and dropping it would silently disable the extension.
-        self.assertTrue((copy / "extensions" / "ext" / "bin").is_dir())
+        # Only those exact paths: an unrelated bin/ elsewhere in the tree
+        # is not bulk, and dropping it by name would be too broad.
+        self.assertTrue((copy / "config" / "bin").is_dir())
         self.assertEqual(
             (copy / "antigravity-cli" / "antigravity-oauth-token").read_text(),
             "tok",
+        )
+
+    def test_agy_capabilities_opencode_lacks_are_left_behind(self):
+        # Skills and extensions have no opencode counterpart. Copying them
+        # would compare an agent with extra tooling against one without,
+        # which measures equipment rather than the runners themselves.
+        trial_dir = self.run_dir / "trial-0"
+        trial_dir.mkdir()
+
+        harness._prepare_runner_home("agy", trial_dir, home=self.fake_home())
+
+        copy = trial_dir / "agy-home"
+        self.assertFalse((copy / "skills").exists())
+        self.assertFalse((copy / "extensions").exists())
+        # The shared global instructions are the context both arms keep.
+        self.assertEqual(
+            (copy / "GEMINI.md").read_text(), "global instructions"
         )
 
     def test_installed_packages_are_not_copied_per_trial(self):

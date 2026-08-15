@@ -135,7 +135,7 @@ def _write_json_report(
 @click.option("--runner", default="agy", show_default=True)
 @click.option(
     "--time-limit",
-    default=15,
+    default=10,
     show_default=True,
     help="Per-trial hook time limit in minutes.",
 )
