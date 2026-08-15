@@ -19,6 +19,27 @@ class TestInitRepo(unittest.TestCase):
         self.assertTrue((self.workspace / ".git").is_dir())
         self.assertEqual(fixtures.dirty_paths(self.workspace), [])
 
+    def test_seeds_lint_config_so_readability_tools_run(self):
+        # readability gates ruff and pyrefly on a config file in the project
+        # root, so a fixture without one silently reports a clean bill of
+        # health no matter what the agent left behind.
+        fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
+
+        pyproject = (self.workspace / "pyproject.toml").read_text()
+        self.assertIn("[tool.ruff]", pyproject)
+        self.assertIn("[tool.pyrefly]", pyproject)
+        self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+
+    def test_caller_lint_config_wins(self):
+        fixtures.init_repo(
+            self.workspace,
+            {"pkg/mod.py": "X = 1\n", "pyproject.toml": "[tool.ruff]\n"},
+        )
+
+        self.assertEqual(
+            (self.workspace / "pyproject.toml").read_text(), "[tool.ruff]\n"
+        )
+
     def test_dirty_paths_reports_source_changes(self):
         fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
 
@@ -40,6 +61,29 @@ class TestInitRepo(unittest.TestCase):
         (self.workspace / ".lemming" / "state").write_text("x")
         (self.workspace / "runner.log").write_text("log")
 
+        self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+
+    def test_changes_land_in_a_second_commit(self):
+        # Hook scenarios review "the work the finished task left behind", so
+        # that work has to exist as a real diff the agent can discover with
+        # git rather than a prose description it has to take on faith.
+        fixtures.init_repo(
+            self.workspace,
+            {"pkg/mod.py": "X = 1\n", "pkg/other.py": "Y = 1\n"},
+            changes={"pkg/mod.py": "X = 2\n", "pkg/new.py": "Z = 1\n"},
+        )
+
+        self.assertEqual((self.workspace / "pkg/mod.py").read_text(), "X = 2\n")
+        self.assertEqual(
+            sorted(fixtures.changed_paths(self.workspace)),
+            ["pkg/mod.py", "pkg/new.py"],
+        )
+        self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+
+    def test_without_changes_there_is_no_task_commit(self):
+        fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
+
+        self.assertEqual(fixtures.changed_paths(self.workspace), [])
         self.assertEqual(fixtures.dirty_paths(self.workspace), [])
 
     def test_roadmap_round_trip(self):
