@@ -21,7 +21,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 WORKDIR /opt/lemming
 COPY . .
-RUN uv sync --no-dev --frozen
+# The evals group carries the linters readability shells out to. Without them
+# `readability check` finds no tools and reports every workspace as clean, so
+# eval trials would grade an agent on a command that cannot do anything.
+RUN uv sync --no-dev --group evals --frozen
 
 # Frontend dependencies are always needed: postinstall vendors mancha into
 # the web assets. The browsers are not, and they are more than half the

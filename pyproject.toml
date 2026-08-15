@@ -31,6 +31,14 @@ dev = [
     "httpx>=0.28.1",
     "pytest",
 ]
+# Linters that `readability check` shells out to. They are not runtime
+# dependencies, but the eval image installs them so the agent under eval can
+# actually run the command its prompt tells it to run; without them
+# readability skips every tool and always reports a clean bill of health.
+evals = [
+    "ruff>=0.9.9",
+    "pyrefly>=0.24.0",
+]
 
 [[tool.uv.index]]
 name = "pypi"
