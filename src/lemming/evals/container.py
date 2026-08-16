@@ -74,8 +74,7 @@ def prune_build_cache(docker: str = "docker") -> None:
             capture_output=True,
         )
     except OSError:
-        # This runs after the results are in; failing to tidy up must never
-        # be the reason a completed eval run reports an error.
+        # Tidying up must never fail a run whose results are already in.
         pass
 
 
@@ -120,8 +119,7 @@ def trial_command(
         "uv",
     ]
 
-    # Bare --env NAME makes docker read the value from its own environment,
-    # keeping secrets out of the argv.
+    # Bare --env NAME keeps the secret's value out of the argv.
     for name in forward_env:
         if os.environ.get(name):
             command.extend(["--env", name])

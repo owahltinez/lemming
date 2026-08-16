@@ -33,8 +33,7 @@ class TestInitRepo(unittest.TestCase):
     def test_dirty_paths_ignores_eval_owned_files(self):
         fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
 
-        # The tasks file and lemming state are owned by the harness, not the
-        # agent under eval, so they must not count as source drift.
+        # Harness-owned state must not count as source drift.
         fixtures.save_roadmap(self.workspace, models.Roadmap(goal="g"))
         (self.workspace / ".lemming").mkdir()
         (self.workspace / ".lemming" / "state").write_text("x")

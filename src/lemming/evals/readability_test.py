@@ -88,8 +88,7 @@ class TestDeadCodeScenario(ScenarioTestCase):
         self.assertEqual(self.failed_names(checks), set())
 
     def test_status_noise_progress_does_not_count(self):
-        # A real eval run showed agents logging "checks passed, no
-        # violations" while the dead code survived; that must not pass.
+        # Logging "checks passed" over surviving dead code must not pass.
         self.build("fix-or-report-dead-code")
         tasks.add_progress(
             self.tasks_file,
@@ -238,8 +237,7 @@ class TestNoOrchestrationScenario(ScenarioTestCase):
 
 class TestFixtureIntegrity(ScenarioTestCase):
     def test_fixture_tests_pass_out_of_the_box(self):
-        # Every scenario relies on the seeded test suite being green; a
-        # broken fixture would make tests-pass fail for the wrong reason.
+        # A red fixture would fail tests-pass for the wrong reason.
         for scenario in readability.SCENARIOS:
             with self.subTest(scenario=scenario.name):
                 workspace = pathlib.Path(tempfile.mkdtemp())

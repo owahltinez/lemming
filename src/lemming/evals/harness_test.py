@@ -45,8 +45,7 @@ class TestRunSuite(HarnessTestCase):
         for result in results:
             self.assertTrue(result.workspace.is_dir())
 
-        # A fast-exiting agent passes the healthy scenario but fails the
-        # one that requires extending the roadmap.
+        # A fast-exiting agent passes the healthy scenario, fails the other.
         by_scenario = harness.summarize(results)
         self.assertEqual(by_scenario["fast-exit-healthy"], (2, 2))
         self.assertEqual(by_scenario["extend-goal-unmet"], (0, 2))
@@ -55,8 +54,7 @@ class TestRunSuite(HarnessTestCase):
         active = threading.Semaphore(0)
 
         def blocking_runner(scenario, workspace, lemming_home, config):
-            # Each trial waits for its peer: only concurrent execution can
-            # release both semaphores without deadlocking the test.
+            # Each trial waits for its peer, so only concurrency finishes.
             active.release()
             self.assertTrue(active.acquire(timeout=30))
             active.release()
@@ -85,8 +83,7 @@ class TestRunSuite(HarnessTestCase):
         for result in results:
             self.assertFalse(result.passed)
             self.assertIn("docker daemon unreachable", result.error)
-            # The workspace is still graded to document the state left
-            # behind by the failed trial.
+            # The workspace is still graded after a failed trial.
             self.assertTrue(result.checks)
 
 

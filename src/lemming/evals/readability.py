@@ -288,10 +288,7 @@ def _grade_dead_code(workspace: pathlib.Path) -> list[scenarios.Check]:
     if roadmap is None:
         return load_failures
 
-    # Either the drift was fixed in place or a finding naming the dead
-    # symbol was recorded; silently ignoring it is the failure the prompt
-    # change targets. Status noise like "checks passed" does not count —
-    # a genuine finding about a function necessarily names it.
+    # Pass if the dead symbol was removed or a finding named it.
     fixed = "_add_legacy" not in (workspace / "calc" / "ops.py").read_text()
     task = next(t for t in roadmap.tasks if t.id == "task1")
     new_entries = task.progress[len(_BASE_PROGRESS) :]

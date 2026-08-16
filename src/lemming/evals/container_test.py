@@ -66,8 +66,7 @@ class TestRunTrial(unittest.TestCase):
         self.addCleanup(shutil.rmtree, run_dir, ignore_errors=True)
         log_file = run_dir / "container.log"
 
-        # Substituting `echo` for docker exercises the subprocess plumbing
-        # (argv, log redirection, check=True) without a docker daemon.
+        # `echo` stands in for docker, so no daemon is needed.
         container.run_trial(
             pathlib.Path("/ws"),
             pathlib.Path("/home"),

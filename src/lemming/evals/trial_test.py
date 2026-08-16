@@ -86,8 +86,7 @@ class TestTrialWithNoOpRunner(TrialTestCase):
         self.assertEqual(task1.status, models.TaskStatus.FAILED)
 
     def test_dead_runner_fails_the_trial(self):
-        # An agent that cannot start (auth failure, missing binary) leaves
-        # the workspace pristine; the trial must not report success.
+        # A dead runner leaves a pristine workspace; that must not pass.
         scenario = _scenario("fast-exit-healthy")
         scenario.build(self.workspace)
 
@@ -102,8 +101,7 @@ class TestTrialWithScriptedRunner(TrialTestCase):
         scenario = _scenario("repair-exhausted-failure")
         scenario.build(self.workspace)
 
-        # A well-behaved agent: replace the doomed task with a smaller one
-        # through the lemming CLI, exactly as the hook prompt instructs.
+        # A well-behaved agent: replace the doomed task with a smaller one.
         runner = self.write_runner_script(
             "lemming --tasks-file tasks.yml add "
             "'Create a calc/cli.py skeleton with a dispatch table.'\n"
@@ -119,8 +117,7 @@ class TestTrialWithScriptedRunner(TrialTestCase):
         scenario = _scenario("follow-up-without-code-changes")
         scenario.build(self.workspace)
 
-        # A misbehaving agent: fixes the reported bug in source directly
-        # instead of scheduling a follow-up task.
+        # A misbehaving agent: fixes the bug instead of scheduling it.
         runner = self.write_runner_script("echo 'patched' >> calc/ops.py\n")
         self.run_trial_ok(scenario, runner=runner)
 

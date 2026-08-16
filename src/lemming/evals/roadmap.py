@@ -188,8 +188,7 @@ def _grade_repair(workspace: pathlib.Path) -> list[scenarios.Check]:
     if roadmap is None:
         return checks
 
-    # An unchanged description means the same failure will repeat (naive
-    # reset) or the project aborts outright (still out of retries).
+    # An unchanged description means the same failure repeats.
     task = next((t for t in roadmap.tasks if t.id == "task1"), None)
     replacements = [t for t in roadmap.tasks if t.parent == "task1"]
     if task is None:
@@ -267,8 +266,7 @@ def _grade_fast_exit(workspace: pathlib.Path) -> list[scenarios.Check]:
     if roadmap is None:
         return checks
 
-    # Any structural change to a healthy roadmap is churn: same three
-    # tasks, same descriptions, and the two pending ones still pending.
+    # Any structural change to a healthy roadmap is churn.
     expected = {
         ("task2", models.TaskStatus.PENDING),
         ("task3", models.TaskStatus.PENDING),
@@ -399,8 +397,7 @@ def _grade_extend(workspace: pathlib.Path) -> list[scenarios.Check]:
         passed=bool(new_pending),
         detail="no new pending tasks were added" if not new_pending else "",
     )
-    # Keyword proxy for "the added task actually covers the gap": a red
-    # here means inspect the workspace, not necessarily a prompt defect.
+    # Keyword proxy for "the added task actually covers the gap".
     covered = scenarios.Check(
         name="gap-covered",
         passed=any("multiply" in t.description.lower() for t in new_pending),

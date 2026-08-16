@@ -53,9 +53,7 @@ def main(
         else models.TaskStatus.FAILED
     )
 
-    # Mirror orchestrator._process_exhausted_retries: hooks run while the
-    # task is in progress (fresh heartbeat), and exhausted failures are
-    # marked FAILED before the hook sees them.
+    # Mirror orchestrator._process_exhausted_retries before the hook.
     tasks.mark_task_in_progress(tasks_file, task_id)
     if final_status == models.TaskStatus.FAILED:
         tasks.update_task(tasks_file, task_id, status=models.TaskStatus.FAILED)
@@ -74,9 +72,7 @@ def main(
         time_limit=time_limit,
     )
 
-    # A dead runner (auth failure, missing binary, timeout) leaves the
-    # workspace untouched, which can look identical to a well-behaved
-    # fast-exiting agent. Fail the trial loudly instead of false-passing.
+    # Fail loudly: a dead runner leaves a workspace that looks clean.
     failed = {name: code for name, code in exit_codes.items() if code != 0}
     if failed:
         raise click.ClickException(f"Hook runner failed: {failed}")

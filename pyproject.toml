@@ -31,6 +31,11 @@ dev = [
     "httpx>=0.28.1",
     "pytest",
 ]
+# Linters `readability check` shells out to; the eval image needs them.
+evals = [
+    "ruff>=0.9.9",
+    "pyrefly>=0.24.0",
+]
 
 [[tool.uv.index]]
 name = "pypi"
