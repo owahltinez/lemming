@@ -9,3 +9,13 @@ project-excludes = [
   "**/conftest.py",
   "**/evals/projects/**",
 ]
+
+# The fixture projects are checked when a path names one directly, where
+# project-excludes does not apply. Their imports are relative to the
+# workspace they get seeded into, not to this repository.
+[[sub-config]]
+matches = "**/evals/projects/**"
+
+[sub-config.errors]
+missing-import = false
+missing-module-attribute = false
