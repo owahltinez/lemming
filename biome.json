@@ -8,8 +8,7 @@
       "!**/node_modules",
       "!**/dist",
       "!**/src/lemming/web/mancha.js",
-      "!**/test-results",
-      "!**/*.html"
+      "!**/test-results"
     ]
   },
   "assist": {
