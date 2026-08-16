@@ -12,6 +12,9 @@ from .. import models, tasks
 
 TASKS_FILE_NAME = "tasks.yml"
 
+# Fixture projects live as real files rather than as source in strings.
+PROJECTS_DIR = pathlib.Path(__file__).parent / "projects"
+
 # Gitignored in fixtures so the path helpers only report agent changes.
 WORKSPACE_IGNORES = (
     TASKS_FILE_NAME,
@@ -23,6 +26,20 @@ WORKSPACE_IGNORES = (
     ".ruff_cache/",
     ".mypy_cache/",
 )
+
+
+def load_project(name: str) -> dict[str, str]:
+    """Reads a fixture project into the mapping init_repo takes.
+
+    Args:
+        name: Project directory under PROJECTS_DIR, e.g. "roadmap/add-only".
+
+    Returns:
+        Paths relative to that directory, mapped to their contents.
+    """
+    root = PROJECTS_DIR / name
+    files = sorted(path for path in root.rglob("*") if path.is_file())
+    return {str(path.relative_to(root)): path.read_text() for path in files}
 
 
 def _git(workspace: pathlib.Path, *args: str) -> str:
