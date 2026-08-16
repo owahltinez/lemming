@@ -3,3 +3,11 @@ node_modules
 dist
 src/lemming/web/mancha.js
 test-results
+
+# Prompt templates and web views are rendered, not read as markdown or HTML.
+# Prettier is not template-aware: it joined a {{placeholder}} that expands to
+# a multi-line section onto the end of a sentence, and moved a mancha binding
+# onto its own line inside a <button>, changing the rendered whitespace. Both
+# are product behaviour, so neither file set is prettier's to reflow.
+src/lemming/prompts/
+src/lemming/web/
