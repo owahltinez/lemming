@@ -78,8 +78,10 @@ class TestFixtureIntegrity(ScenarioTestCase):
 
     def test_the_prompt_names_the_files_it_expects_touched(self):
         # Anything else is stray, so the prompt must name the files.
+        prompt = self.scenario.prompt
+        self.assertIsNotNone(prompt)
         for path in task.EXPECTED_PATHS:
-            self.assertIn(path, self.scenario.prompt)
+            self.assertIn(path, prompt or "")
 
 
 class TestMinimalSolution(ScenarioTestCase):
