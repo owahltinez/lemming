@@ -340,12 +340,14 @@ describe('Lemming Web Dashboard', () => {
     assert.ok(noTasks, "Should show 'No tasks yet'");
     assert.ok(noTasks.textContent.includes('No tasks yet'));
 
-    // Find the "Project Directory" label and verify the path display and file browser link.
-    const labels = Array.from(fragment.querySelectorAll('label'));
-    const cwdLabel = labels.find((l) =>
-      l.textContent.includes('Project Directory'),
+    // Find the "Project Directory" caption and verify the path display and
+    // file browser link. It is a span rather than a label: it names a
+    // section, not a form control, so query it by its text.
+    const captions = Array.from(fragment.querySelectorAll('span, label'));
+    const cwdLabel = captions.find((el) =>
+      el.textContent.includes('Project Directory'),
     );
-    assert.ok(cwdLabel, 'Project Directory label should exist');
+    assert.ok(cwdLabel, 'Project Directory caption should exist');
     const filesLink = cwdLabel
       .closest('div')
       .querySelector('a[title="Browse files"]');

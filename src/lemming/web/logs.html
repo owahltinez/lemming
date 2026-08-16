@@ -18,6 +18,9 @@
         }
       }
       body {
+        /* biome-ignore lint/complexity/noImportantStyles: mancha
+           removes this cloak after render, so !important is what keeps
+           anything else from revealing the body early */
         opacity: 0 !important;
       }
     </style>
@@ -70,12 +73,13 @@
       >
         <div class="flex items-center gap-4 shrink-0">
           <a
+            href="/"
             :attr:href="'/' + ($$project ? '?project=' + encodeURIComponent($$project) : '')"
             class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition duration-200"
             title="Back to Dashboard"
             aria-label="Back to Dashboard"
           >
-            <svg
+            <svg aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               class="h-6 w-6"
               fill="none"
