@@ -64,8 +64,16 @@ packages = ["src/lemming"]
 [tool.hatch.build.targets.wheel.force-include]
 "SKILL.md" = "lemming/skills/lemming/SKILL.md"
 
+# The eval fixture projects are sample code, not this project's code. Some
+# are deliberately dirty (a scenario grades whether an agent repairs them),
+# and their test modules import packages that only exist once a fixture has
+# been copied into a trial workspace, so both tools have to skip them here.
+[tool.pytest.ini_options]
+norecursedirs = ["src/lemming/evals/projects"]
+
 [tool.ruff]
 line-length = 80
+exclude = ["src/lemming/evals/projects"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "D", "PL"]

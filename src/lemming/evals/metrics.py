@@ -103,6 +103,31 @@ def top_level_functions(source: str) -> list[str]:
     ]
 
 
+def function_source(source: str, function: str) -> str:
+    """Returns the exact text of a module-level function definition.
+
+    Fixture projects are stored as files, so a grader that wants to ask
+    whether one of their functions survived a change has to cut it back out
+    of the module it ships in.
+
+    Args:
+        source: Module source to slice.
+        function: Name of the module-level function to return.
+
+    Returns:
+        The definition's source, newline-terminated.
+
+    Raises:
+        ValueError: If source defines no such function, which would leave a
+            grader comparing against nothing and passing anything.
+    """
+    tree = _parse(source)
+    for node in tree.body if tree else []:
+        if isinstance(node, ast.FunctionDef) and node.name == function:
+            return f"{ast.get_source_segment(source, node)}\n"
+    raise ValueError(f"source defines no function named {function}")
+
+
 def called_names(source: str, function: str) -> set[str]:
     """Returns the names of everything one function calls.
 

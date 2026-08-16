@@ -117,7 +117,12 @@ failure rates compares infrastructure, not judgement.
 Scenarios live in `src/lemming/evals/` (see `roadmap.py`):
 
 1. Write a `build` function that seeds the workspace via `fixtures.init_repo`
-   and `fixtures.save_roadmap`.
+   and `fixtures.save_roadmap`. Fixture source belongs in
+   `src/lemming/evals/projects/<suite>/<project>/`, laid out as the workspace
+   sees it and read back with `fixtures.load_project` — never in a string
+   literal. That directory is excluded from this repo's ruff and pytest
+   configuration, because some fixtures are deliberately dirty; the workspace
+   they are copied into excludes nothing.
 2. Write a `grade` function returning `scenarios.Check` results. Prefer checks
    that are mechanically verifiable: roadmap diffs, `fixtures.dirty_paths` for
    source drift, task statuses.
