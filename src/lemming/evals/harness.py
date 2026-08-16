@@ -75,6 +75,13 @@ _RUNNER_HOMES = {
 # Written by the in-container trial into the mounted per-trial home.
 RESULT_FILE_NAME = "result.json"
 
+# How much of the runner's own output to keep with each trial. Why a trial
+# ended is often legible only there -- a provider that refused to serve
+# reaches the harness as an ordinary non-zero exit -- and classifying it
+# from the text is guesswork, so the report carries the evidence and lets
+# a reader judge. Enough lines to hold a stack trace or an error payload.
+LOG_TAIL_LINES = 20
+
 
 @dataclasses.dataclass(frozen=True)
 class HarnessConfig:
@@ -114,6 +121,7 @@ class TrialResult:
         exit_codes: Per-hook exit codes reported by the trial.
         launch_failed: True when the runner never started.
         timed_out: True when the runner exceeded its time limit.
+        log_tail: Last lines of the runner's own log, kept for diagnosis.
     """
 
     scenario: str
@@ -126,6 +134,7 @@ class TrialResult:
     exit_codes: dict[str, int] = dataclasses.field(default_factory=dict)
     launch_failed: bool = False
     timed_out: bool = False
+    log_tail: str = ""
 
     @property
     def infra_failure(self) -> bool:
@@ -307,6 +316,33 @@ def _read_result(path: pathlib.Path) -> dict:
         return {}
 
 
+def _read_log_tail(lemming_home: pathlib.Path) -> str:
+    """Returns the end of the runner log a trial left behind.
+
+    Lemming writes one log per attempt under its home; the newest is this
+    trial's. A missing or unreadable log is not worth failing over, since
+    the tail exists only to explain a result a reader is already looking
+    at.
+
+    Args:
+        lemming_home: The trial's mounted lemming home.
+
+    Returns:
+        The last LOG_TAIL_LINES lines, or empty when there is no log.
+    """
+    logs = sorted(
+        lemming_home.glob("**/*-runner.log"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    if not logs:
+        return ""
+    try:
+        lines = logs[-1].read_text(errors="replace").splitlines()
+    except OSError:
+        return ""
+    return "\n".join(lines[-LOG_TAIL_LINES:])
+
+
 def _execute_trial(
     scenario: scenarios.Scenario,
     trial_index: int,
@@ -352,6 +388,7 @@ def _execute_trial(
         exit_codes=record.get("exit_codes", {}),
         launch_failed=bool(record.get("launch_failed")),
         timed_out=bool(record.get("timed_out")),
+        log_tail=_read_log_tail(lemming_home),
     )
 
 
@@ -392,9 +429,17 @@ def run_suite(
 def summarize(
     results: list[TrialResult],
 ) -> dict[str, tuple[int, int]]:
-    """Aggregates trial results into per-scenario (passed, total) counts."""
+    """Aggregates trial results into per-scenario (passed, total) counts.
+
+    Infrastructure failures are left out of both counts rather than
+    counted as losses. A trial the agent never got to influence is not
+    evidence either way, and counting it penalizes whichever arm of a
+    comparison was slower or ran while the provider was refusing.
+    """
     totals: dict[str, tuple[int, int]] = {}
     for result in results:
-        passed, total = totals.get(result.scenario, (0, 0))
+        passed, total = totals.setdefault(result.scenario, (0, 0))
+        if result.infra_failure:
+            continue
         totals[result.scenario] = (passed + int(result.passed), total + 1)
     return totals
