@@ -29,12 +29,13 @@ dependencies = [
 dev = [
     "ruff>=0.9.9",
     "httpx>=0.28.1",
+    "pyrefly>=1.2",
     "pytest",
 ]
 # Linters `readability check` shells out to; the eval image needs them.
 evals = [
     "ruff>=0.9.9",
-    "pyrefly>=0.24.0",
+    "pyrefly>=1.2",
 ]
 
 [[tool.uv.index]]
