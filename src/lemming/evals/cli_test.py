@@ -25,6 +25,36 @@ def _result(
     )
 
 
+class TestInfraFailureReporting(unittest.TestCase):
+    def invoke(self, results):
+        with (
+            unittest.mock.patch.object(
+                cli.harness, "run_suite", return_value=results
+            ),
+            unittest.mock.patch.object(cli.container, "build_image"),
+        ):
+            return click.testing.CliRunner().invoke(
+                cli.cli, ["run", "--skip-build", "--trials", "2"]
+            )
+
+    def test_infra_failures_are_called_out_separately(self):
+        # Infra failures are no quality signal, so the report splits them.
+        dead = _result("fast-exit-healthy", 0, False)
+        dead.launch_failed = True
+        results = [dead, _result("fast-exit-healthy", 1, True)]
+
+        outcome = self.invoke(results)
+
+        self.assertIn("1 infra failure", outcome.output)
+
+    def test_clean_runs_do_not_mention_infra_failures(self):
+        results = [_result("fast-exit-healthy", i, True) for i in range(2)]
+
+        outcome = self.invoke(results)
+
+        self.assertNotIn("infra failure", outcome.output)
+
+
 class TestListCommand(unittest.TestCase):
     def test_lists_roadmap_scenarios(self):
         result = click.testing.CliRunner().invoke(cli.cli, ["list"])

@@ -60,6 +60,19 @@ def _report(results: list[harness.TrialResult], min_pass_rate: float) -> bool:
         color = "green" if ok else "red"
         click.secho(f"{scenario_name}: {passed}/{total}", fg=color, bold=True)
 
+        # Call out trials where the agent never got to make a decision.
+        infra = sum(
+            1
+            for result in results
+            if result.scenario == scenario_name and result.infra_failure
+        )
+        if infra:
+            click.secho(
+                f"  {infra} infra failure(s): runner never started or "
+                "timed out",
+                fg="yellow",
+            )
+
         # Show each trial's failing checks and workspace, advisory reds
         # included: they flag a trial for inspection without failing it.
         for result in results:
@@ -91,8 +104,13 @@ def _write_json_report(
     results: list[harness.TrialResult], path: pathlib.Path
 ) -> None:
     """Writes the full trial results to a JSON file."""
+    # asdict drops infra_failure, a derived property, so add it back.
     payload = [
-        {**dataclasses.asdict(result), "workspace": str(result.workspace)}
+        {
+            **dataclasses.asdict(result),
+            "workspace": str(result.workspace),
+            "infra_failure": result.infra_failure,
+        }
         for result in results
     ]
     path.write_text(json.dumps(payload, indent=2))
@@ -111,7 +129,7 @@ def _write_json_report(
 @click.option("--runner", default="agy", show_default=True)
 @click.option(
     "--time-limit",
-    default=15,
+    default=10,
     show_default=True,
     help="Per-trial hook time limit in minutes.",
 )
