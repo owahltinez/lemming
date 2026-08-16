@@ -727,8 +727,6 @@ describe('Lemming Web Dashboard', () => {
     );
 
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
-    const root =
-      fragment.querySelector('body') || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
     const runLoopBtn = fragment.querySelector('[aria-label="Execute Tasks"]');
@@ -832,8 +830,6 @@ describe('Lemming Web Dashboard', () => {
     );
 
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
-    const root =
-      fragment.querySelector('body') || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
@@ -990,8 +986,6 @@ describe('Lemming Web Dashboard', () => {
     );
 
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
-    const root =
-      fragment.querySelector('body') || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
@@ -1064,8 +1058,6 @@ describe('Lemming Web Dashboard', () => {
     assert.ok(textarea, 'Long-term goal textarea should exist');
     assert.strictEqual(textarea.getAttribute(':on:input'), 'updateGoal()');
 
-    const root =
-      fragment.querySelector('body') || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
     assert.strictEqual(textarea.value, 'Initial goal');
@@ -1126,8 +1118,6 @@ describe('Lemming Web Dashboard', () => {
     );
 
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
-    const root =
-      fragment.querySelector('body') || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
     const taskItems = fragment.querySelectorAll('[role="listitem"]');
@@ -1193,8 +1183,6 @@ describe('Lemming Web Dashboard', () => {
     );
 
     const fragment = await renderer.preprocessLocal(indexHtmlPath);
-    const root =
-      fragment.querySelector('body') || fragment.firstElementChild || fragment;
     await renderer.mount(fragment);
 
     const taskItem = fragment.querySelector('[role="listitem"]');
