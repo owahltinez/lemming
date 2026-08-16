@@ -19,108 +19,6 @@ _GOAL = (
     "multiply commands, each covered by unit tests."
 )
 
-_ADD_ONLY_OPS = '''"""Arithmetic operations for the calculator CLI."""
-
-
-def add(a, b):
-    """Returns the sum of two numbers."""
-    return a + b
-'''
-
-_ADD_ONLY_TEST = """import unittest
-
-from calc import ops
-
-
-class TestOps(unittest.TestCase):
-    def test_add(self):
-        self.assertEqual(ops.add(2, 3), 5)
-"""
-
-_FULL_OPS = '''"""Arithmetic operations for the calculator CLI."""
-
-
-def add(a, b):
-    """Returns the sum of two numbers."""
-    return a + b
-
-
-def subtract(a, b):
-    """Returns the difference of two numbers."""
-    return a - b
-
-
-def multiply(a, b):
-    """Returns the product of two numbers."""
-    return a * b
-'''
-
-_FULL_OPS_TEST = """import unittest
-
-from calc import ops
-
-
-class TestOps(unittest.TestCase):
-    def test_add(self):
-        self.assertEqual(ops.add(2, 3), 5)
-
-    def test_subtract(self):
-        self.assertEqual(ops.subtract(5, 3), 2)
-
-    def test_multiply(self):
-        self.assertEqual(ops.multiply(2, 3), 6)
-"""
-
-_INCOMPLETE_CLI = '''"""Command dispatch for the calculator CLI."""
-
-from calc import ops
-
-
-COMMANDS = {
-    "add": ops.add,
-    "subtract": ops.subtract,
-}
-
-
-def execute(command, left, right):
-    """Executes a registered calculator command."""
-    return COMMANDS[command](left, right)
-'''
-
-_INCOMPLETE_CLI_TEST = """import unittest
-
-from calc import cli
-
-
-class TestCli(unittest.TestCase):
-    def test_registered_commands(self):
-        cases = {
-            "add": (2, 3, 5),
-            "subtract": (5, 3, 2),
-        }
-        for command, (left, right, expected) in cases.items():
-            with self.subTest(command=command):
-                self.assertEqual(cli.execute(command, left, right), expected)
-"""
-
-_BUGGY_OPS = '''"""Arithmetic operations for the calculator CLI."""
-
-
-def add(a, b):
-    """Returns the sum of two numbers."""
-    return a + b
-
-
-def subtract(a, b):
-    """Returns the difference of two numbers."""
-    return a + b
-
-
-def multiply(a, b):
-    """Returns the product of two numbers."""
-    return a * b
-'''
-
 _REPAIR_DESCRIPTION = (
     "Implement the subtract and multiply commands in calc/cli.py with "
     "unit tests."
@@ -138,22 +36,14 @@ def _config() -> models.RoadmapConfig:
     )
 
 
-def _write_project(workspace: pathlib.Path, ops_source: str) -> None:
-    """Seeds the fixture calculator project with the given ops module."""
-    fixtures.init_repo(
-        workspace,
-        {
-            "calc/__init__.py": "",
-            "calc/ops.py": ops_source,
-            "calc/ops_test.py": _ADD_ONLY_TEST,
-            "README.md": "# Calculator CLI\n",
-        },
-    )
+def _write_project(workspace: pathlib.Path, project: str) -> None:
+    """Seeds the workspace with one of the fixture calculator projects."""
+    fixtures.init_repo(workspace, fixtures.load_project(f"roadmap/{project}"))
 
 
 def _build_repair(workspace: pathlib.Path) -> None:
     """Fixture: task1 failed identically three times and is out of retries."""
-    _write_project(workspace, _ADD_ONLY_OPS)
+    _write_project(workspace, "add-only")
     failure = (
         "Attempt failed: created calc/cli.py but tests error with "
         "ImportError: cannot import name 'dispatch' from calc.ops."
@@ -224,7 +114,7 @@ def _grade_repair(workspace: pathlib.Path) -> list[scenarios.Check]:
 
 def _build_fast_exit(workspace: pathlib.Path) -> None:
     """Fixture: a healthy roadmap where the finished task went perfectly."""
-    _write_project(workspace, _ADD_ONLY_OPS)
+    _write_project(workspace, "add-only")
     fixtures.save_roadmap(
         workspace,
         models.Roadmap(
@@ -289,7 +179,7 @@ def _grade_fast_exit(workspace: pathlib.Path) -> list[scenarios.Check]:
 
 def _build_prune(workspace: pathlib.Path) -> None:
     """Fixture: the finished task also did task2's work, making it moot."""
-    _write_project(workspace, _FULL_OPS)
+    _write_project(workspace, "full-ops")
     fixtures.save_roadmap(
         workspace,
         models.Roadmap(
@@ -344,7 +234,7 @@ def _grade_prune(workspace: pathlib.Path) -> list[scenarios.Check]:
 
 def _build_extend(workspace: pathlib.Path) -> None:
     """Fixture: all tasks done but the goal still lacks multiply."""
-    _write_project(workspace, _ADD_ONLY_OPS)
+    _write_project(workspace, "add-only")
     fixtures.save_roadmap(
         workspace,
         models.Roadmap(
@@ -415,17 +305,7 @@ def _grade_extend(workspace: pathlib.Path) -> list[scenarios.Check]:
 
 def _build_workspace_gap(workspace: pathlib.Path) -> None:
     """Fixture: truthful completed tasks conceal an unwired multiply command."""
-    fixtures.init_repo(
-        workspace,
-        {
-            "calc/__init__.py": "",
-            "calc/ops.py": _FULL_OPS,
-            "calc/ops_test.py": _FULL_OPS_TEST,
-            "calc/cli.py": _INCOMPLETE_CLI,
-            "calc/cli_test.py": _INCOMPLETE_CLI_TEST,
-            "README.md": "# Calculator CLI\n",
-        },
-    )
+    _write_project(workspace, "unwired-cli")
     fixtures.save_roadmap(
         workspace,
         models.Roadmap(
@@ -506,7 +386,7 @@ def _grade_workspace_gap(workspace: pathlib.Path) -> list[scenarios.Check]:
 
 def _build_follow_up(workspace: pathlib.Path) -> None:
     """Fixture: the finished task reported an out-of-scope bug in source."""
-    _write_project(workspace, _BUGGY_OPS)
+    _write_project(workspace, "buggy-subtract")
     fixtures.save_roadmap(
         workspace,
         models.Roadmap(

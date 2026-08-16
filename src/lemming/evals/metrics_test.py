@@ -152,6 +152,34 @@ class TestSourceFacts(unittest.TestCase):
         )
         self.assertEqual(metrics.called_names(source, "helper"), set())
 
+    def test_function_source_returns_the_definition_verbatim(self):
+        # Graders match this text against an agent's file, byte for byte.
+        source = (
+            '"""Module."""\n'
+            "\n"
+            "\n"
+            "def first(x):\n"
+            '    """Doc."""\n'
+            "    return x\n"
+            "\n"
+            "\n"
+            "def second(x):\n"
+            "    return x\n"
+        )
+
+        self.assertEqual(
+            metrics.function_source(source, "first"),
+            'def first(x):\n    """Doc."""\n    return x\n',
+        )
+        self.assertEqual(
+            metrics.function_source(source, "second"),
+            "def second(x):\n    return x\n",
+        )
+
+    def test_function_source_refuses_to_return_nothing(self):
+        with self.assertRaises(ValueError):
+            metrics.function_source("X = 1\n", "missing")
+
 
 class TestHiddenTests(MetricsTestCase):
     def setUp(self):

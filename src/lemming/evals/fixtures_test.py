@@ -7,6 +7,37 @@ from lemming import models
 from lemming.evals import fixtures
 
 
+class TestLoadProject(unittest.TestCase):
+    def setUp(self):
+        self.workspace = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+
+    def test_reads_nested_files_as_workspace_relative_paths(self):
+        files = fixtures.load_project("task/summary")
+
+        self.assertEqual(
+            sorted(files),
+            [
+                "README.md",
+                "stats/__init__.py",
+                "stats/summary.py",
+                "stats/summary_test.py",
+            ],
+        )
+        self.assertIn("def mean(", files["stats/summary.py"])
+
+    def test_loaded_project_seeds_a_workspace_unchanged(self):
+        # A project reaches the workspace exactly as it is stored.
+        files = fixtures.load_project("task/summary")
+        fixtures.init_repo(self.workspace, files)
+
+        source = fixtures.PROJECTS_DIR / "task/summary/stats/summary.py"
+        self.assertEqual(
+            (self.workspace / "stats/summary.py").read_text(),
+            source.read_text(),
+        )
+
+
 class TestInitRepo(unittest.TestCase):
     def setUp(self):
         self.workspace = pathlib.Path(tempfile.mkdtemp())
