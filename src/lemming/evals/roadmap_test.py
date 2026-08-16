@@ -179,8 +179,7 @@ class TestExtendScenario(ScenarioTestCase):
         tasks.add_task(self.tasks_file, "Polish the README wording.")
 
         checks = self.scenario.grade(self.workspace)
-        # The keyword proxy fails, but only as an inspect-me signal: the
-        # trial itself still passes.
+        # The keyword proxy fails only as an inspect-me signal.
         self.assertEqual(self.check_names(checks), {"gap-covered"})
         self.assertTrue(scenarios.passed(checks))
 

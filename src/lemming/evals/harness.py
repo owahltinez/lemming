@@ -59,8 +59,7 @@ class TrialResult:
     error: str = ""
 
 
-# A trial runner takes (scenario, workspace, lemming_home, config) and
-# raises on infrastructure failure; grading happens afterwards regardless.
+# Runs one trial, raising on infrastructure failure; grading follows.
 TrialRunner = typing.Callable[
     [scenarios.Scenario, pathlib.Path, pathlib.Path, HarnessConfig], None
 ]
@@ -170,8 +169,7 @@ def _execute_trial(
     except Exception:
         error = traceback.format_exc(limit=5)
 
-    # Grade the workspace even after infrastructure errors: the checks
-    # document exactly what state the trial left behind.
+    # Grade the workspace even after an infrastructure error.
     try:
         checks = scenario.grade(workspace)
     except Exception:

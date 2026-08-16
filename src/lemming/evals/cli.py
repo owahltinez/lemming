@@ -60,10 +60,8 @@ def _report(results: list[harness.TrialResult], min_pass_rate: float) -> bool:
         color = "green" if ok else "red"
         click.secho(f"{scenario_name}: {passed}/{total}", fg=color, bold=True)
 
-        # Surface the failing checks and workspace of each trial so
-        # regressions can be diagnosed without re-running anything.
-        # Advisory reds are keyword-proxy checks: they flag the trial for
-        # inspection but never fail it, so they are shown on passes too.
+        # Show each trial's failing checks and workspace, advisory reds
+        # included: they flag a trial for inspection without failing it.
         for result in results:
             if result.scenario != scenario_name:
                 continue
@@ -178,9 +176,6 @@ def run(
             )
         click.echo(f"Building eval image '{image}'...")
         container.build_image(context, image=image, docker=docker)
-        # The image is what the trials need; the cache that produced it is
-        # dead weight, and it outgrows the image several times over across
-        # repeated runs.
         container.prune_build_cache(docker=docker)
 
     if run_dir is None:
