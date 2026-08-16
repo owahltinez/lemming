@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 const indexHtmlPath = path.resolve(process.cwd(), 'src/lemming/web/index.html');
 
 test.describe('Dashboard E2E', () => {
-  test.beforeEach(async ({ page, context }) => {
+  test.beforeEach(async ({ context }) => {
     // Serve the HTML file and static assets over mocked URLs
     await context.route('**/*', async (route) => {
       const url = route.request().url();
@@ -397,10 +397,7 @@ test.describe('Dashboard E2E', () => {
 
   // --- Folder Picker Tests ---
 
-  test('selecting a folder opens it in a new tab', async ({
-    page,
-    context,
-  }) => {
+  test('selecting a folder opens it in a new tab', async ({ page }) => {
     await gotoAndAwaitMancha(page);
     await page.waitForLoadState('networkidle');
 
