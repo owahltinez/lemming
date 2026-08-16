@@ -26,20 +26,21 @@ def test_readability_guide_help():
     assert "guide" in result.output.lower()
 
 
-def test_readability_languages():
+def test_readability_guide_lists_languages_without_one():
+    # With no language named, `guide` answers with the language list.
     runner = CliRunner()
-    result = runner.invoke(cli, ["readability", "languages"])
+    result = runner.invoke(cli, ["readability", "guide"])
     assert result.exit_code == 0
     assert "Supported languages" in result.output
 
 
-def test_readability_verbose_sync():
+def test_readability_verbose_sets_logger_level():
     runner = CliRunner()
     # This just ensures the command runs with -v,
     # we can't easily check the logger level of a sub-process or if it was
     # modified in-process
     # without more complex mocking, but we can verify it doesn't crash.
-    result = runner.invoke(cli, ["-v", "readability", "languages"])
+    result = runner.invoke(cli, ["-v", "readability", "guide"])
     assert result.exit_code == 0
     assert "Supported languages" in result.output
 
