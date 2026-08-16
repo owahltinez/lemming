@@ -1,3 +1,4 @@
+import importlib.metadata
 import os
 import pathlib
 import shutil
@@ -22,6 +23,14 @@ class TestCLIMain(unittest.TestCase):
         self.assertIn(
             "Lemming: An autonomous, iterative task runner", result.output
         )
+
+    def test_cli_version_reports_the_installed_version(self):
+        result = self.cli_runner.invoke(cli, ["--version"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        # Read back from package metadata so the flag cannot drift from
+        # pyproject.toml, which is the only place the version is declared.
+        self.assertIn(importlib.metadata.version("lemming-cli"), result.output)
 
     def test_command_help_hides_internal_docstrings(self):
         for command_name in cli.commands:

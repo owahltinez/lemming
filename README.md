@@ -300,6 +300,7 @@ These come before the subcommand and apply to all of them.
 - **`--tasks-file <path>`**: Point at a specific tasks file instead of the one
   derived from the current directory.
 - **`-v, --verbose`**: Show verbose output.
+- **`--version`**: Print the installed version and exit.
 
 ### Roadmap Management
 

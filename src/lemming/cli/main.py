@@ -50,6 +50,9 @@ def _enter_project_dir(ctx: click.Context, project_dir: pathlib.Path) -> None:
 
 
 @click.group(cls=CorruptionAwareGroup)
+# Read from installed metadata rather than a constant, so pyproject.toml stays
+# the only place the version is declared.
+@click.version_option(package_name="lemming-cli")
 @click.option(
     "--project-dir",
     "-C",
