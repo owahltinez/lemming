@@ -65,14 +65,42 @@ trustworthy.
 ### Credentials
 
 The default runner is `agy`. Each trial automatically receives a private,
-disposable copy of the host's `~/.gemini` config (caches, history, and the
-bundled CLI excluded) mounted at `/root/.gemini`, so containers can refresh
-tokens and write state without ever touching the real agy home — and concurrent
-trials stay fully isolated from each other.
+disposable copy of the runner's host config: `~/.gemini` for `agy` and
+`~/.config/opencode` for `opencode`. Containers can therefore refresh tokens
+and write state without ever touching the real config, and concurrent trials
+stay fully isolated from each other.
+
+Caches, history, and conversations are excluded, as are the model cache and
+vendored CLI under `antigravity-cli/` and any `node_modules` — the container
+installs its own agents, and those directories are hundreds of megabytes that
+would otherwise be copied once per trial. Auth state is always kept.
+
+What each copy carries is also what makes a comparison between two runners
+meaningful, and the rule is parity: every arm gets its global instructions and
+its credentials, and anything one runner has no counterpart for is left behind.
+agy's `skills/` and `extensions/` are excluded for exactly that reason. An arm
+running with extra tooling is a differently equipped agent, and a result that
+turns on the difference measures the equipment rather than the runner.
+
+Global instructions are the one piece of context both arms are expected to
+share, so point them at the same file — for example symlinking `~/AGENTS.md`
+to both `~/.gemini/GEMINI.md` and `~/.config/opencode/AGENTS.md`. A trial copy
+dereferences the symlink, so the container sees the real contents.
 
 For API-key runners, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
 `GEMINI_API_KEY`, and `GOOGLE_API_KEY` are forwarded into the container when set
 on the host. Any other credential files can be mounted with `--volume`.
+
+### Interpreting failures
+
+A trial fails when any non-advisory check is red, but not every red says
+something about the agent. Trials whose runner never started (missing binary,
+bad credentials) or ran out of time are reported separately as **infra
+failures**, and carry `launch_failed` / `timed_out` / `exit_codes` in the JSON
+report. They still count as failures — a dead runner leaves a pristine workspace
+that can otherwise look like a well-behaved fast exit — but a pass rate dragged
+down by them is not a quality signal. Comparing two runners with different infra
+failure rates compares infrastructure, not judgement.
 
 ## Adding Scenarios
 
