@@ -30,11 +30,10 @@ jobs:
       - name: Install Node.js dependencies
         run: npm install
 
-      - name: Run Python linting
-        run: uv run ruff check .
-
-      - name: Run Python formatting check
-        run: uv run ruff format --check .
+      # Runs ruff and ruff format as before, and adds the type and prose
+      # checks the separate steps never covered.
+      - name: Run linting
+        run: uv run readability check .
 
       - name: Run Python tests
         run: uv run pytest
