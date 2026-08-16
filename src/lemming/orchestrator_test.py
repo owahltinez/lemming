@@ -238,6 +238,34 @@ def test_run_loop_calls_runner_with_header(mock_run, setup_env):
 
 @mock.patch("lemming.runner.run_with_heartbeat")
 @mock.patch("time.sleep", return_value=None)
+def test_run_loop_treats_a_runner_that_never_started_as_a_failure(
+    mock_sleep, mock_run, setup_env
+):
+    # A spawn failure used to leave the return code at its initialised zero,
+    # so the loop finalized the task as though the agent had run and exited
+    # cleanly. Unattended, that marches through a roadmap reporting success
+    # for work nothing ever did.
+    test_tasks_file, _ = setup_env
+    mock_run.side_effect = FileNotFoundError("no such runner")
+
+    run_loop(
+        test_tasks_file,
+        verbose=True,
+        retry_delay=1,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+    )
+
+    # The runner never ran, so the attempt must not be charged to the task.
+    # With the bug the task burned all three retries and was marked failed.
+    data = tasks.load_tasks(test_tasks_file)
+    assert data.tasks[0].attempts == 0
+    assert data.tasks[0].status == tasks.TaskStatus.PENDING
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+@mock.patch("time.sleep", return_value=None)
 def test_run_loop_cancelled(mock_sleep, mock_run, setup_env):
     test_tasks_file, initial_data = setup_env
     # Simulate a task being cancelled (exit code -15)
