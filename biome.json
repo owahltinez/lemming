@@ -1,22 +1,28 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "ignore": [
-      ".venv",
-      "node_modules",
-      "dist",
-      "src/lemming/web/mancha.js",
-      "test-results"
+    "includes": [
+      "**",
+      "!**/.venv",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/src/lemming/web/mancha.js",
+      "!**/test-results",
+      "!**/*.html"
     ]
   },
-  "organizeImports": {
-    "enabled": true
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
   },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   },
   "formatter": {
@@ -27,6 +33,11 @@
   "javascript": {
     "formatter": {
       "quoteStyle": "single"
+    }
+  },
+  "html": {
+    "parser": {
+      "interpolation": true
     }
   }
 }
