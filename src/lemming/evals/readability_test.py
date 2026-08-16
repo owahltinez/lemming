@@ -38,7 +38,7 @@ class TestSuiteRegistry(ScenarioTestCase):
         self.assertIn("readability", registry)
         names = [s.name for s in registry["readability"]]
         self.assertEqual(len(names), len(set(names)))
-        self.assertEqual(len(names), 5)
+        self.assertEqual(len(names), 4)
 
 
 class TestFastExitScenario(ScenarioTestCase):
@@ -55,6 +55,16 @@ class TestFastExitScenario(ScenarioTestCase):
 
         checks = self.scenario.grade(self.workspace)
         self.assertIn("no-source-changes", self.failed_names(checks))
+
+    def test_cleaning_out_of_scope_file_fails(self):
+        # The fixture seeds a messy calc/legacy.py the finished task never
+        # touched. Tidying it is the scope violation this scenario catches.
+        self.build("clean-fast-exit")
+        legacy = self.workspace / "calc" / "legacy.py"
+        legacy.write_text('"""Legacy."""\n\n\ndef format_report(v):\n')
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn("out-of-scope-untouched", self.failed_names(checks))
 
 
 class TestDeadCodeScenario(ScenarioTestCase):
@@ -194,22 +204,6 @@ def subtract_for_receipt(a: float, b: float) -> float:
             "receipt-interface-preserved",
             self.failed_names(checks),
         )
-
-
-class TestScopeLimitScenario(ScenarioTestCase):
-    def test_leaving_legacy_alone_passes(self):
-        self.build("scope-limited-to-changed-files")
-
-        checks = self.scenario.grade(self.workspace)
-        self.assertEqual(self.failed_names(checks), set())
-
-    def test_cleaning_out_of_scope_file_fails(self):
-        self.build("scope-limited-to-changed-files")
-        legacy = self.workspace / "calc" / "legacy.py"
-        legacy.write_text('"""Legacy."""\n\n\ndef format_report(v):\n')
-
-        checks = self.scenario.grade(self.workspace)
-        self.assertIn("out-of-scope-untouched", self.failed_names(checks))
 
 
 class TestNoOrchestrationScenario(ScenarioTestCase):
