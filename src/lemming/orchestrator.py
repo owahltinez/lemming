@@ -148,7 +148,7 @@ def run_hooks(
             # and lets the loop carry on writing to an unreadable roadmap.
             raise
         except Exception as e:
-            exit_codes[hook_name] = -1
+            exit_codes[hook_name] = runner.RETURNCODE_LAUNCH_FAILED
             click.echo(f"Hook '{hook_name}' error: {e}")
 
     # Finally mark the task as completed or failed if requested.
@@ -690,6 +690,11 @@ def run_loop(
             # attempt would spend the task's retries on the wrong failure.
             raise
         except Exception as e:
+            # Leaving the return code at its initialised zero reports a
+            # runner that never started as one that exited cleanly, so the
+            # task burns every retry and is marked failed for work nothing
+            # ever attempted. No signal downstream can tell them apart.
+            returncode = runner.RETURNCODE_LAUNCH_FAILED
             click.echo(
                 f"\nAn error occurred while executing {runner_name}: {e}"
             )

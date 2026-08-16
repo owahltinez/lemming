@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 # Sentinel return codes for non-standard process termination.
 RETURNCODE_TIMEOUT = -14
 
+# The runner process never started: a missing binary, a bad interpreter, or
+# anything else that raises before there is an exit code to read. Distinct
+# from a clean exit, which is what an unset return code would look like.
+RETURNCODE_LAUNCH_FAILED = -1
+
 # Ceiling for a runner error surfaced in the orchestrator's output.
 MAX_ERROR_MESSAGE_CHARS = 200
 
