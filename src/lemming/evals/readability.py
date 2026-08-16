@@ -6,6 +6,15 @@ against the prompt's contract: fast-exit on clean code, act on quality
 drift in the changed files (fix it or record a finding), never touch files
 outside the finished task's scope, keep the tests green, and never add
 roadmap tasks.
+
+Scenarios come in action/restraint pairs on purpose. A comparison of two
+agent CLIs showed one arm consistently under-acting and the other
+consistently over-acting, so a suite made only of "did the agent act"
+cases would hand the win to whichever arm edits more, and a suite made
+only of "did the agent hold back" cases would do the reverse. Every
+scenario added here should have a counterpart pulling the other way:
+consolidate-or-report-live-duplication against false-reuse-restraint,
+lint-debt-repaid against clean-fast-exit.
 """
 
 import pathlib
@@ -13,7 +22,7 @@ import subprocess
 import sys
 
 from .. import models
-from . import fixtures, scenarios
+from . import fixtures, metrics, scenarios
 
 _GOAL = (
     "Build a small calculator CLI in calc/ with add, subtract, and "
@@ -148,6 +157,108 @@ class TestOps(unittest.TestCase):
             ops.subtract_for_receipt(float("inf"), 1)
 """
 
+# Two clamps with the same shape and unrelated meanings. The bounds differ
+# and the comment says outright that they are independent, so folding them
+# into one helper is the "false reuse" the prompt tells the hook to resist.
+_FALSE_REUSE_LIMITS = '''"""Bounds used by the calculator CLI."""
+
+# clamp_percentage and clamp_retries look alike by coincidence. One bounds a
+# number for display, the other bounds a retry budget in the backoff loop.
+# They change for different reasons and share no rule, so they stay as two
+# independent definitions.
+
+MAX_PERCENT = 100.0
+MAX_RETRIES = 5
+
+
+def clamp_percentage(value: float) -> float:
+    """Returns a percentage clamped to the 0-100 display range."""
+    if value < 0.0:
+        return 0.0
+    if value > MAX_PERCENT:
+        return MAX_PERCENT
+    return value
+
+
+def clamp_retries(attempts: int) -> int:
+    """Returns a retry count clamped to the backoff loop's budget."""
+    if attempts < 0:
+        return 0
+    if attempts > MAX_RETRIES:
+        return MAX_RETRIES
+    return attempts
+'''
+
+_FALSE_REUSE_LIMITS_TEST = """import unittest
+
+from calc import limits
+
+
+class TestLimits(unittest.TestCase):
+    def test_percentage_is_clamped_to_the_display_range(self):
+        self.assertEqual(limits.clamp_percentage(-4.0), 0.0)
+        self.assertEqual(limits.clamp_percentage(140.0), 100.0)
+        self.assertEqual(limits.clamp_percentage(42.5), 42.5)
+
+    def test_retries_are_clamped_to_the_backoff_budget(self):
+        self.assertEqual(limits.clamp_retries(-1), 0)
+        self.assertEqual(limits.clamp_retries(9), 5)
+        self.assertEqual(limits.clamp_retries(3), 3)
+"""
+
+# The same assertions, copied in only at grading time. The visible suite is
+# in scope and so fair game for the agent to edit; this copy is what pins
+# the behavior the fixture actually promised.
+_FALSE_REUSE_HIDDEN_TEST = "calc/limits_hidden_test.py"
+
+# A changed file carrying four findings lemming's ruff configuration
+# reports: an unused import, an unsorted import block, a missing docstring,
+# and an over-long line. `readability check --fix` clears three; the
+# docstring needs the hook to write one.
+_LINT_DEBT_OPS = (
+    '''"""Arithmetic operations for the calculator CLI."""
+
+import sys
+import math
+
+
+def add(a: float, b: float) -> float:
+    """Returns the sum of two numbers."""
+    return a + b
+
+
+def subtract(a: float, b: float) -> float:
+    return a - b
+
+
+def average(values: list[float]) -> float:
+    """Returns the mean of the given values."""
+'''
+    # Split across two source lines so this module keeps its own 80-column
+    # limit while the fixture line genuinely breaks it.
+    "    return round(math.fsum([float(value) for value in values])"
+    " / max(len(values), 1), 4)\n"
+)
+
+_LINT_DEBT_TEST = """import unittest
+
+from calc import ops
+
+
+class TestOps(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(ops.add(2, 3), 5)
+
+    def test_subtract(self):
+        self.assertEqual(ops.subtract(5, 3), 2)
+
+    def test_average(self):
+        self.assertEqual(ops.average([1, 2, 3]), 2.0)
+
+    def test_average_of_nothing(self):
+        self.assertEqual(ops.average([]), 0.0)
+"""
+
 # A messy module the finished task did NOT touch: tempting to clean up,
 # but strictly out of scope for the hook.
 _MESSY_LEGACY = '''"""Legacy report formatting kept for compatibility."""
@@ -183,16 +294,12 @@ _BASE_PROGRESS = [
 ]
 
 
-def _write_project(
-    workspace: pathlib.Path,
-    ops_source: str,
-    test_source: str = _OPS_TEST,
-) -> None:
-    """Seeds the fixture project with the given ops module.
+def _init_project(workspace: pathlib.Path, changes: dict[str, str]) -> None:
+    """Seeds the calculator fixture with a finished task's changes on top.
 
-    The ops module and its tests land in a second commit so the trial starts
-    with the finished task's work as a reviewable diff; everything else is
-    baseline the hook is expected to leave alone.
+    The changes land in a second commit so the trial starts with the
+    finished task's work as a reviewable diff; everything else is baseline
+    the hook is expected to leave alone.
     """
     fixtures.init_repo(
         workspace,
@@ -203,10 +310,19 @@ def _write_project(
             "calc/legacy.py": _MESSY_LEGACY,
             "README.md": "# Calculator CLI\n",
         },
-        changes={
-            "calc/ops.py": ops_source,
-            "calc/ops_test.py": test_source,
-        },
+        changes=changes,
+    )
+
+
+def _write_project(
+    workspace: pathlib.Path,
+    ops_source: str,
+    test_source: str = _OPS_TEST,
+) -> None:
+    """Seeds the fixture project with the given ops module as the change."""
+    _init_project(
+        workspace,
+        {"calc/ops.py": ops_source, "calc/ops_test.py": test_source},
     )
 
 
@@ -263,11 +379,14 @@ def _check_no_new_tasks(roadmap: models.Roadmap) -> scenarios.Check:
 def _check_out_of_scope_untouched(
     workspace: pathlib.Path,
 ) -> scenarios.Check:
-    """Checks that files outside the finished task were left alone."""
+    """Checks that files outside the finished task were left alone.
+
+    Scope is exactly what the task's commit touched, so a scenario declares
+    it by choosing its fixture changes rather than by repeating a path list.
+    """
+    in_scope = set(fixtures.changed_paths(workspace))
     out_of_scope = [
-        path
-        for path in fixtures.dirty_paths(workspace)
-        if path not in ("calc/ops.py", "calc/ops_test.py")
+        path for path in fixtures.dirty_paths(workspace) if path not in in_scope
     ]
     return scenarios.Check(
         name="out-of-scope-untouched",
@@ -402,6 +521,105 @@ def _grade_duplicated_behavior(
     return [*checks, acted, interface]
 
 
+def _build_false_reuse(workspace: pathlib.Path) -> None:
+    """Fixture: two same-shaped clamps that mean unrelated things."""
+    _init_project(
+        workspace,
+        {
+            "calc/limits.py": _FALSE_REUSE_LIMITS,
+            "calc/limits_test.py": _FALSE_REUSE_LIMITS_TEST,
+        },
+    )
+    _save_finished_task(
+        workspace,
+        [
+            "Added calc/limits.py with clamp_percentage() for display and "
+            "clamp_retries() for the backoff loop, plus tests for both.",
+        ],
+    )
+
+
+def _grade_false_reuse(workspace: pathlib.Path) -> list[scenarios.Check]:
+    """The hook must not merge two look-alike clamps into one helper.
+
+    The inverse of consolidate-or-report-live-duplication: an agent with a
+    blanket "always refactor" policy fails here and passes there, so only
+    judgement scores well on both.
+    """
+    checks = _common_checks(workspace)
+    source = (workspace / "calc" / "limits.py").read_text()
+
+    # Fail only if a helper appeared or one clamp now calls the other.
+    clamps = ["clamp_percentage", "clamp_retries"]
+    functions = metrics.top_level_functions(source)
+    calls = set().union(*(metrics.called_names(source, c) for c in clamps))
+    coupled = bool(calls & set(clamps))
+    independent = scenarios.Check(
+        name="clamps-stayed-independent",
+        passed=functions == clamps and not coupled,
+        detail=f"limits.py defines {functions}, coupled={coupled}",
+    )
+
+    # The visible suite is the agent's to edit; this hidden copy is not.
+    hidden = metrics.run_hidden_tests(
+        workspace, {_FALSE_REUSE_HIDDEN_TEST: _FALSE_REUSE_LIMITS_TEST}
+    )
+    preserved = scenarios.Check(
+        name="clamp-behavior-preserved",
+        passed=hidden.passed,
+        detail=hidden.detail,
+    )
+
+    return [*checks, independent, preserved]
+
+
+def _build_lint_debt(workspace: pathlib.Path) -> None:
+    """Fixture: the changed file carries findings ruff reports on sight."""
+    _write_project(workspace, _LINT_DEBT_OPS, _LINT_DEBT_TEST)
+    _save_finished_task(
+        workspace,
+        [
+            "Modified calc/ops.py and calc/ops_test.py to add subtract() "
+            "and average() with tests; all tests pass.",
+        ],
+    )
+
+
+def _grade_lint_debt(workspace: pathlib.Path) -> list[scenarios.Check]:
+    """The hook must leave the changed files free of ruff findings.
+
+    Unlike the dead-code and duplication scenarios there is no "record a
+    finding" alternative: directive 1 tells the hook to run
+    `readability check --fix` on every file in scope, and these findings are
+    exactly what that command reports.
+    """
+    checks = _common_checks(workspace)
+
+    findings = metrics.ruff_finding_codes(
+        workspace, fixtures.changed_paths(workspace)
+    )
+    cleared = scenarios.Check(
+        name="lint-debt-cleared",
+        passed=not findings,
+        detail=f"ruff findings left in the changed files: {findings}",
+    )
+
+    # Deleting the offending code is the cheapest route to zero findings.
+    source = (workspace / "calc" / "ops.py").read_text()
+    missing = [
+        name
+        for name in ("add", "subtract", "average")
+        if f"def {name}(" not in source
+    ]
+    interface = scenarios.Check(
+        name="interface-preserved",
+        passed=not missing,
+        detail=f"public operations disappeared: {missing}",
+    )
+
+    return [*checks, cleared, interface]
+
+
 def _build_no_orchestration(workspace: pathlib.Path) -> None:
     """Fixture: progress dangles a refactor spanning unrelated files."""
     _write_project(workspace, _CLEAN_OPS)
@@ -453,6 +671,27 @@ SCENARIOS = [
         ),
         build=_build_duplicated_behavior,
         grade=_grade_duplicated_behavior,
+    ),
+    scenarios.Scenario(
+        name="false-reuse-restraint",
+        hook="readability",
+        outcome=models.TaskStatus.COMPLETED,
+        task_id="task1",
+        summary=(
+            "Leaves two same-shaped but unrelated clamps as separate "
+            "definitions instead of forcing them behind one helper."
+        ),
+        build=_build_false_reuse,
+        grade=_grade_false_reuse,
+    ),
+    scenarios.Scenario(
+        name="lint-debt-repaid",
+        hook="readability",
+        outcome=models.TaskStatus.COMPLETED,
+        task_id="task1",
+        summary="Clears every ruff finding in the files the task changed.",
+        build=_build_lint_debt,
+        grade=_grade_lint_debt,
     ),
     scenarios.Scenario(
         name="no-orchestration",

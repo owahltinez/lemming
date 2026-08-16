@@ -23,6 +23,15 @@ only the fixture workspace and a per-trial `LEMMING_HOME` mounted. The agent
 under eval cannot touch the host, and concurrent trials share no state, so
 trials run in parallel safely.
 
+### Hook and Task Scenarios
+
+A scenario declares a `mode`. The default, `hook`, is the flow above: an
+orchestrator hook reacts to a task that just finished. A `task` scenario instead
+sets a `prompt` and no hook fields; the trial runs that prompt as a one-shot
+through `lemming exec` against the fixture workspace, and the grader judges the
+code the agent actually wrote. Everything else — isolation, runner config, infra
+failure classification — is identical in both modes.
+
 ## Running
 
 Evals invoke real agents: expect minutes of wall clock and real token spend.
@@ -32,9 +41,10 @@ They are a manual gate for prompt changes, not part of the unit test suite.
 # List available suites and scenarios
 uv run python -m lemming.evals list
 
-# Run a suite (roadmap or readability): scenarios x 3 trials in parallel
+# Run a suite (roadmap, readability, or task): scenarios x 3 trials
 uv run python -m lemming.evals run --suite roadmap
 uv run python -m lemming.evals run --suite readability
+uv run python -m lemming.evals run --suite task
 
 # Iterate on a single scenario with fewer trials
 uv run python -m lemming.evals run \
@@ -107,7 +117,12 @@ failure rates compares infrastructure, not judgement.
 Scenarios live in `src/lemming/evals/` (see `roadmap.py`):
 
 1. Write a `build` function that seeds the workspace via `fixtures.init_repo`
-   and `fixtures.save_roadmap`.
+   and `fixtures.save_roadmap`. Fixture source belongs in
+   `src/lemming/evals/projects/<suite>/<project>/`, laid out as the workspace
+   sees it and read back with `fixtures.load_project` — never in a string
+   literal. That directory is excluded from this repo's ruff and pytest
+   configuration, because some fixtures are deliberately dirty; the workspace
+   they are copied into excludes nothing.
 2. Write a `grade` function returning `scenarios.Check` results. Prefer checks
    that are mechanically verifiable: roadmap diffs, `fixtures.dirty_paths` for
    source drift, task statuses.
@@ -115,3 +130,48 @@ Scenarios live in `src/lemming/evals/` (see `roadmap.py`):
    `suites.all_suites`.
 4. Add unit tests that grade simulated good and bad agent behavior; the graders
    themselves must stay fast and offline.
+
+### Pair Every Action Scenario With a Restraint One
+
+A comparison of two agent CLIs found the arms failed in opposite directions:
+one under-acted (it did not remove dead code, did not consolidate duplication)
+and the other over-acted (it edited a healthy roadmap it was told to leave
+alone). A suite made only of "did the agent act" scenarios therefore crowns
+whichever agent edits most, and a suite made only of "did the agent hold back"
+scenarios crowns whichever edits least — neither measures judgement.
+
+So a new scenario needs a counterpart pulling the other way, and an agent
+running a constant policy in either direction should score 50% across the pair.
+`false-reuse-restraint` exists for exactly this reason: it is the inverse of
+`consolidate-or-report-live-duplication`, with two functions that share a shape
+but not a concept, and folding them together is the failure.
+
+The `task` suite carries the same idea into the code an agent writes rather than
+reviews. `minimal-change-restraint` hands it one well-specified function to add
+to a healthy project, then requires both halves: hidden tests prove the function
+works, and the remaining checks fail an agent that also wrote a summary
+document, added a speculative module, factored out an unrequested helper, tidied
+the function next door, or padded the suite. The size bound is generous by
+design — roughly three times a documented reference solution — because a check
+that reds a reasonable answer is worse than no check at all.
+
+`lemming.evals.metrics` holds graders computed from tool output rather than
+hand-written fixture knowledge: ruff findings under lemming's own rule set,
+syntax-tree facts, and `run_hidden_tests`, which copies a test file in only at
+grading time so the agent cannot rewrite the suite that judges it.
+
+### Metrics Considered and Rejected
+
+Two obvious-looking metrics were tried and left out, because a grader nobody
+trusts is worse than no grader:
+
+- **Cyclomatic complexity (radon).** Measured against the suite's own messy
+  fixture, flattening the nesting by hand *raised* the score from 6 to 7 (radon
+  counts `and`/`or`), while splitting the function in two dropped the named
+  function to 2 without removing a single branch. The metric ranks fragmentation
+  above the honest fix, which is the pathology a readability eval exists to
+  catch.
+- **Diff churn / net lines.** Doing nothing scores a perfect zero, so it can
+  only ever be read alongside a positive requirement, and the existing
+  `git status` scope check already answers the threshold-free question ("was
+  anything outside scope touched?") without inventing a line budget.
