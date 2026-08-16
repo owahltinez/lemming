@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import pathlib
 import shutil
 import tempfile
@@ -90,6 +91,67 @@ class TestRunSuite(HarnessTestCase):
             self.assertTrue(result.checks)
 
 
+class TestRunnerFailureClassification(HarnessTestCase):
+    def runner_writing_result(self, payload: dict):
+        def run_trial_fn(scenario, workspace, lemming_home, config):
+            path = lemming_home / harness.RESULT_FILE_NAME
+            path.write_text(json.dumps(payload))
+            raise RuntimeError("Hook runner failed")
+
+        return run_trial_fn
+
+    def test_reports_a_runner_that_never_started_as_infra(self):
+        # The agent under eval never got to make a decision, so this must
+        # not be counted against its judgement.
+        results = harness.run_suite(
+            [_scenario("fast-exit-healthy")],
+            self.run_dir,
+            self.config,
+            self.runner_writing_result(
+                {
+                    "exit_codes": {"roadmap": -1},
+                    "launch_failed": True,
+                    "timed_out": False,
+                }
+            ),
+        )
+
+        for result in results:
+            self.assertFalse(result.passed)
+            self.assertTrue(result.infra_failure)
+            self.assertTrue(result.launch_failed)
+
+    def test_reports_a_timeout_as_infra(self):
+        results = harness.run_suite(
+            [_scenario("fast-exit-healthy")],
+            self.run_dir,
+            self.config,
+            self.runner_writing_result(
+                {
+                    "exit_codes": {"roadmap": -14},
+                    "launch_failed": False,
+                    "timed_out": True,
+                }
+            ),
+        )
+
+        for result in results:
+            self.assertTrue(result.infra_failure)
+            self.assertTrue(result.timed_out)
+
+    def test_a_misbehaving_agent_is_not_an_infra_failure(self):
+        results = harness.run_suite(
+            [_scenario("extend-goal-unmet")],
+            self.run_dir,
+            self.config,
+            _finalizing_runner,
+        )
+
+        for result in results:
+            self.assertFalse(result.passed)
+            self.assertFalse(result.infra_failure)
+
+
 class TestTrialArgs(HarnessTestCase):
     def test_maps_scenario_to_container_paths(self):
         args = harness._trial_args(
@@ -102,33 +164,128 @@ class TestTrialArgs(HarnessTestCase):
         self.assertEqual(args[args.index("--outcome") + 1], "failed")
         self.assertEqual(args[args.index("--runner") + 1], "agy")
 
+    def test_points_the_result_file_at_the_lemming_home_mount(self):
+        args = harness._trial_args(_scenario("fast-exit-healthy"), self.config)
 
-class TestAgyHome(HarnessTestCase):
-    def fake_agy_home(self) -> pathlib.Path:
-        home = self.run_dir / "host-gemini"
-        (home / "tmp").mkdir(parents=True)
-        (home / "tmp" / "cache.bin").write_text("cache")
-        (home / "conversations").mkdir()
-        (home / "conversations" / "chat.jsonl").write_text("private")
-        (home / "config").mkdir()
-        (home / "config" / "config.json").write_text("{}")
-        (home / "antigravity-cli").mkdir()
-        (home / "antigravity-cli" / "antigravity-oauth-token").write_text("tok")
-        (home / "gemini-credentials.json").write_text('{"token": "t"}')
+        self.assertEqual(
+            args[args.index("--result-file") + 1],
+            f"/lemming-home/{harness.RESULT_FILE_NAME}",
+        )
+
+
+class TestRunnerHomes(HarnessTestCase):
+    def fake_home(self) -> pathlib.Path:
+        """Builds a host home carrying config for both runners."""
+        home = self.run_dir / "host"
+        gemini = home / ".gemini"
+        (gemini / "tmp").mkdir(parents=True)
+        (gemini / "tmp" / "cache.bin").write_text("cache")
+        (gemini / "conversations").mkdir()
+        (gemini / "conversations" / "chat.jsonl").write_text("private")
+        (gemini / "GEMINI.md").write_text("global instructions")
+        (gemini / "antigravity-cli" / "brain").mkdir(parents=True)
+        (gemini / "antigravity-cli" / "brain" / "index.bin").write_text("big")
+        (gemini / "antigravity-cli" / "bin").mkdir()
+        (gemini / "antigravity-cli" / "bin" / "agy").write_text("binary")
+        (gemini / "antigravity-cli" / "antigravity-oauth-token").write_text(
+            "tok"
+        )
+        (gemini / "extensions" / "ext").mkdir(parents=True)
+        (gemini / "extensions" / "ext" / "manifest.json").write_text("{}")
+        (gemini / "skills" / "skill").mkdir(parents=True)
+        (gemini / "skills" / "skill" / "SKILL.md").write_text("skill")
+        (gemini / "config" / "bin").mkdir(parents=True)
+        (gemini / "config" / "bin" / "helper").write_text("keep")
+        opencode = home / ".config" / "opencode"
+        (opencode / "node_modules" / "pkg").mkdir(parents=True)
+        (opencode / "node_modules" / "pkg" / "index.js").write_text("x")
+        (opencode / "opencode.jsonc").write_text("{}")
+        (opencode / "AGENTS.md").write_text("global instructions")
         return home
 
-    def test_copies_auth_state_and_skips_caches(self):
+    def test_opencode_gets_its_own_private_config_copy(self):
+        # agy trials run with the host's global instructions and skills. An
+        # opencode arm running from a bare container would be compared
+        # against a differently-equipped agent, not a different harness.
         trial_dir = self.run_dir / "trial-0"
         trial_dir.mkdir()
 
-        spec = harness._prepare_agy_home(self.fake_agy_home(), trial_dir)
+        specs = harness._prepare_runner_home(
+            "opencode", trial_dir, home=self.fake_home()
+        )
+
+        copy = trial_dir / "opencode-home"
+        self.assertEqual(list(specs), [f"{copy}:/root/.config/opencode"])
+        self.assertEqual((copy / "opencode.jsonc").read_text(), "{}")
+        self.assertEqual(
+            (copy / "AGENTS.md").read_text(), "global instructions"
+        )
+
+    def test_agy_bulk_directories_are_not_copied_per_trial(self):
+        # The agy home carries a multi-hundred-megabyte model cache and a
+        # copy of the CLI itself. The container installs its own agy, and
+        # copying that bulk once per trial is what turns a long run into
+        # tens of gigabytes of disk churn.
+        trial_dir = self.run_dir / "trial-0"
+        trial_dir.mkdir()
+
+        harness._prepare_runner_home("agy", trial_dir, home=self.fake_home())
 
         copy = trial_dir / "agy-home"
-        self.assertEqual(spec, f"{copy}:/root/.gemini")
+        self.assertFalse((copy / "antigravity-cli" / "brain").exists())
+        self.assertFalse((copy / "antigravity-cli" / "bin").exists())
+        # Only those exact paths: an unrelated bin/ elsewhere in the tree
+        # is not bulk, and dropping it by name would be too broad.
+        self.assertTrue((copy / "config" / "bin").is_dir())
         self.assertEqual(
-            (copy / "gemini-credentials.json").read_text(), '{"token": "t"}'
+            (copy / "antigravity-cli" / "antigravity-oauth-token").read_text(),
+            "tok",
         )
-        self.assertTrue((copy / "config" / "config.json").is_file())
+
+    def test_agy_capabilities_opencode_lacks_are_left_behind(self):
+        # Skills and extensions have no opencode counterpart. Copying them
+        # would compare an agent with extra tooling against one without,
+        # which measures equipment rather than the runners themselves.
+        trial_dir = self.run_dir / "trial-0"
+        trial_dir.mkdir()
+
+        harness._prepare_runner_home("agy", trial_dir, home=self.fake_home())
+
+        copy = trial_dir / "agy-home"
+        self.assertFalse((copy / "skills").exists())
+        self.assertFalse((copy / "extensions").exists())
+        # The shared global instructions are the context both arms keep.
+        self.assertEqual(
+            (copy / "GEMINI.md").read_text(), "global instructions"
+        )
+
+    def test_installed_packages_are_not_copied_per_trial(self):
+        # opencode's config directory carries a node_modules of tens of
+        # megabytes. Copying it for every trial is pure disk churn, and a
+        # long run is exactly where that starts to hurt.
+        trial_dir = self.run_dir / "trial-0"
+        trial_dir.mkdir()
+
+        harness._prepare_runner_home(
+            "opencode", trial_dir, home=self.fake_home()
+        )
+
+        copy = trial_dir / "opencode-home"
+        self.assertFalse((copy / "node_modules").exists())
+
+    def test_agy_keeps_auth_and_instructions_but_not_caches(self):
+        trial_dir = self.run_dir / "trial-0"
+        trial_dir.mkdir()
+
+        specs = harness._prepare_runner_home(
+            "agy", trial_dir, home=self.fake_home()
+        )
+
+        copy = trial_dir / "agy-home"
+        self.assertEqual(list(specs), [f"{copy}:/root/.gemini"])
+        self.assertEqual(
+            (copy / "GEMINI.md").read_text(), "global instructions"
+        )
         self.assertEqual(
             (copy / "antigravity-cli" / "antigravity-oauth-token").read_text(),
             "tok",
@@ -136,51 +293,67 @@ class TestAgyHome(HarnessTestCase):
         self.assertFalse((copy / "tmp").exists())
         self.assertFalse((copy / "conversations").exists())
 
-    def test_returns_none_without_host_home(self):
-        spec = harness._prepare_agy_home(self.run_dir / "missing", self.run_dir)
+    def test_returns_nothing_without_host_home(self):
+        specs = harness._prepare_runner_home(
+            "agy", self.run_dir, home=self.run_dir / "missing"
+        )
 
-        self.assertIsNone(spec)
+        self.assertEqual(specs, ())
 
-    def test_container_runner_mounts_private_agy_copy(self):
-        scenario = _scenario("fast-exit-healthy")
+    def test_runner_string_with_arguments_still_matches(self):
         trial_dir = self.run_dir / "trial-0"
-        workspace = trial_dir / "workspace"
+        trial_dir.mkdir()
+
+        specs = harness._prepare_runner_home(
+            "opencode --variant high", trial_dir, home=self.fake_home()
+        )
+
+        self.assertTrue(specs)
+
+    def test_unknown_runner_gets_nothing(self):
+        trial_dir = self.run_dir / "trial-0"
+        trial_dir.mkdir()
+
+        specs = harness._prepare_runner_home(
+            "claude", trial_dir, home=self.fake_home()
+        )
+
+        self.assertEqual(specs, ())
+
+
+class TestContainerRunnerVolumes(HarnessTestCase):
+    def run_and_capture_volumes(self, config: harness.HarnessConfig):
+        scenario = _scenario("fast-exit-healthy")
+        workspace = self.run_dir / "trial-0" / "workspace"
         workspace.mkdir(parents=True)
-        host_home = self.fake_agy_home()
+
+        # Point the runner at a fake host home so the assertion does not
+        # depend on whether the machine running the tests has agy installed.
+        home = self.run_dir / "host"
+        (home / ".gemini").mkdir(parents=True)
 
         with (
             unittest.mock.patch.object(
                 harness.container, "run_trial"
             ) as run_trial,
             unittest.mock.patch.object(
-                harness.pathlib.Path, "home", return_value=host_home.parent
+                harness.pathlib.Path, "home", return_value=home
             ),
         ):
-            # Point the runner at the fake host home (~/.gemini).
-            host_home.rename(host_home.parent / ".gemini")
-            harness._run_trial_in_container(
-                scenario, workspace, trial_dir / "home", self.config
-            )
-
-        volumes = run_trial.call_args.kwargs["volumes"]
-        self.assertEqual(
-            list(volumes), [f"{trial_dir / 'agy-home'}:/root/.gemini"]
-        )
-
-    def test_non_agy_runner_adds_no_mount(self):
-        scenario = _scenario("fast-exit-healthy")
-        workspace = self.run_dir / "trial-0" / "workspace"
-        workspace.mkdir(parents=True)
-        config = dataclasses.replace(self.config, runner="claude")
-
-        with unittest.mock.patch.object(
-            harness.container, "run_trial"
-        ) as run_trial:
             harness._run_trial_in_container(
                 scenario, workspace, workspace.parent / "home", config
             )
+        return run_trial.call_args.kwargs["volumes"]
 
-        self.assertEqual(run_trial.call_args.kwargs["volumes"], ())
+    def test_runner_home_is_mounted(self):
+        volumes = self.run_and_capture_volumes(self.config)
+
+        self.assertTrue(any(":/root/.gemini" in spec for spec in volumes))
+
+    def test_runner_without_a_known_home_adds_no_mount(self):
+        config = dataclasses.replace(self.config, runner="claude")
+
+        self.assertEqual(self.run_and_capture_volumes(config), ())
 
 
 if __name__ == "__main__":

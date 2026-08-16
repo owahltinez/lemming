@@ -8,7 +8,10 @@ docker-based runner from the container module, tests use in-process fakes.
 
 import concurrent.futures
 import dataclasses
+import json
+import os
 import pathlib
+import shlex
 import shutil
 import time
 import traceback
@@ -17,10 +20,73 @@ import typing
 from .. import models
 from . import container, fixtures, scenarios
 
-# Entries under the agy home that are caches, logs, or user data the trials
-# must not see. Functional state stays, notably the auth token under
-# antigravity-cli/, which agy requires to start at all.
-_AGY_HOME_EXCLUDES = ("tmp", "history", "conversations", "log", "scratch")
+# Entries under a runner home that are caches, logs, user data, or installed
+# packages the trials must not see. Functional state stays, notably agy's auth
+# token under antigravity-cli/, which agy requires to start at all.
+# node_modules is tens of megabytes in opencode's config directory and would
+# otherwise be copied once per trial.
+_HOME_EXCLUDES = (
+    "tmp",
+    "history",
+    "conversations",
+    "log",
+    "scratch",
+    "node_modules",
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class _RunnerHome:
+    """Where a runner keeps the configuration a trial should inherit.
+
+    Attributes:
+        host: Path of the config directory relative to the host home.
+        mount: Absolute path the copy is mounted at inside the container.
+        copy_name: Name of the per-trial copy under the trial directory.
+        exclude_paths: Paths, relative to the config directory, that a
+            trial must not inherit. Matched by exact path rather than by
+            name so a small directory that happens to share a name is
+            kept. Two reasons qualify: bulk that would be copied once per
+            trial, and capabilities one runner has no counterpart for.
+    """
+
+    host: str
+    mount: str
+    copy_name: str
+    exclude_paths: tuple[str, ...] = ()
+
+
+# Comparing two runners is only meaningful when both bring the same context.
+# Each runner therefore gets its own global instructions and auth, and
+# anything one runner has no counterpart for is left behind: otherwise the
+# result measures how the agents were equipped rather than how they behave.
+_RUNNER_HOMES = {
+    "agy": _RunnerHome(
+        ".gemini",
+        "/root/.gemini",
+        "agy-home",
+        exclude_paths=(
+            # A model cache and a vendored copy of the CLI, together
+            # hundreds of megabytes. The container installs its own agy,
+            # so neither is needed and copying them per trial would
+            # dominate the run's disk I/O.
+            "antigravity-cli/brain",
+            "antigravity-cli/bin",
+            # Capabilities with no opencode counterpart. Leaving them in
+            # would measure an agent that has extra tooling against one
+            # that does not, which is not a comparison of runners.
+            "skills",
+            "extensions",
+        ),
+    ),
+    "opencode": _RunnerHome(
+        ".config/opencode", "/root/.config/opencode", "opencode-home"
+    ),
+}
+
+# Written by the in-container trial into the per-trial lemming home, which
+# is mounted from the host and so survives the container it was written in.
+RESULT_FILE_NAME = "result.json"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,7 +106,7 @@ class HarnessConfig:
     runner: str = "agy"
     trials: int = 3
     jobs: int = 4
-    time_limit: int = 15
+    time_limit: int = 10
     image: str = container.DEFAULT_IMAGE
     docker: str = "docker"
     volumes: tuple[str, ...] = ()
@@ -48,7 +114,20 @@ class HarnessConfig:
 
 @dataclasses.dataclass
 class TrialResult:
-    """Outcome of a single graded trial."""
+    """Outcome of a single graded trial.
+
+    Attributes:
+        scenario: Name of the scenario the trial ran.
+        trial: Zero-based index of the attempt.
+        passed: Whether every non-advisory check held.
+        checks: Graded assertions about the workspace.
+        duration: Wall-clock seconds the trial took.
+        workspace: Directory the trial ran in, kept for debugging.
+        error: Traceback of an infrastructure error, if any.
+        exit_codes: Per-hook exit codes reported by the trial.
+        launch_failed: True when the runner never started.
+        timed_out: True when the runner exceeded its time limit.
+    """
 
     scenario: str
     trial: int
@@ -57,6 +136,19 @@ class TrialResult:
     duration: float
     workspace: pathlib.Path
     error: str = ""
+    exit_codes: dict[str, int] = dataclasses.field(default_factory=dict)
+    launch_failed: bool = False
+    timed_out: bool = False
+
+    @property
+    def infra_failure(self) -> bool:
+        """True when the trial failed without the agent making a decision.
+
+        A runner that never started or ran out of time says nothing about
+        the agent's judgement, and counting it as a behavioural failure
+        penalizes whichever arm of a comparison is slower or flakier.
+        """
+        return self.launch_failed or self.timed_out
 
 
 # A trial runner takes (scenario, workspace, lemming_home, config) and
@@ -89,37 +181,87 @@ def _trial_args(
         config.runner,
         "--time-limit",
         str(config.time_limit),
+        "--result-file",
+        f"{container.HOME_MOUNT}/{RESULT_FILE_NAME}",
     ]
 
 
-def _prepare_agy_home(
-    host_home: pathlib.Path, trial_dir: pathlib.Path
-) -> str | None:
-    """Copies the host agy config into the trial for a private mount.
+def _ignore_excluded(
+    source: pathlib.Path, runner_home: _RunnerHome
+) -> typing.Callable[[str, list[str]], set[str]]:
+    """Builds a copytree ignore callback for one runner's config directory.
 
-    agy authenticates via files under ~/.gemini and writes back to them
-    (token refresh, state), so a read-only mount would break it and a
-    shared read-write mount would let concurrent yolo-mode trials mutate
-    the host's real state. Each trial instead gets its own disposable copy.
+    Caches are matched by name anywhere in the tree; bulk directories are
+    matched by their exact path, so an unrelated directory that happens to
+    share a name is still copied.
 
     Args:
-        host_home: The agy home on the host (normally ~/.gemini).
-        trial_dir: The trial directory receiving the copy.
+        source: Root of the config directory being copied.
+        runner_home: The runner's home description.
 
     Returns:
-        A docker --volume spec for the copy, or None when the host has no
-        agy home to copy.
+        A callable suitable for shutil.copytree's ignore argument.
     """
-    if not host_home.is_dir():
-        return None
-    target = trial_dir / "agy-home"
+    by_name = shutil.ignore_patterns(*_HOME_EXCLUDES)
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        ignored = set(by_name(directory, names))
+        relative = pathlib.Path(directory).relative_to(source)
+        for name in names:
+            if str(relative / name) in runner_home.exclude_paths:
+                ignored.add(name)
+        return ignored
+
+    return ignore
+
+
+def _prepare_runner_home(
+    runner: str,
+    trial_dir: pathlib.Path,
+    home: pathlib.Path | None = None,
+) -> tuple[str, ...]:
+    """Copies a runner's host config into the trial for a private mount.
+
+    Runners authenticate via files under their config directory and write
+    back to them (token refresh, state), so a read-only mount would break
+    them and a shared read-write mount would let concurrent yolo-mode
+    trials mutate the host's real state. Each trial gets its own copy.
+
+    Args:
+        runner: The runner string; only its executable name is matched, so
+            trailing arguments such as "--variant high" are tolerated.
+        trial_dir: The trial directory receiving the copy.
+        home: Host home directory, defaulting to the current user's.
+
+    Returns:
+        Docker --volume specs for the copy, empty when the runner has no
+        known config directory or the host has nothing to copy.
+    """
+    home = home or pathlib.Path.home()
+    executable = os.path.basename(shlex.split(runner)[0]) if runner else ""
+    runner_home = next(
+        (
+            entry
+            for name, entry in _RUNNER_HOMES.items()
+            if executable.startswith(name)
+        ),
+        None,
+    )
+    if runner_home is None:
+        return ()
+
+    source = home / runner_home.host
+    if not source.is_dir():
+        return ()
+
+    target = trial_dir / runner_home.copy_name
     shutil.copytree(
-        host_home,
+        source,
         target,
-        ignore=shutil.ignore_patterns(*_AGY_HOME_EXCLUDES),
+        ignore=_ignore_excluded(source, runner_home),
         ignore_dangling_symlinks=True,
     )
-    return f"{target}:/root/.gemini"
+    return (f"{target}:{runner_home.mount}",)
 
 
 def _run_trial_in_container(
@@ -129,13 +271,10 @@ def _run_trial_in_container(
     config: HarnessConfig,
 ) -> None:
     """Default trial runner: executes the trial in a docker container."""
-    volumes = config.volumes
-    if config.runner.startswith("agy"):
-        agy_volume = _prepare_agy_home(
-            pathlib.Path.home() / ".gemini", workspace.parent
-        )
-        if agy_volume:
-            volumes = (*volumes, agy_volume)
+    volumes = (
+        *config.volumes,
+        *_prepare_runner_home(config.runner, workspace.parent),
+    )
 
     container.run_trial(
         workspace,
@@ -147,6 +286,25 @@ def _run_trial_in_container(
         docker=config.docker,
         volumes=volumes,
     )
+
+
+def _read_result(path: pathlib.Path) -> dict:
+    """Reads the trial's result record, tolerating a missing or bad file.
+
+    A container that died before writing the record leaves nothing behind;
+    that is itself an infrastructure failure, already captured as the
+    trial's error, so an empty record is the honest answer here.
+
+    Args:
+        path: Host path of the record written inside the container.
+
+    Returns:
+        The parsed record, or an empty mapping when it is unusable.
+    """
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def _execute_trial(
@@ -183,6 +341,7 @@ def _execute_trial(
             )
         ]
 
+    record = _read_result(lemming_home / RESULT_FILE_NAME)
     return TrialResult(
         scenario=scenario.name,
         trial=trial_index,
@@ -191,6 +350,9 @@ def _execute_trial(
         duration=time.monotonic() - started,
         workspace=workspace,
         error=error,
+        exit_codes=record.get("exit_codes", {}),
+        launch_failed=bool(record.get("launch_failed")),
+        timed_out=bool(record.get("timed_out")),
     )
 
 
