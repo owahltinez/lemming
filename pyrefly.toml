@@ -1,0 +1,11 @@
+# Type checking covers the code that ships, not the code that exercises it.
+#
+# Test doubles are duck-typed on purpose, so a strict checker reports every
+# one of them as an incompatible argument; the eval fixture projects are
+# sample repositories seeded into a workspace, several deliberately broken,
+# and they are data rather than source.
+project-excludes = [
+  "**/*_test.py",
+  "**/conftest.py",
+  "**/evals/projects/**",
+]
