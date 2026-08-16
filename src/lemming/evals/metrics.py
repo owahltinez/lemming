@@ -1,85 +1,60 @@
 """Objective measurements eval graders can compute from a workspace.
 
-Everything here is mechanical: a lint tool's own JSON, the syntax tree, or
-the exit code of a test run. Nothing infers intent, so a grader built from
-these stays cheap to trust.
+Everything here is mechanical: the lint tool's own verdict, the syntax
+tree, or the exit code of a test run. Nothing infers intent, and nothing
+restates a rule another tool already owns, so a grader built from these
+stays cheap to trust.
 """
 
 import ast
 import dataclasses
-import json
 import pathlib
 import subprocess
 import sys
-import tempfile
 
-# Mirrors the default configuration `readability check` applies when a
-# project defines none, which is what an eval fixture gets. Grading against
-# a different rule set than the agent was told to run would measure the
-# disagreement between the two configs instead of the agent.
-RUFF_CONFIG = """line-length = 80
-
-[lint]
-select = ["E", "W", "F", "I", "N", "D", "PL"]
-ignore = ["PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004"]
-
-[lint.pydocstyle]
-convention = "google"
-
-[lint.per-file-ignores]
-"test_*.py" = ["D"]
-"*_test.py" = ["D"]
-"""
+import readability
 
 
-def ruff_finding_codes(workspace: pathlib.Path, paths: list[str]) -> list[str]:
-    """Returns the ruff rule codes reported for the given workspace paths.
+def unresolved_findings(workspace: pathlib.Path, paths: list[str]) -> str:
+    """Returns what `readability check` still reports, empty when clean.
 
-    ruff is invoked directly, in JSON, rather than through
-    `readability check`: that command concatenates several tools' prose and
-    has no stable shape to parse. Paths that are missing or are not Python
-    files are skipped, so a caller can pass a raw list of changed files.
+    The check is delegated rather than reimplemented. readability owns the
+    rule set, decides which tools apply to a path, and distinguishes a
+    clean result from one where the tools never ran; duplicating any of
+    that here would grade the agent against a different standard than the
+    one its prompt told it to meet, and would drift the moment either side
+    changed. It is also the exact check the hook is told to run.
 
     Args:
         workspace: Root of the workspace repository.
-        paths: Repo-relative paths to lint.
+        paths: Repo-relative paths to check.
 
     Returns:
-        One rule code per finding, in ruff's reporting order.
+        Why the paths are not clean, or an empty string when the tools
+        verified them and found nothing. Being unable to verify is not a
+        clean result and returns a reason.
     """
+    # The tools resolve path arguments themselves, so pass absolute ones.
     targets = [
-        str(workspace / path)
+        workspace / path
         for path in paths
         if path.endswith(".py") and (workspace / path).is_file()
     ]
     if not targets:
-        return []
+        return ""
 
-    # The config travels as a file so the fixture needs none of its own and
-    # ruff never walks up into whatever project encloses the temp workspace.
-    with tempfile.TemporaryDirectory() as config_dir:
-        config = pathlib.Path(config_dir) / "ruff.toml"
-        config.write_text(RUFF_CONFIG)
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "ruff",
-                "check",
-                "--config",
-                str(config),
-                "--output-format",
-                "json",
-                "--no-cache",
-                *targets,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+    # Delegate to readability; its findings land on this process's streams.
+    report = readability.check_paths(targets, project_root=workspace)
 
-    return [finding["code"] for finding in json.loads(result.stdout)]
+    # Clean means the tools ran and found nothing; unverified is not clean.
+    unverified = sorted(report.skipped | report.failed)
+    if unverified:
+        return f"readability could not verify the paths: {unverified}"
+    if not report.ran:
+        return "no readability tool checked the paths"
+    if report.findings:
+        return f"readability reported findings via {sorted(report.ran)}"
+    return ""
 
 
 def _parse(source: str) -> ast.Module | None:

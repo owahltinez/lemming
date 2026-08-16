@@ -2,6 +2,9 @@ import pathlib
 import shutil
 import tempfile
 import unittest
+import unittest.mock
+
+import readability
 
 from lemming.evals import fixtures, metrics
 
@@ -50,40 +53,66 @@ class MetricsTestCase(unittest.TestCase):
         target.write_text(content)
 
 
-class TestRuffFindingCodes(MetricsTestCase):
-    def test_clean_source_has_no_findings(self):
+class TestUnresolvedFindings(MetricsTestCase):
+    def test_clean_source_reports_nothing(self):
         self.seed({"pkg/mod.py": _CLEAN})
 
-        codes = metrics.ruff_finding_codes(self.workspace, ["pkg/mod.py"])
+        self.assertEqual(
+            metrics.unresolved_findings(self.workspace, ["pkg/mod.py"]), ""
+        )
 
-        self.assertEqual(codes, [])
-
-    def test_reports_the_rules_lemming_configures(self):
-        # Pinning the codes proves the grader uses lemming's own rule set
-        # rather than ruff's much smaller default selection.
+    def test_reports_the_rules_the_agent_was_told_to_run(self):
+        # Dirty by readability's standard must come back as findings.
         self.seed({"pkg/mod.py": _DIRTY})
 
-        codes = metrics.ruff_finding_codes(self.workspace, ["pkg/mod.py"])
+        outstanding = metrics.unresolved_findings(
+            self.workspace, ["pkg/mod.py"]
+        )
 
-        self.assertEqual(sorted(codes), ["D103", "F401", "F401", "I001"])
+        self.assertIn("findings", outstanding)
 
-    def test_test_files_are_exempt_from_docstring_rules(self):
-        # The grader must apply the same per-file ignores the agent sees, or
-        # it would demand docstrings the tool never asked for.
+    def test_test_files_follow_the_tools_own_per_file_ignores(self):
+        # The grader inherits readability's per-file ignores for tests.
         self.seed({"pkg/mod_test.py": "def helper():\n    return 1\n"})
 
-        codes = metrics.ruff_finding_codes(self.workspace, ["pkg/mod_test.py"])
-
-        self.assertEqual(codes, [])
+        self.assertEqual(
+            metrics.unresolved_findings(self.workspace, ["pkg/mod_test.py"]),
+            "",
+        )
 
     def test_skips_paths_that_are_not_python_files(self):
         self.seed({"README.md": "# Title\n"})
 
-        codes = metrics.ruff_finding_codes(
-            self.workspace, ["README.md", "pkg/gone.py"]
+        self.assertEqual(
+            metrics.unresolved_findings(
+                self.workspace, ["README.md", "pkg/gone.py"]
+            ),
+            "",
         )
 
-        self.assertEqual(codes, [])
+    def test_being_unable_to_check_is_not_a_clean_result(self):
+        # No findings from a tool that never ran is not a pass.
+        self.seed({"pkg/mod.py": _CLEAN})
+        unverified = {
+            "no tool ran at all": readability.CheckReport(),
+            "an applicable tool was missing": readability.CheckReport(
+                ran={"ruff"}, skipped={"pyrefly"}
+            ),
+            "a tool could not finish": readability.CheckReport(
+                ran={"ruff"}, failed={"pyrefly"}
+            ),
+        }
+
+        for label, report in unverified.items():
+            with self.subTest(label):
+                with unittest.mock.patch.object(
+                    metrics.readability, "check_paths", return_value=report
+                ):
+                    outstanding = metrics.unresolved_findings(
+                        self.workspace, ["pkg/mod.py"]
+                    )
+
+                self.assertTrue(outstanding, f"{label} was read as clean")
 
 
 class TestSourceFacts(unittest.TestCase):

@@ -595,13 +595,13 @@ def _grade_lint_debt(workspace: pathlib.Path) -> list[scenarios.Check]:
     """
     checks = _common_checks(workspace)
 
-    findings = metrics.ruff_finding_codes(
+    outstanding = metrics.unresolved_findings(
         workspace, fixtures.changed_paths(workspace)
     )
     cleared = scenarios.Check(
         name="lint-debt-cleared",
-        passed=not findings,
-        detail=f"ruff findings left in the changed files: {findings}",
+        passed=not outstanding,
+        detail=outstanding,
     )
 
     # Deleting the offending code is the cheapest route to zero findings.
