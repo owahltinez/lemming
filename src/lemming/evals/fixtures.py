@@ -35,19 +35,31 @@ def _git(workspace: pathlib.Path, *args: str) -> str:
     return result.stdout
 
 
-def init_repo(workspace: pathlib.Path, files: dict[str, str]) -> None:
+def _write_files(workspace: pathlib.Path, files: dict[str, str]) -> None:
+    """Writes a mapping of relative paths to contents into the workspace."""
+    for relative_path, content in files.items():
+        target = workspace / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+
+
+def init_repo(
+    workspace: pathlib.Path,
+    files: dict[str, str],
+    changes: dict[str, str] | None = None,
+) -> None:
     """Creates a git repository seeded with files and a baseline commit.
 
     Args:
         workspace: Directory to initialize (created if missing).
         files: Mapping of relative file paths to their contents.
+        changes: Edits a finished task made on top of the baseline. When
+            given, they land in a second commit so the trial starts with a
+            real diff to review; graders read it back with changed_paths.
     """
     # Seed the fixture files plus the ignore list for eval-owned state.
     workspace.mkdir(parents=True, exist_ok=True)
-    for relative_path, content in files.items():
-        target = workspace / relative_path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
+    _write_files(workspace, files)
     ignore_file = workspace / ".gitignore"
     ignore_file.write_text("\n".join(WORKSPACE_IGNORES) + "\n")
 
@@ -57,6 +69,12 @@ def init_repo(workspace: pathlib.Path, files: dict[str, str]) -> None:
     _git(workspace, "config", "user.name", "Lemming Evals")
     _git(workspace, "add", "--all")
     _git(workspace, "commit", "--quiet", "--message", "Baseline fixture")
+
+    # A second commit, so HEAD~1..HEAD is the scope a review hook reads.
+    if changes:
+        _write_files(workspace, changes)
+        _git(workspace, "add", "--all")
+        _git(workspace, "commit", "--quiet", "--message", "Finished task")
 
 
 def tasks_file(workspace: pathlib.Path) -> pathlib.Path:
@@ -88,3 +106,23 @@ def dirty_paths(workspace: pathlib.Path) -> list[str]:
     """
     output = _git(workspace, "status", "--porcelain")
     return [line[3:].strip() for line in output.splitlines() if line.strip()]
+
+
+def changed_paths(workspace: pathlib.Path) -> list[str]:
+    """Returns the paths the finished task's commit touched.
+
+    This is the scope a review hook is expected to look at. Fixtures built
+    without a ``changes`` mapping have no task commit and report nothing.
+
+    Args:
+        workspace: The workspace repository to inspect.
+
+    Returns:
+        Repo-relative paths changed by the task commit, or an empty list
+        when the fixture has only its baseline commit.
+    """
+    revisions = _git(workspace, "rev-list", "--count", "HEAD").strip()
+    if int(revisions) < 2:
+        return []
+    output = _git(workspace, "diff", "--name-only", "HEAD~1", "HEAD")
+    return [line.strip() for line in output.splitlines() if line.strip()]
