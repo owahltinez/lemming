@@ -36,6 +36,28 @@ def subtract(a: float, b: float) -> float:
     return a - b
 '''
 
+# The state of the module before the finished task ran: subtract() and its
+# test are what the task added, so the fixture's second commit is a diff that
+# matches the task description instead of prose the hook has to take on
+# faith.
+_BASELINE_OPS = '''"""Arithmetic operations for the calculator CLI."""
+
+
+def add(a: float, b: float) -> float:
+    """Returns the sum of two numbers."""
+    return a + b
+'''
+
+_BASELINE_OPS_TEST = """import unittest
+
+from calc import ops
+
+
+class TestOps(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(ops.add(2, 3), 5)
+"""
+
 # The same module with an obviously dead duplicate: cleanly formatted so
 # automated tools stay silent and only a genuine review can catch it.
 _DEAD_CODE_OPS = '''"""Arithmetic operations for the calculator CLI."""
@@ -166,15 +188,24 @@ def _write_project(
     ops_source: str,
     test_source: str = _OPS_TEST,
 ) -> None:
-    """Seeds the fixture project with the given ops module."""
+    """Seeds the fixture project with the given ops module.
+
+    The ops module and its tests land in a second commit so the trial starts
+    with the finished task's work as a reviewable diff; everything else is
+    baseline the hook is expected to leave alone.
+    """
     fixtures.init_repo(
         workspace,
         {
             "calc/__init__.py": "",
-            "calc/ops.py": ops_source,
-            "calc/ops_test.py": test_source,
+            "calc/ops.py": _BASELINE_OPS,
+            "calc/ops_test.py": _BASELINE_OPS_TEST,
             "calc/legacy.py": _MESSY_LEGACY,
             "README.md": "# Calculator CLI\n",
+        },
+        changes={
+            "calc/ops.py": ops_source,
+            "calc/ops_test.py": test_source,
         },
     )
 

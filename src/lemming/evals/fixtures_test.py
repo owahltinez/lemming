@@ -41,6 +41,27 @@ class TestInitRepo(unittest.TestCase):
 
         self.assertEqual(fixtures.dirty_paths(self.workspace), [])
 
+    def test_changes_land_in_a_second_commit(self):
+        # Hook scenarios review a real diff, not a prose description.
+        fixtures.init_repo(
+            self.workspace,
+            {"pkg/mod.py": "X = 1\n", "pkg/other.py": "Y = 1\n"},
+            changes={"pkg/mod.py": "X = 2\n", "pkg/new.py": "Z = 1\n"},
+        )
+
+        self.assertEqual((self.workspace / "pkg/mod.py").read_text(), "X = 2\n")
+        self.assertEqual(
+            sorted(fixtures.changed_paths(self.workspace)),
+            ["pkg/mod.py", "pkg/new.py"],
+        )
+        self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+
+    def test_without_changes_there_is_no_task_commit(self):
+        fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
+
+        self.assertEqual(fixtures.changed_paths(self.workspace), [])
+        self.assertEqual(fixtures.dirty_paths(self.workspace), [])
+
     def test_roadmap_round_trip(self):
         fixtures.init_repo(self.workspace, {"pkg/mod.py": "X = 1\n"})
 
