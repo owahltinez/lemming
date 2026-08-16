@@ -148,21 +148,35 @@ def _trial_args(
     scenario: scenarios.Scenario, config: HarnessConfig
 ) -> list[str]:
     """Builds the in-container trial argv for a scenario."""
-    tasks_file = f"{container.WORKSPACE_MOUNT}/{fixtures.TASKS_FILE_NAME}"
-    outcome = (
-        "failed"
-        if scenario.outcome == models.TaskStatus.FAILED
-        else "completed"
-    )
+    # A task scenario gets a prompt and workspace, not a fixture roadmap.
+    if scenario.mode == "task":
+        specific = [
+            "--workspace",
+            container.WORKSPACE_MOUNT,
+            "--prompt",
+            scenario.prompt or "",
+        ]
+    else:
+        outcome = (
+            "failed"
+            if scenario.outcome == models.TaskStatus.FAILED
+            else "completed"
+        )
+        specific = [
+            "--tasks-file",
+            f"{container.WORKSPACE_MOUNT}/{fixtures.TASKS_FILE_NAME}",
+            "--task-id",
+            scenario.task_id or "",
+            "--hook",
+            scenario.hook or "",
+            "--outcome",
+            outcome,
+        ]
+
     return [
-        "--tasks-file",
-        tasks_file,
-        "--task-id",
-        scenario.task_id,
-        "--hook",
-        scenario.hook,
-        "--outcome",
-        outcome,
+        "--mode",
+        scenario.mode,
+        *specific,
         "--runner",
         config.runner,
         "--time-limit",
