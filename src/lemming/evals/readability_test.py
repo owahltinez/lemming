@@ -11,6 +11,29 @@ def _scenario(name: str) -> scenarios.Scenario:
     return next(s for s in readability.SCENARIOS if s.name == name)
 
 
+# calc/ops.py once a hook has cleared the lint-debt fixture.
+_REPAIRED_LINT_DEBT_OPS = '''"""Arithmetic operations for the calculator CLI."""
+
+import math
+
+
+def add(a: float, b: float) -> float:
+    """Returns the sum of two numbers."""
+    return a + b
+
+
+def subtract(a: float, b: float) -> float:
+    """Returns the difference of two numbers."""
+    return a - b
+
+
+def average(values: list[float]) -> float:
+    """Returns the mean of the given values."""
+    total = math.fsum([float(value) for value in values])
+    return round(total / max(len(values), 1), 4)
+'''
+
+
 class ScenarioTestCase(unittest.TestCase):
     def setUp(self):
         self.workspace = pathlib.Path(tempfile.mkdtemp())
@@ -38,7 +61,18 @@ class TestSuiteRegistry(ScenarioTestCase):
         self.assertIn("readability", registry)
         names = [s.name for s in registry["readability"]]
         self.assertEqual(len(names), len(set(names)))
-        self.assertEqual(len(names), 4)
+        self.assertEqual(len(names), 6)
+
+    def test_action_and_restraint_scenarios_stay_balanced(self):
+        # A suite weighted towards action or restraint picks its own winner.
+        registry = suites.all_suites()
+        names = {s.name for s in registry["readability"]}
+        restraint = {
+            "clean-fast-exit",
+            "false-reuse-restraint",
+            "no-orchestration",
+        }
+        self.assertEqual(len(restraint), len(names - restraint))
 
 
 class TestFastExitScenario(ScenarioTestCase):
@@ -202,6 +236,102 @@ def subtract_for_receipt(a: float, b: float) -> float:
             "receipt-interface-preserved",
             self.failed_names(checks),
         )
+
+
+class TestFalseReuseRestraintScenario(ScenarioTestCase):
+    def test_leaving_both_clamps_alone_passes(self):
+        self.build("false-reuse-restraint")
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.failed_names(checks), set())
+
+    def test_extracting_a_shared_clamp_helper_fails(self):
+        self.build("false-reuse-restraint")
+        limits = self.workspace / "calc" / "limits.py"
+        source = limits.read_text()
+        start = source.index("def clamp_percentage")
+        limits.write_text(
+            source[:start]
+            + '''def _clamp(value, low, high):
+    """Returns a value clamped to a range."""
+    return max(low, min(high, value))
+
+
+def clamp_percentage(value: float) -> float:
+    """Returns a percentage clamped to the 0-100 display range."""
+    return _clamp(value, 0.0, MAX_PERCENT)
+
+
+def clamp_retries(attempts: int) -> int:
+    """Returns a retry count clamped to the backoff loop's budget."""
+    return _clamp(attempts, 0, MAX_RETRIES)
+'''
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn("clamps-stayed-independent", self.failed_names(checks))
+
+    def test_routing_one_clamp_through_the_other_fails(self):
+        # No new symbol appears, so only the call graph gives this away.
+        self.build("false-reuse-restraint")
+        limits = self.workspace / "calc" / "limits.py"
+        source = limits.read_text()
+        start = source.index("def clamp_retries")
+        limits.write_text(
+            source[:start]
+            + '''def clamp_retries(attempts: int) -> int:
+    """Returns a retry count clamped to the backoff loop's budget."""
+    return int(clamp_percentage(min(attempts, MAX_RETRIES)))
+'''
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn("clamps-stayed-independent", self.failed_names(checks))
+
+    def test_rewriting_the_visible_tests_to_match_new_behavior_fails(self):
+        # Moving the visible suite hides the change; the hidden copy does not.
+        self.build("false-reuse-restraint")
+        limits = self.workspace / "calc" / "limits.py"
+        limits.write_text(
+            limits.read_text().replace("MAX_RETRIES = 5", "MAX_RETRIES = 9")
+        )
+        test_file = self.workspace / "calc" / "limits_test.py"
+        test_file.write_text(
+            test_file.read_text().replace(
+                "limits.clamp_retries(9), 5", "limits.clamp_retries(9), 9"
+            )
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(
+            self.failed_names(checks), {"clamp-behavior-preserved"}
+        )
+
+
+class TestLintDebtScenario(ScenarioTestCase):
+    def test_leaving_the_lint_debt_fails(self):
+        self.build("lint-debt-repaid")
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.failed_names(checks), {"lint-debt-cleared"})
+
+    def test_repairing_the_lint_debt_passes(self):
+        self.build("lint-debt-repaid")
+        ops = self.workspace / "calc" / "ops.py"
+        ops.write_text(_REPAIRED_LINT_DEBT_OPS)
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.failed_names(checks), set())
+
+    def test_deleting_the_offending_function_fails(self):
+        # Dropping code is the cheapest way to reach zero findings.
+        self.build("lint-debt-repaid")
+        ops = self.workspace / "calc" / "ops.py"
+        source = _REPAIRED_LINT_DEBT_OPS
+        ops.write_text(source[: source.index("def average")])
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn("interface-preserved", self.failed_names(checks))
 
 
 class TestNoOrchestrationScenario(ScenarioTestCase):
