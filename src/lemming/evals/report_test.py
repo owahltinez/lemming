@@ -147,6 +147,25 @@ class TestSummarize(ReportTestCase):
 
         self.assertEqual(summary.infra_failures, 1)
 
+    def test_an_infra_failure_is_left_out_of_the_counts(self):
+        # The agent never decided anything, so the trial is not evidence
+        # either way; counting it as a loss penalizes the flakier arm.
+        loaded = report.load(
+            self.write(
+                "a.json",
+                [
+                    _trial("one", False, infra_failure=True, timed_out=True),
+                    _trial("one", True),
+                ],
+            )
+        )
+
+        summary = report.summarize(loaded)
+
+        self.assertEqual(summary.by_scenario["one"], (1, 1))
+        self.assertEqual((summary.passed, summary.total), (1, 1))
+        self.assertEqual(summary.infra_failures, 1)
+
     def test_reports_median_duration(self):
         loaded = report.load(
             self.write(

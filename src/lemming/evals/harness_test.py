@@ -97,6 +97,40 @@ class TestRunnerFailureClassification(HarnessTestCase):
 
         return run_trial_fn
 
+    def runner_writing_log(self, lines: list[str]):
+        """Fakes a runner that leaves a log where lemming keeps them."""
+
+        def run_trial_fn(scenario, workspace, lemming_home, config):
+            log = lemming_home / "exec-abc123" / "task1-runner.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text("\n".join(lines) + "\n")
+
+        return run_trial_fn
+
+    def test_keeps_the_end_of_the_runner_log_with_the_trial(self):
+        # Why a trial ended is often only legible in the runner's own
+        # output, and the run directory is a temp dir that does not last.
+        results = harness.run_suite(
+            [_scenario("fast-exit-healthy")],
+            self.run_dir,
+            self.config,
+            self.runner_writing_log([f"line {n}" for n in range(60)]),
+        )
+
+        tail = results[0].log_tail.splitlines()
+        self.assertEqual(tail[-1], "line 59")
+        self.assertEqual(len(tail), harness.LOG_TAIL_LINES)
+
+    def test_a_trial_with_no_runner_log_reports_an_empty_tail(self):
+        results = harness.run_suite(
+            [_scenario("fast-exit-healthy")],
+            self.run_dir,
+            self.config,
+            lambda scenario, workspace, lemming_home, config: None,
+        )
+
+        self.assertEqual(results[0].log_tail, "")
+
     def test_reports_a_runner_that_never_started_as_infra(self):
         # A runner that never started must not count against the agent.
         results = harness.run_suite(
@@ -146,6 +180,37 @@ class TestRunnerFailureClassification(HarnessTestCase):
         for result in results:
             self.assertFalse(result.passed)
             self.assertFalse(result.infra_failure)
+
+
+class TestSummarize(unittest.TestCase):
+    def _result(self, passed: bool, **kwargs) -> harness.TrialResult:
+        """Builds a graded trial with the fields summarize reads."""
+        return harness.TrialResult(
+            scenario="one",
+            trial=0,
+            passed=passed,
+            checks=[],
+            duration=1.0,
+            workspace=pathlib.Path("/tmp/workspace"),
+            **kwargs,
+        )
+
+    def test_leaves_infra_failures_out_of_the_counts(self):
+        # A trial the agent never got to influence is not evidence.
+        totals = harness.summarize(
+            [
+                self._result(True),
+                self._result(False, launch_failed=True),
+                self._result(False, timed_out=True),
+            ]
+        )
+
+        self.assertEqual(totals["one"], (1, 1))
+
+    def test_a_scenario_with_nothing_but_infra_failures_has_no_counts(self):
+        totals = harness.summarize([self._result(False, timed_out=True)])
+
+        self.assertEqual(totals["one"], (0, 0))
 
 
 class TestTrialArgs(HarnessTestCase):

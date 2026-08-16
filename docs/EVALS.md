@@ -106,11 +106,19 @@ on the host. Any other credential files can be mounted with `--volume`.
 A trial fails when any non-advisory check is red, but not every red says
 something about the agent. Trials whose runner never started (missing binary,
 bad credentials) or ran out of time are reported separately as **infra
-failures**, and carry `launch_failed` / `timed_out` / `exit_codes` in the JSON
-report. They still count as failures — a dead runner leaves a pristine workspace
-that can otherwise look like a well-behaved fast exit — but a pass rate dragged
-down by them is not a quality signal. Comparing two runners with different infra
-failure rates compares infrastructure, not judgement.
+failures** and left out of the pass rate entirely: a trial the agent never got
+to influence is not evidence either way, and counting it penalizes whichever arm
+of a comparison was slower or ran while a provider was refusing. They carry
+`launch_failed` / `timed_out` / `exit_codes` in the JSON report.
+
+Not every such failure can be recognised. A provider that refuses to serve — a
+rate limit, an exhausted quota — reaches the harness as an ordinary non-zero
+exit, and the reason is often absent from the output the harness can see: it may
+live only in the runner's own private log, or nowhere at all. Guessing from the
+text is worse than not guessing, so every trial instead carries `log_tail`, the
+last lines of the runner's log, and a reader judges what the harness cannot. A
+run that fails for infrastructure reasons is usually better rerun than
+reinterpreted; `--jobs 1` avoids provider rate limits outright.
 
 ## Adding Scenarios
 

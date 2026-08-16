@@ -162,9 +162,13 @@ def summarize(report: Report) -> Summary:
     Returns:
         Per-scenario and pooled counts, infra failures, median duration.
     """
+    # Infrastructure failures are recorded but not counted: a trial the
+    # agent never got to influence is not evidence either way.
     by_scenario: dict[str, tuple[int, int]] = {}
     for trial in report.results:
-        passed, total = by_scenario.get(trial["scenario"], (0, 0))
+        passed, total = by_scenario.setdefault(trial["scenario"], (0, 0))
+        if _is_infra_failure(trial):
+            continue
         by_scenario[trial["scenario"]] = (
             passed + int(trial["passed"]),
             total + 1,
