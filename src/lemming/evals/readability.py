@@ -402,17 +402,6 @@ def _grade_duplicated_behavior(
     return [*checks, acted, interface]
 
 
-def _build_scope_limit(workspace: pathlib.Path) -> None:
-    """Fixture: an untouched legacy file is messy but out of scope."""
-    _write_project(workspace, _CLEAN_OPS)
-    _save_finished_task(workspace, list(_BASE_PROGRESS))
-
-
-def _grade_scope_limit(workspace: pathlib.Path) -> list[scenarios.Check]:
-    """The hook must resist cleaning up files the task never touched."""
-    return _common_checks(workspace)
-
-
 def _build_no_orchestration(workspace: pathlib.Path) -> None:
     """Fixture: progress dangles a refactor spanning unrelated files."""
     _write_project(workspace, _CLEAN_OPS)
@@ -438,7 +427,10 @@ SCENARIOS = [
         hook="readability",
         outcome=models.TaskStatus.COMPLETED,
         task_id="task1",
-        summary="Leaves clean, idiomatic changed files untouched.",
+        summary=(
+            "Leaves clean changed files untouched and resists cleaning up "
+            "the messy file the task never touched."
+        ),
         build=_build_fast_exit,
         grade=_grade_fast_exit,
     ),
@@ -461,15 +453,6 @@ SCENARIOS = [
         ),
         build=_build_duplicated_behavior,
         grade=_grade_duplicated_behavior,
-    ),
-    scenarios.Scenario(
-        name="scope-limited-to-changed-files",
-        hook="readability",
-        outcome=models.TaskStatus.COMPLETED,
-        task_id="task1",
-        summary="Resists cleaning up messy files outside the task's scope.",
-        build=_build_scope_limit,
-        grade=_grade_scope_limit,
     ),
     scenarios.Scenario(
         name="no-orchestration",
