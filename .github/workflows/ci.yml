@@ -21,6 +21,20 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      # Before the Python tests, not after: they exercise the readability
+      # CLI, which runs the web tooling this installs. readability uses a
+      # project's own node_modules copy when there is one, so running the
+      # tests first silently swapped the pinned biome for whatever version
+      # its fallback fetched, and checked this repo's config with a tool
+      # generations newer than the config.
+      - name: Install Node.js dependencies
+        run: npm install
+
       - name: Run Python linting
         run: uv run ruff check .
 
@@ -29,14 +43,6 @@ jobs:
 
       - name: Run Python tests
         run: uv run pytest
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-
-      - name: Install Node.js dependencies
-        run: npm install
 
       - name: Run Web linting
         run: npm run lint
