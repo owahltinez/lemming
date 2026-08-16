@@ -115,13 +115,14 @@ to the whole tree outside a git repository.
 Each run is self-contained: nothing is read from the project's roadmap or its
 local hooks, one agent run is attempted, and the run's state directory is
 removed unless it failed — in which case it is kept, and its path printed, so
-the log can be read. Kept directories live in `~/.local/lemming/exec-*` and
-are retired automatically a week later, so a recent failure is always still
-there to inspect. Stdout carries the agent's message alone and everything
-else goes to stderr, so the output can be consumed directly. Stderr reports
-the ephemeral tasks file and task ID at startup; pass those to `lemming
---tasks-file <path> status <id>` or `logs <id>` to inspect an active run. Use
-the global verbose flag (`lemming -v exec ...`) to stream runner activity.
+the log can be read. Kept directories live in `~/.local/lemming/exec-*` and are
+retired automatically a week later, so a recent failure is always still there to
+inspect. Stdout carries the agent's message alone and everything else goes to
+stderr, so the output can be consumed directly. Stderr reports the ephemeral
+tasks file and task ID at startup; pass those to
+`lemming --tasks-file <path> status <id>` or `logs <id>` to inspect an active
+run. Use the global verbose flag (`lemming -v exec ...`) to stream runner
+activity.
 
 Note that the agent runs unattended (`--yolo` by default), so it does not
 inherit the permission prompts of whatever launched it.
@@ -204,17 +205,16 @@ tasks may not fully achieve the stated goal. **Orchestrator Hooks** address this
 by running custom agents or scripts after each task execution to evaluate
 results and adapt the roadmap.
 
-Lemming runs every hook it discovers on the filesystem (including the
-built-in `roadmap` hook). Hooks are plain Markdown files, and udev-style
-filename conventions control their behavior:
+Lemming runs every hook it discovers on the filesystem (including the built-in
+`roadmap` hook). Hooks are plain Markdown files, and udev-style filename
+conventions control their behavior:
 
-- **Ordering**: A numeric prefix sets the execution order (e.g.
-  `10-lint.md` runs before `90-roadmap.md`); files without a prefix
-  default to priority 50.
-- **Failure hooks**: Hooks at priority 90 and above also run when a task
-  fails; all others only run on success.
-- **Disabling**: An empty file masks (disables) the hook of the same name
-  from a lower-precedence layer.
+- **Ordering**: A numeric prefix sets the execution order (e.g. `10-lint.md`
+  runs before `90-roadmap.md`); files without a prefix default to priority 50.
+- **Failure hooks**: Hooks at priority 90 and above also run when a task fails;
+  all others only run on success.
+- **Disabling**: An empty file masks (disables) the hook of the same name from a
+  lower-precedence layer.
 
 ```bash
 # Disable a hook for this project (writes an empty .lemming/hooks/50-lint.md)
@@ -233,16 +233,16 @@ Lemming comes with several built-in hooks to help manage your project:
   needs to be adjusted (e.g., adding a missing prerequisite, skipping obsolete
   tasks, or breaking down a broad task).
 - **`readability`**: A code quality and simplification hook that challenges
-  unnecessary complexity and duplicate implementations, then reviews changes
-  for adherence to the Google Style Guide and general readability using the
+  unnecessary complexity and duplicate implementations, then reviews changes for
+  adherence to the Google Style Guide and general readability using the
   [readability](https://github.com/owahltinez/readability) tool (exposed as
   `lemming readability`). It can record findings as task progress or suggest
   follow-up refactoring tasks.
 - **`testing`**: Verifies that changed behavior has focused test coverage and
   that the relevant tests pass.
-- **`ux`**: Reviews at most one critical user journey affected by a
-  user-visible change. It reports only concrete, reproducible continuity gaps
-  and exits immediately for non-user-facing tasks.
+- **`ux`**: Reviews at most one critical user journey affected by a user-visible
+  change. It reports only concrete, reproducible continuity gaps and exits
+  immediately for non-user-facing tasks.
 
 ### Custom and Global Hooks
 
@@ -251,10 +251,10 @@ You can create your own hooks by adding Markdown files to:
 1.  **Project-specific**: `.lemming/hooks/*.md`
 2.  **Global**: `~/.local/lemming/hooks/*.md`
 
-To **override** a built-in hook, create a file with the same logical name
-(the numeric prefix is not part of the name, so `20-roadmap.md` overrides
-the built-in `90-roadmap.md` and also moves it to priority 20); delete the
-file to restore the built-in version.
+To **override** a built-in hook, create a file with the same logical name (the
+numeric prefix is not part of the name, so `20-roadmap.md` overrides the
+built-in `90-roadmap.md` and also moves it to priority 20); delete the file to
+restore the built-in version.
 
 Hooks follow a specific discovery precedence: **Project > Global > Built-in**.
 See [docs/HOOKS.md](docs/HOOKS.md) for more details.
@@ -294,22 +294,22 @@ See [docs/EVALS.md](docs/EVALS.md) for details.
 
 These come before the subcommand and apply to all of them.
 
-- **`-C, --project-dir <dir>`**: Run as if invoked from `<dir>`, addressing
-  that project's roadmap. Relative paths in other options resolve against it.
-  See [Working across projects](#working-across-projects).
+- **`-C, --project-dir <dir>`**: Run as if invoked from `<dir>`, addressing that
+  project's roadmap. Relative paths in other options resolve against it. See
+  [Working across projects](#working-across-projects).
 - **`--tasks-file <path>`**: Point at a specific tasks file instead of the one
   derived from the current directory.
 - **`-v, --verbose`**: Show verbose output.
 
 ### Roadmap Management
 
-- **`status [<id>]`**: Queue/history overview or deep-dive into a specific
-  task, including supersession lineage, the last resolved runner command, and
-  runner/orchestrator-hook execution times. Superseded and failed history
-  stays visible in the default overview; `--verbose` also shows routine
+- **`status [<id>]`**: Queue/history overview or deep-dive into a specific task,
+  including supersession lineage, the last resolved runner command, and
+  runner/orchestrator-hook execution times. Superseded and failed history stays
+  visible in the default overview; `--verbose` also shows routine
   completed/cancelled history.
-  - `--json`: Emit machine-readable JSON instead of formatted text, so
-    scripts never have to parse the internal state file.
+  - `--json`: Emit machine-readable JSON instead of formatted text, so scripts
+    never have to parse the internal state file.
   - `--brief`: Omit task descriptions, which otherwise dominate the output.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
@@ -318,8 +318,8 @@ These come before the subcommand and apply to all of them.
 - **`edit <id>`**: Modify a task's description, runner, model, or position.
 - **`brief <id> [text]`**: View or set a task's long-form brief. Unlike the
   description it has no length cap, and it is appended to the runner prompt
-  automatically — the right home for measured timings, exact failing
-  selectors, or why a previous attempt was wrong. Supports `-f/--file`.
+  automatically — the right home for measured timings, exact failing selectors,
+  or why a previous attempt was wrong. Supports `-f/--file`.
 - **`delete <id>`**: Remove an unstarted task while retaining its runner log.
   Tasks with execution history require `--force`; autonomous restructuring
   should use `supersede`. Supports `--all` and `--completed` for bulk cleanup,
@@ -331,11 +331,11 @@ These come before the subcommand and apply to all of them.
   - `add <id> <finding>`: Record a new technical detail.
   - `edit <id> <index> <text>`: Modify an existing progress entry.
   - `delete <id> <index>`: Remove a progress entry.
-- **`config`**: Manage project configuration (runner, model, retries,
-  time limit).
+- **`config`**: Manage project configuration (runner, model, retries, time
+  limit).
   - `list`: View current configuration.
-  - `set <key> <value>`: Update a setting. `set model default` clears a
-    pinned model without touching the runner.
+  - `set <key> <value>`: Update a setting. `set model default` clears a pinned
+    model without touching the runner.
 - **`hooks`**: Manage orchestrator hooks.
   - `list`: View available and active hooks.
   - `install`: Install built-in hooks to the global directory.
@@ -358,12 +358,12 @@ These come before the subcommand and apply to all of them.
 - **`fail <id>`**: Mark a task as a terminal failure (will not be retried).
 - **`cancel <id>`**: Stop an in-progress task (kills the runner process).
 - **`reset <id>`**: Clear attempts and progress to start a task fresh.
-- Superseded tasks remain visible as non-failing history; replacement tasks
-  link back through their parent task ID.
+- Superseded tasks remain visible as non-failing history; replacement tasks link
+  back through their parent task ID.
 - **`logs [<id>]`**: Print a task's execution log to stdout, including retained
   logs for removed tasks. If no ID is provided, it defaults to the active or
-  most recent task. Orchestrator hook output is automatically appended.
-  Supports `--json` to wrap the log with its task ID and path.
+  most recent task. Orchestrator hook output is automatically appended. Supports
+  `--json` to wrap the log with its task ID and path.
 
 ### Execution
 
@@ -376,17 +376,17 @@ These come before the subcommand and apply to all of them.
     per-task `--runner`/`--model` overrides anything passed here.
 - **`exec [<description>]`**: Run one task, or one set of reviews, outside any
   roadmap. Prints the agent's closing message to stdout and everything else to
-  stderr, including its tasks file and task ID at startup. Use `lemming -v
-  exec ...` to stream runner activity. Exits non-zero if the task did not
-  complete. See [One-off tasks](#one-off-tasks-without-a-roadmap).
+  stderr, including its tasks file and task ID at startup. Use
+  `lemming -v exec ...` to stream runner activity. Exits non-zero if the task
+  did not complete. See [One-off tasks](#one-off-tasks-without-a-roadmap).
   - `-f/--file`: Read the description from a file, or `-` for stdin. Unlike
     `add`, there is no length cap.
   - `--review <names>`: Reviews to run after the task, comma-separated or
     repeated; `all` selects every one. With no description, only the reviews
     run. Hooks that revise the roadmap cannot be selected.
-  - `--scope <path|range>`: What the reviews look at. Paths pass through; a
-    git revision range is resolved to the files it changed. Defaults to
-    uncommitted work, or the whole tree outside a repository.
+  - `--scope <path|range>`: What the reviews look at. Paths pass through; a git
+    revision range is resolved to the files it changed. Defaults to uncommitted
+    work, or the whole tree outside a repository.
   - `--runner`, `--model`: Which agent CLI and model to use.
   - `--time-limit`: Minutes before the agent is killed (default 60, 0 for no
     limit).
@@ -400,12 +400,11 @@ These come before the subcommand and apply to all of them.
   - `--link`: Symlink instead of copying, so upgrades take effect immediately.
   - `--force`: Replace an existing installation of this skill.
   - `--dry-run`: Print what would happen, refusals included.
-- **`skill uninstall`**: Remove it again. Same `--to`, `--all`, and
-  `--dry-run`.
+- **`skill uninstall`**: Remove it again. Same `--to`, `--all`, and `--dry-run`.
 - **`stop`**: Stop the running loop and its runner.
   - `--after-current-task`: Drain instead — let the running task finish, then
-    stop before claiming another. This is the safe way to change the runner
-    or model without stranding work in flight.
+    stop before claiming another. This is the safe way to change the runner or
+    model without stranding work in flight.
 - **`serve`**: Launch the interactive Web UI.
   - `--port`: The port to bind the server to (default: 8999).
   - `--host`: The host address to bind the server to (default: 127.0.0.1).
@@ -418,10 +417,10 @@ These come before the subcommand and apply to all of them.
 
 ## Working across projects
 
-When work on one project turns up something that belongs to another — a bug in
-a dependency you also maintain, a doc fix in a sibling repo — file it directly
-on that project's roadmap with `-C` instead of routing it through an external
-issue tracker:
+When work on one project turns up something that belongs to another — a bug in a
+dependency you also maintain, a doc fix in a sibling repo — file it directly on
+that project's roadmap with `-C` instead of routing it through an external issue
+tracker:
 
 ```bash
 # From inside project A, queue work on project B
@@ -451,8 +450,8 @@ describing why the work was requested, so the report doesn't lose its origin.
 Lemming uses **fuzzy matching** to automatically inject the correct "YOLO"
 (auto-approve) and "Quiet" flags for popular tools:
 
-- **Antigravity (`agy`)**: Adds `--dangerously-skip-permissions` and exposes
-  the project workspace with `--add-dir`
+- **Antigravity (`agy`)**: Adds `--dangerously-skip-permissions` and exposes the
+  project workspace with `--add-dir`
 - **OpenCode**: Runs non-interactively via `opencode run`, adds `--format json`,
   and, in YOLO mode, adds `--auto`. For its Google provider, Lemming makes an
   existing `GOOGLE_API_KEY` or `GEMINI_API_KEY` available under OpenCode's
@@ -474,14 +473,14 @@ lemming config set model default                 # let the runner decide
 
 Precedence, highest first: an explicit `--model` inside a runner string, the
 task's `--model`, the project's `config model`, then anything passed after
-`lemming run --`. A per-task setting always wins over the loop-wide
-passthrough — the conflicting global flag is dropped rather than duplicated
-on the command line.
+`lemming run --`. A per-task setting always wins over the loop-wide passthrough
+— the conflicting global flag is dropped rather than duplicated on the command
+line.
 
 ### Runner strings
 
-A runner is not limited to a binary name: any extra arguments in the string
-are appended to the command, which is another way to pin per-task behaviour.
+A runner is not limited to a binary name: any extra arguments in the string are
+appended to the command, which is another way to pin per-task behaviour.
 
 ```bash
 lemming add "Try the fast model" --runner "agy --model fast"

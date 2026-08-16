@@ -76,9 +76,9 @@ trustworthy.
 
 The default runner is `agy`. Each trial automatically receives a private,
 disposable copy of the runner's host config: `~/.gemini` for `agy` and
-`~/.config/opencode` for `opencode`. Containers can therefore refresh tokens
-and write state without ever touching the real config, and concurrent trials
-stay fully isolated from each other.
+`~/.config/opencode` for `opencode`. Containers can therefore refresh tokens and
+write state without ever touching the real config, and concurrent trials stay
+fully isolated from each other.
 
 Caches, history, and conversations are excluded, as are the model cache and
 vendored CLI under `antigravity-cli/` and any `node_modules` — the container
@@ -93,8 +93,8 @@ running with extra tooling is a differently equipped agent, and a result that
 turns on the difference measures the equipment rather than the runner.
 
 Global instructions are the one piece of context both arms are expected to
-share, so point them at the same file — for example symlinking `~/AGENTS.md`
-to both `~/.gemini/GEMINI.md` and `~/.config/opencode/AGENTS.md`. A trial copy
+share, so point them at the same file — for example symlinking `~/AGENTS.md` to
+both `~/.gemini/GEMINI.md` and `~/.config/opencode/AGENTS.md`. A trial copy
 dereferences the symlink, so the container sees the real contents.
 
 For API-key runners, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`,
@@ -133,12 +133,12 @@ Scenarios live in `src/lemming/evals/` (see `roadmap.py`):
 
 ### Pair Every Action Scenario With a Restraint One
 
-A comparison of two agent CLIs found the arms failed in opposite directions:
-one under-acted (it did not remove dead code, did not consolidate duplication)
-and the other over-acted (it edited a healthy roadmap it was told to leave
-alone). A suite made only of "did the agent act" scenarios therefore crowns
-whichever agent edits most, and a suite made only of "did the agent hold back"
-scenarios crowns whichever edits least — neither measures judgement.
+A comparison of two agent CLIs found the arms failed in opposite directions: one
+under-acted (it did not remove dead code, did not consolidate duplication) and
+the other over-acted (it edited a healthy roadmap it was told to leave alone). A
+suite made only of "did the agent act" scenarios therefore crowns whichever
+agent edits most, and a suite made only of "did the agent hold back" scenarios
+crowns whichever edits least — neither measures judgement.
 
 So a new scenario needs a counterpart pulling the other way, and an agent
 running a constant policy in either direction should score 50% across the pair.
@@ -166,7 +166,7 @@ Two obvious-looking metrics were tried and left out, because a grader nobody
 trusts is worse than no grader:
 
 - **Cyclomatic complexity (radon).** Measured against the suite's own messy
-  fixture, flattening the nesting by hand *raised* the score from 6 to 7 (radon
+  fixture, flattening the nesting by hand _raised_ the score from 6 to 7 (radon
   counts `and`/`or`), while splitting the function in two dropped the named
   function to 2 without removing a single branch. The metric ranks fragmentation
   above the honest fix, which is the pathology a readability eval exists to

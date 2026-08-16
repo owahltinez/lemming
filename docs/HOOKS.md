@@ -21,24 +21,24 @@ more **orchestrator hooks**. Each hook:
 
 ## Naming Convention
 
-Hooks are Markdown files discovered from the filesystem, and udev-style
-filename conventions control their behavior:
+Hooks are Markdown files discovered from the filesystem, and udev-style filename
+conventions control their behavior:
 
-- **Ordering**: A numeric prefix determines execution order: `10-lint.md`
-  runs before `90-roadmap.md`. Files without a prefix default to priority
-  50. The prefix is **not** part of the hook's name: `90-roadmap.md`
-  defines the hook `roadmap`.
-- **Failure hooks**: Hooks at priority 90 and above also run when a task
-  fails. All other hooks only run after successful tasks. The built-in
-  `roadmap` hook ships as `90-roadmap.md` so it can react to failures.
+- **Ordering**: A numeric prefix determines execution order: `10-lint.md` runs
+  before `90-roadmap.md`. Files without a prefix default to priority 50. The
+  prefix is **not** part of the hook's name: `90-roadmap.md` defines the hook
+  `roadmap`.
+- **Failure hooks**: Hooks at priority 90 and above also run when a task fails.
+  All other hooks only run after successful tasks. The built-in `roadmap` hook
+  ships as `90-roadmap.md` so it can react to failures.
 - **Masking**: An empty file disables the hook of the same name from a
   lower-precedence layer (see below). For example, an empty
-  `.lemming/hooks/readability.md` disables the built-in `readability` hook
-  for that project.
-- **Overriding**: A non-empty file replaces the hook of the same name from
-  a lower-precedence layer. The winning filename also determines the
-  priority, so keep the `9x-` prefix when overriding a failure hook (e.g.
-  `90-roadmap.md`), or use a different prefix to deliberately reorder it.
+  `.lemming/hooks/readability.md` disables the built-in `readability` hook for
+  that project.
+- **Overriding**: A non-empty file replaces the hook of the same name from a
+  lower-precedence layer. The winning filename also determines the priority, so
+  keep the `9x-` prefix when overriding a failure hook (e.g. `90-roadmap.md`),
+  or use a different prefix to deliberately reorder it.
 
 ## Built-in Hooks
 
@@ -103,8 +103,8 @@ following layers, highest precedence first:
 Because of this precedence order, overriding a built-in hook only requires
 creating a Markdown file with the same logical name in the project or global
 directory (e.g. `~/.local/lemming/hooks/90-roadmap.md`); delete the file to
-restore the built-in version. Global hooks are available to all Lemming
-projects on the system.
+restore the built-in version. Global hooks are available to all Lemming projects
+on the system.
 
 ### Example: `lint` hook
 
@@ -141,10 +141,10 @@ lemming hooks disable lint
 lemming hooks enable lint
 ```
 
-These commands validate the hook names before changing anything and refuse
-to touch files with content (a non-empty file is an override, not a mask).
-An empty file created by hand works just as well; the commands additionally
-keep the hook's priority in the mask filename so listings stay accurate.
+These commands validate the hook names before changing anything and refuse to
+touch files with content (a non-empty file is an override, not a mask). An empty
+file created by hand works just as well; the commands additionally keep the
+hook's priority in the mask filename so listings stay accurate.
 
 Hooks are re-discovered on every task execution, so changes are picked up
 dynamically by a running orchestrator loop.
@@ -155,12 +155,12 @@ Your hook template can use the following placeholders:
 
 - `{{roadmap}}`: A structured summary of the long-term goal and all tasks.
 - `{{finished_task}}`: Details about the task that just finished (ID,
-  description, recent progress, and a recent execution-log excerpt capped at
-  16 KiB).
+  description, recent progress, and a recent execution-log excerpt capped at 16
+  KiB).
 - `{{finished_task_id}}`: The ID of the task that just finished.
-- `{{scope}}`: What the hook should look at, and how broadly. Under `lemming
-  run` this names the work the finished task left behind; under `lemming exec
-  --review` it is whatever `--scope` resolved to.
+- `{{scope}}`: What the hook should look at, and how broadly. Under
+  `lemming run` this names the work the finished task left behind; under
+  `lemming exec --review` it is whatever `--scope` resolved to.
 - `{{tasks_file_name}}`: The filename of the tasks YAML file.
 - `{{tasks_file_path}}`: The full path to the tasks YAML file.
 
@@ -179,8 +179,8 @@ audit" describes the kind of review, not its extent.
 
 ### Listing Hooks
 
-You can see all hooks in execution order, with their priority, source layer,
-and status (disabled, runs on failure) using the CLI:
+You can see all hooks in execution order, with their priority, source layer, and
+status (disabled, runs on failure) using the CLI:
 
 ```bash
 lemming hooks list
