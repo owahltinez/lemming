@@ -1,3 +1,4 @@
+import json
 import pathlib
 import shutil
 import stat
@@ -19,7 +20,12 @@ class TrialTestCase(unittest.TestCase):
         self.workspace = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
 
-    def run_trial(self, scenario: scenarios.Scenario, runner: str):
+    def run_trial(
+        self,
+        scenario: scenarios.Scenario,
+        runner: str,
+        extra: list[str] | None = None,
+    ):
         result = click.testing.CliRunner().invoke(
             trial.main,
             [
@@ -35,6 +41,7 @@ class TrialTestCase(unittest.TestCase):
                 runner,
                 "--time-limit",
                 "1",
+                *(extra or []),
             ],
             catch_exceptions=False,
         )
@@ -94,6 +101,52 @@ class TestTrialWithNoOpRunner(TrialTestCase):
 
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("Hook runner failed", result.output)
+
+
+class TestTrialResultFile(TrialTestCase):
+    def result_path(self) -> pathlib.Path:
+        return self.workspace / ".lemming" / "result.json"
+
+    def run_trial_with_result(self, scenario, runner: str):
+        return self.run_trial(
+            scenario, runner, extra=["--result-file", str(self.result_path())]
+        )
+
+    def read_result(self) -> dict:
+        return json.loads(self.result_path().read_text())
+
+    def test_records_exit_codes_on_success(self):
+        scenario = _scenario("fast-exit-healthy")
+        scenario.build(self.workspace)
+
+        self.run_trial_with_result(scenario, runner="true")
+
+        result = self.read_result()
+        self.assertEqual(result["exit_codes"], {scenario.hook: 0})
+        self.assertFalse(result["launch_failed"])
+        self.assertFalse(result["timed_out"])
+
+    def test_distinguishes_a_runner_that_never_started(self):
+        # A missing binary is infrastructure, not the agent behaving badly.
+        scenario = _scenario("fast-exit-healthy")
+        scenario.build(self.workspace)
+
+        result = self.run_trial_with_result(
+            scenario, runner="/nonexistent/agent"
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertTrue(self.read_result()["launch_failed"])
+
+    def test_a_misbehaving_runner_is_not_an_infra_failure(self):
+        scenario = _scenario("fast-exit-healthy")
+        scenario.build(self.workspace)
+
+        self.run_trial_with_result(scenario, runner="false")
+
+        result = self.read_result()
+        self.assertFalse(result["launch_failed"])
+        self.assertFalse(result["timed_out"])
 
 
 class TestTrialWithScriptedRunner(TrialTestCase):
