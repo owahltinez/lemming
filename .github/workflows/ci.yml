@@ -21,6 +21,15 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      # Before the Python tests: they invoke readability, which runs this.
+      - name: Install Node.js dependencies
+        run: npm install
+
       - name: Run Python linting
         run: uv run ruff check .
 
@@ -29,14 +38,6 @@ jobs:
 
       - name: Run Python tests
         run: uv run pytest
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-
-      - name: Install Node.js dependencies
-        run: npm install
 
       - name: Run Web linting
         run: npm run lint
