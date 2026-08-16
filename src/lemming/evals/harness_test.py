@@ -168,6 +168,26 @@ class TestTrialArgs(HarnessTestCase):
             f"/lemming-home/{harness.RESULT_FILE_NAME}",
         )
 
+    def test_a_task_scenario_sends_its_prompt_and_workspace(self):
+        # A task scenario sends a prompt and workspace, not a roadmap.
+        scenario = scenarios.Scenario(
+            name="task-demo",
+            summary="Writes the code the prompt asks for.",
+            build=lambda workspace: None,
+            grade=lambda workspace: [],
+            mode="task",
+            prompt="Add divide.",
+        )
+
+        args = harness._trial_args(scenario, self.config)
+
+        self.assertEqual(args[args.index("--mode") + 1], "task")
+        self.assertEqual(args[args.index("--workspace") + 1], "/workspace")
+        self.assertEqual(args[args.index("--prompt") + 1], "Add divide.")
+        self.assertEqual(args[args.index("--runner") + 1], "agy")
+        self.assertNotIn("--hook", args)
+        self.assertNotIn("--task-id", args)
+
 
 class TestRunnerHomes(HarnessTestCase):
     def fake_home(self) -> pathlib.Path:

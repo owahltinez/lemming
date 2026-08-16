@@ -32,24 +32,34 @@ class Check:
 class Scenario:
     """A hermetic eval case for one prompt-driven component.
 
+    A scenario runs in one of two modes. A "hook" scenario replays the
+    orchestrator reacting to a task that just finished; a "task" scenario
+    hands an agent a prompt and grades the code it writes. Each mode reads
+    a different half of the fields below, and neither has to fake the
+    other's.
+
     Attributes:
         name: Unique scenario name within its suite.
-        hook: Hook to run against the fixture (e.g. "roadmap").
-        outcome: Terminal status of the finished task the hook reacts to.
-        task_id: ID of the finished task inside the fixture roadmap.
         summary: One-line description of the behavior under eval.
-        build: Seeds a workspace directory with the fixture repo and tasks
-            file.
+        build: Seeds a workspace directory with the fixture repo and, for
+            a hook scenario, its tasks file.
         grade: Inspects the workspace after the trial and returns checks.
+        mode: "hook" or "task".
+        hook: Hook mode: hook to run against the fixture (e.g. "roadmap").
+        outcome: Hook mode: terminal status of the finished task.
+        task_id: Hook mode: ID of the finished task in the fixture roadmap.
+        prompt: Task mode: the work the agent is asked to carry out.
     """
 
     name: str
-    hook: str
-    outcome: models.TaskStatus
-    task_id: str
     summary: str
     build: typing.Callable[[pathlib.Path], None]
     grade: typing.Callable[[pathlib.Path], list[Check]]
+    mode: str = "hook"
+    hook: str | None = None
+    outcome: models.TaskStatus | None = None
+    task_id: str | None = None
+    prompt: str | None = None
 
 
 def passed(checks: list[Check]) -> bool:
