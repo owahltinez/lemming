@@ -13,11 +13,11 @@
     "vendor": "cp node_modules/mancha/dist/mancha.js src/lemming/web/mancha.js"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.0",
-    "@playwright/test": "^1.60.0",
-    "jsdom": "latest",
-    "mancha": "^0.22.7",
-    "playwright": "^1.60.0",
-    "prettier": "^3.9.0"
+    "@biomejs/biome": "^2.5.9",
+    "@playwright/test": "^1.62.1",
+    "jsdom": "^30.0.1",
+    "mancha": "^0.25.1",
+    "playwright": "^1.62.1",
+    "prettier": "^3.9.6"
   }
 }
