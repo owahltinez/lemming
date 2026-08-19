@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -56,3 +57,27 @@ def test_readability_check_ignored_file():
         cli, ["readability", "check", "src/lemming/web/mancha.js"]
     )
     assert result.exit_code == 0
+
+
+def test_readability_formats_markdown_without_project_config(tmp_path):
+    """The wrapper exposes readability's configless Markdown defaults."""
+    paragraph = (
+        "This deliberately long paragraph proves that the lemming command "
+        "loads the installed readability dependency and delegates Markdown "
+        "formatting to Prettier without requiring a project configuration.\n"
+    )
+    runner = CliRunner()
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        markdown = Path("README.md")
+        markdown.write_text(f"# Integration\n\n{paragraph}")
+
+        check = runner.invoke(cli, ["readability", "check", str(markdown)])
+        assert check.exit_code == 1
+        assert "prettier formatting findings" in check.output
+
+        fix = runner.invoke(
+            cli, ["readability", "check", "--fix", str(markdown)]
+        )
+        assert fix.exit_code == 0
+        assert max(map(len, markdown.read_text().splitlines())) <= 80
