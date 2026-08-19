@@ -28,7 +28,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.9.9",
-    "httpx>=0.28.1",
+    "httpx2>=2.0.0",
     "pyrefly>=1.2",
     "pytest",
 ]
@@ -72,7 +72,7 @@ exclude = ["src/lemming/evals/projects"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "D", "PL"]
-ignore = ["PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004"]
+ignore = ["PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917", "PLR2004"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
