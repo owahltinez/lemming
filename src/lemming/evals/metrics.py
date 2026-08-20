@@ -12,7 +12,7 @@ import pathlib
 import subprocess
 import sys
 
-import readability
+from readability.checking import check_paths
 
 
 def unresolved_findings(workspace: pathlib.Path, paths: list[str]) -> str:
@@ -44,7 +44,7 @@ def unresolved_findings(workspace: pathlib.Path, paths: list[str]) -> str:
         return ""
 
     # Delegate to readability; its findings land on this process's streams.
-    report = readability.check_paths(targets, project_root=workspace)
+    report = check_paths(targets, project_root=workspace)
 
     # Clean means the tools ran and found nothing; unverified is not clean.
     unverified = sorted(report.skipped | report.failed)

@@ -59,12 +59,12 @@ def test_readability_check_ignored_file():
     assert result.exit_code == 0
 
 
-def test_readability_formats_markdown_without_project_config(tmp_path):
-    """The wrapper exposes readability's configless Markdown defaults."""
+def test_readability_leaves_unsupported_markdown_unchanged(tmp_path):
+    """The wrapper preserves files that readability does not own."""
     paragraph = (
         "This deliberately long paragraph proves that the lemming command "
-        "loads the installed readability dependency and delegates Markdown "
-        "formatting to Prettier without requiring a project configuration.\n"
+        "loads the installed readability dependency while leaving unsupported "
+        "Markdown content exactly as the caller wrote it.\n"
     )
     runner = CliRunner()
 
@@ -72,12 +72,11 @@ def test_readability_formats_markdown_without_project_config(tmp_path):
         markdown = Path("README.md")
         markdown.write_text(f"# Integration\n\n{paragraph}")
 
-        check = runner.invoke(cli, ["readability", "check", str(markdown)])
-        assert check.exit_code == 1
-        assert "prettier formatting findings" in check.output
+        original = markdown.read_text()
 
-        fix = runner.invoke(
+        result = runner.invoke(
             cli, ["readability", "check", "--fix", str(markdown)]
         )
-        assert fix.exit_code == 0
-        assert max(map(len, markdown.read_text().splitlines())) <= 80
+        assert result.exit_code == 0
+        assert "nothing was checked" in result.output
+        assert markdown.read_text() == original
