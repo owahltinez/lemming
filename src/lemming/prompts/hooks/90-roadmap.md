@@ -46,9 +46,10 @@ the plan up-to-date with minimal friction.
 5.  **Extend**: Whenever your review finds that the project goal is not yet
     fully achieved, add concrete, self-contained tasks to close the gap.
 6.  **Follow-up**: If you identify missing work from the previous task (like
-    forgotten teardowns, missing tests reported by the testing hook, or
-    formatting issues reported by the readability hook), add new tasks to
-    address them.
+    forgotten teardowns, or formatting issues reported by the readability
+    hook), add new tasks to address them. A gap reported by the testing hook
+    earns a task only when it names a concrete regression the suite would miss;
+    a bare report of untested code does not.
 7.  **Task-Specific Briefs**: Keep new or rewritten task descriptions concise,
     self-contained, and no more than {{max_task_description_chars}} characters.
     Include the concrete files, symbols, motivation, and acceptance criteria the
