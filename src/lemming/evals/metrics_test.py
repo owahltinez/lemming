@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-import readability
+from readability.checking import CheckReport
 
 from lemming.evals import fixtures, metrics
 
@@ -94,11 +94,11 @@ class TestUnresolvedFindings(MetricsTestCase):
         # No findings from a tool that never ran is not a pass.
         self.seed({"pkg/mod.py": _CLEAN})
         unverified = {
-            "no tool ran at all": readability.CheckReport(),
-            "an applicable tool was missing": readability.CheckReport(
+            "no tool ran at all": CheckReport(),
+            "an applicable tool was missing": CheckReport(
                 ran={"ruff"}, skipped={"pyrefly"}
             ),
-            "a tool could not finish": readability.CheckReport(
+            "a tool could not finish": CheckReport(
                 ran={"ruff"}, failed={"pyrefly"}
             ),
         }
@@ -106,7 +106,7 @@ class TestUnresolvedFindings(MetricsTestCase):
         for label, report in unverified.items():
             with self.subTest(label):
                 with unittest.mock.patch.object(
-                    metrics.readability, "check_paths", return_value=report
+                    metrics, "check_paths", return_value=report
                 ):
                     outstanding = metrics.unresolved_findings(
                         self.workspace, ["pkg/mod.py"]
