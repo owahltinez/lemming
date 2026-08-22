@@ -150,7 +150,7 @@ class TestProjectDirOption(unittest.TestCase):
             cli, ["-C", str(self.other / "nope"), "status"]
         )
 
-        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(result.exit_code, 1)
         self.assertIn("does not exist", result.output)
 
 

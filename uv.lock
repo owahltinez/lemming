@@ -1,6 +1,10 @@
 version = 1
 revision = 3
 requires-python = ">=3.12"
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "python_full_version < '3.13'",
+]
 
 [[package]]
 name = "annotated-doc"
@@ -199,6 +203,18 @@ wheels = [
 ]
 
 [[package]]
+name = "click-agentcli"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/75/d5/660cd6f973e3cda14aaec0b31306c739069ae6a45e3b5ca86632a0af8561/click_agentcli-0.3.0.tar.gz", hash = "sha256:55a4c6d60f93a04c0e25df47df75c1e4169a1224ac2306da2fd544ca272ae579", size = 24098, upload-time = "2026-08-22T01:13:19.54Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/c7/fec03b1cae7febb4bb67ab8b18000af29859526b55850b45e0ba2732c16a/click_agentcli-0.3.0-py3-none-any.whl", hash = "sha256:5115cdbde546e8eb8abe60ca1e22eedff9174591431e760e237d7c418d86e8dd", size = 24500, upload-time = "2026-08-22T01:13:18.346Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -296,6 +312,7 @@ source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "click" },
+    { name = "click-agentcli" },
     { name = "fastapi" },
     { name = "markdownify" },
     { name = "pydantic" },
@@ -321,6 +338,7 @@ evals = [
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.13.3" },
     { name = "click", specifier = ">=8.0.0" },
+    { name = "click-agentcli", specifier = ">=0.3.0" },
     { name = "fastapi", specifier = ">=0.124.4" },
     { name = "markdownify", specifier = ">=0.14.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
