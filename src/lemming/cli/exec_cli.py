@@ -30,6 +30,9 @@ ALL_REVIEWS = "all"
 # large enough that reading it whole is wasteful.
 MAX_LOG_TAIL_BYTES = 256 * 1024
 
+# Log header used to isolate the final runner or review output.
+ATTEMPT_HEADER = "--- Attempt started at "
+
 
 def _read_log_tail(
     log_file: pathlib.Path, max_bytes: int = MAX_LOG_TAIL_BYTES
@@ -41,16 +44,19 @@ def _read_log_tail(
         max_bytes: Most bytes to read from the end of the file.
 
     Returns:
-        The tail of the log, decoded leniently. A leading partial line is
+        The final attempt within the decoded tail. A leading partial line is
         harmless: the extractor skips anything that is not a whole event.
     """
     try:
         with open(log_file, "rb") as f:
             f.seek(0, 2)
             f.seek(max(0, f.tell() - max_bytes))
-            return f.read().decode("utf-8", errors="replace")
+            text = f.read().decode("utf-8", errors="replace")
     except OSError:
         return ""
+
+    header = text.rfind(ATTEMPT_HEADER)
+    return text[header:] if header >= 0 else text
 
 
 def _resolve_prompt(description: str | None, file: typing.TextIO | None) -> str:
@@ -238,6 +244,13 @@ def _task_status(
     help="Minutes before the agent is killed (0 disables the limit).",
 )
 @click.option(
+    "--retries",
+    default=1,
+    type=click.IntRange(min=1),
+    show_default=True,
+    help="Maximum total task-runner attempts, including the first.",
+)
+@click.option(
     "--yolo/--no-yolo",
     default=True,
     help="Run the agent in unattended (auto-approve) mode.",
@@ -258,6 +271,7 @@ def exec_command(
     runner_name: str | None,
     model_name: str | None,
     time_limit: int,
+    retries: int,
     yolo: bool,
     keep: bool,
     runner_args: tuple,
@@ -285,6 +299,10 @@ def exec_command(
         if description or file or not reviews
         else None
     )
+    if prompt is None and retries > 1:
+        raise click.UsageError(
+            "--retries only applies when exec has a task description."
+        )
 
     # The runner must edit the caller's workspace, never the throwaway
     # directory that only holds this run's bookkeeping.
@@ -304,9 +322,8 @@ def exec_command(
             return
         scope_text = scope.describe(entries)
 
-    # A one-shot spends one agent run: a silent retry would multiply the
-    # caller's cost without their say.
-    config = tasks.RoadmapConfig(retries=1, time_limit=time_limit)
+    # Extra attempts require opt-in because each can incur runner cost.
+    config = tasks.RoadmapConfig(retries=retries, time_limit=time_limit)
     if runner_name:
         config.runner = runner_name
     if model_name:

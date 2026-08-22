@@ -175,14 +175,12 @@ def run_hooks(
                     tasks_file,
                     task_id,
                     "Finalization hooks failed "
-                    f"({', '.join(failed_hooks)}); task reverted to "
-                    "pending for retry.",
+                    f"({', '.join(failed_hooks)}); task reverted to pending.",
                 )
                 tasks.revert_task_to_pending(tasks_file, task_id)
                 click.echo(
                     f"Task {task_id} finalization hooks failed "
-                    f"({', '.join(failed_hooks)}). Reverting to pending "
-                    "for retry."
+                    f"({', '.join(failed_hooks)}). Reverting to pending."
                 )
                 return exit_codes
 
@@ -331,6 +329,8 @@ def _handle_runner_exit(
     time_limit: int,
     model_name: str | None = None,
     scope: str | None = None,
+    retry_runner_failures: bool = False,
+    abort_failed_finalization: bool = False,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
@@ -345,12 +345,12 @@ def _handle_runner_exit(
     # Post-execution validation and heartbeat cleanup
     # This will mark the task as COMPLETED or PENDING based on whether
     # the agent called 'lemming complete'.
-    if not runner_failed:
-        post_task = tasks.finish_task_attempt(tasks_file, task_id)
-    else:
+    if runner_failed and not retry_runner_failures:
         post_task = tasks.finish_task_attempt(
             tasks_file, task_id, count_attempt=False
         )
+    else:
+        post_task = tasks.finish_task_attempt(tasks_file, task_id)
 
     if not post_task:
         click.echo("Error: Task disappeared from roadmap during execution.")
@@ -359,7 +359,8 @@ def _handle_runner_exit(
     # Run orchestrator hooks synchronously if the task requested a status
     # change (completion or failure). This ensures the roadmap is updated
     # and all validation hooks complete before the next task is picked up.
-    if post_task.requested_status:
+    requested_status = post_task.requested_status
+    if requested_status:
         run_hooks(
             tasks_file,
             task_id,
@@ -384,6 +385,12 @@ def _handle_runner_exit(
         post_task = next(
             (t for t in refreshed.tasks if t.id == task_id), post_task
         )
+        if (
+            abort_failed_finalization
+            and requested_status == tasks.TaskStatus.COMPLETED
+            and post_task.status == tasks.TaskStatus.PENDING
+        ):
+            return True
 
     if post_task.status == tasks.TaskStatus.COMPLETED:
         if verbose:
@@ -422,26 +429,33 @@ def _handle_runner_exit(
                 except Exception:
                     # Recording the reason must never mask the failure.
                     pass
-            click.echo(
-                "Runner exited unsuccessfully. Task left pending and attempt "
-                "not counted; switch runners or retry later."
-            )
-            return True
+            if not retry_runner_failures:
+                click.echo(
+                    "Runner exited unsuccessfully. Task left pending and "
+                    "attempt not counted; switch runners or retry later."
+                )
+                return True
 
-        if verbose:
-            click.echo(
-                "Runner finished execution but did NOT report completion. "
-                "Retrying..."
-            )
+            remaining = post_task.attempts < retries
+            outcome = "pending for retry" if remaining else "pending"
+            click.echo(f"Runner exited unsuccessfully. Task left {outcome}.")
 
-        # Only sleep if the task is still pending AND it wasn't cancelled
-        # (it would have requested a status if not)
-        if (
+        will_retry = (
             post_task.status == tasks.TaskStatus.PENDING
             and post_task.attempts < retries
-            and retry_delay > 0
             and post_task.requested_status is None
-        ):
+        )
+        if verbose and will_retry:
+            message = (
+                "Runner exited unsuccessfully. Retrying..."
+                if runner_failed
+                else "Runner finished execution but did NOT report "
+                "completion. Retrying..."
+            )
+            click.echo(message)
+
+        # Delay only while a retryable task remains pending.
+        if will_retry and retry_delay > 0:
             if verbose:
                 click.echo(
                     f"Waiting {retry_delay} seconds before next attempt "
@@ -479,23 +493,19 @@ def run_loop(
             active set on every iteration, so a running loop picks up
             changes.
         scope: What the hooks should look at, passed through to each.
-        once: Stop after handling a single task instead of draining the
-            queue. A task requeued by a failed finalization would otherwise
-            come back around and be handed to a task runner, which for a
-            caller that asked for one unit of work is a second agent run
-            they did not ask for.
+        once: Run only the first task, through its configured attempt budget.
+            Exhaustion leaves it pending, and failed finalization stops rather
+            than turning a review placeholder back into runnable work.
 
     Returns:
         True only when the roadmap ran to completion.
     """
-    handled = False
+    one_task_id = None
+    one_task_config = None
+    one_task_runner = None
+    one_task_model = None
     while True:
         returncode = 0
-
-        # Stopping here rather than before the claim lets the task that
-        # was handled finish its hooks first.
-        if once and handled:
-            return False
 
         # A drain request stops the loop between tasks, so the task that was
         # already running is never stranded mid-flight.
@@ -511,9 +521,31 @@ def run_loop(
         time_limit = data.config.time_limit
         runner_name = data.config.runner
         model_name = data.config.model
+        if once:
+            if one_task_config is None:
+                one_task_config = (
+                    retries,
+                    time_limit,
+                    runner_name,
+                    model_name,
+                )
+            else:
+                retries, time_limit, runner_name, model_name = one_task_config
         active_hooks = list_hooks(tasks_file) if hooks is None else hooks
 
-        current_task = tasks.get_pending_task(data)
+        if once and one_task_id:
+            current_task = next(
+                (
+                    task
+                    for task in data.tasks
+                    if task.id == one_task_id
+                    and task.status
+                    in (tasks.TaskStatus.PENDING, tasks.TaskStatus.IN_PROGRESS)
+                ),
+                None,
+            )
+        else:
+            current_task = tasks.get_pending_task(data)
 
         if not current_task:
             unfinished_tasks = [
@@ -555,6 +587,10 @@ def run_loop(
             return True
 
         task_id = current_task.id
+        if once and one_task_id is None:
+            one_task_id = task_id
+            one_task_runner = current_task.runner or runner_name
+            one_task_model = current_task.model or model_name
 
         if current_task.attempts >= retries:
             should_abort = _process_exhausted_retries(
@@ -590,8 +626,6 @@ def run_loop(
                 )
             continue
 
-        handled = True
-
         if verbose:
             click.echo(
                 f"\n--- Task {task_id} "
@@ -622,6 +656,12 @@ def run_loop(
                 time_limit=time_limit,
                 scope=scope,
             )
+            if once:
+                finalized = tasks.load_tasks(tasks_file)
+                task = next(
+                    (t for t in finalized.tasks if t.id == task_id), None
+                )
+                return bool(task and task.status == tasks.TaskStatus.COMPLETED)
             continue
 
         prompt = prompts.prepare_prompt(
@@ -633,8 +673,13 @@ def run_loop(
             click.echo(prompt)
             click.secho("====================\n", fg="blue", bold=True)
 
+        selected_runner = current_task.runner or runner_name
+        selected_model = current_task.model or model_name
+        if once:
+            selected_runner = one_task_runner or selected_runner
+            selected_model = one_task_model
         cmd = runner.build_runner_command(
-            current_task.runner or runner_name,
+            selected_runner,
             prompt,
             yolo,
             runner_args,
@@ -642,7 +687,7 @@ def run_loop(
             verbose=verbose,
             time_limit=time_limit,
             working_dir=working_dir,
-            model=current_task.model or model_name,
+            model=selected_model,
         )
 
         # Record what actually launched before it runs, so the provenance
@@ -671,19 +716,19 @@ def run_loop(
                 )
             elif returncode != 0:
                 click.echo(
-                    f"\n{runner_name.capitalize()} execution failed "
+                    f"\n{selected_runner.capitalize()} execution failed "
                     f"with exit code {returncode}"
                 )
                 if returncode == 127:
                     click.echo(
-                        f"\nNOTE: Command '{runner_name}' not found.\n"
+                        f"\nNOTE: Command '{selected_runner}' not found.\n"
                         "If you are using a shell alias, "
                         "Python subprocesses cannot see it.\n"
                         "Fixes:\n"
                         "1. Use the absolute path: `lemming config set "
-                        f"runner /path/to/{runner_name}`\n"
+                        f"runner /path/to/{selected_runner}`\n"
                         "2. Create an executable wrapper script for "
-                        f"'{runner_name}' in your PATH."
+                        f"'{selected_runner}' in your PATH."
                     )
         except tasks.CorruptedTasksError:
             # Retrying cannot help an unreadable roadmap, and counting the
@@ -696,7 +741,7 @@ def run_loop(
             # ever attempted. No signal downstream can tell them apart.
             returncode = runner.RETURNCODE_LAUNCH_FAILED
             click.echo(
-                f"\nAn error occurred while executing {runner_name}: {e}"
+                f"\nAn error occurred while executing {selected_runner}: {e}"
             )
 
         should_abort = _handle_runner_exit(
@@ -707,8 +752,8 @@ def run_loop(
             stderr=stderr,
             retries=retries,
             retry_delay=retry_delay,
-            runner_name=runner_name,
-            model_name=model_name,
+            runner_name=selected_runner,
+            model_name=selected_model,
             yolo=yolo,
             runner_args=runner_args,
             no_defaults=no_defaults,
@@ -717,9 +762,19 @@ def run_loop(
             working_dir=working_dir,
             time_limit=time_limit,
             scope=scope,
+            retry_runner_failures=once,
+            abort_failed_finalization=once,
         )
         if should_abort:
             return False
+
+        if once:
+            updated = tasks.load_tasks(tasks_file)
+            task = next((t for t in updated.tasks if t.id == task_id), None)
+            if not task or task.status != tasks.TaskStatus.PENDING:
+                return bool(task and task.status == tasks.TaskStatus.COMPLETED)
+            if task.attempts >= retries:
+                return False
 
 
 def format_duration(minutes: int) -> str:
