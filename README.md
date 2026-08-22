@@ -91,8 +91,14 @@ runner, and the agent's closing message comes back on stdout.
 lemming exec "Fix the flaky test in runner_test.py" --runner codex
 
 # Pipe a longer handoff instead of fighting shell quoting
-cat handoff.md | lemming exec -f - --runner agy
+cat handoff.md | lemming -v exec -f - --runner agy
 ```
+
+The runner receives no conversation history and cannot be steered mid-run.
+Make the handoff self-contained: state the goal, hard constraints, relevant
+findings and evidence, approaches ruled out and why, and the definition of done
+and verification. The installed skill includes a complete here-document
+example for orchestrating agents.
 
 With no description there is nothing for a task runner to do, so only the
 reviews run — against work that already exists.
