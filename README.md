@@ -108,7 +108,7 @@ reviews run — against work that already exists.
 lemming exec --review readability
 
 # Review someone else's branch, checked out in a worktree
-lemming exec -C ../review-worktree --review testing --scope main...HEAD
+lemming -C ../review-worktree exec --review testing --scope main...HEAD
 
 # Do the work, then gate it
 lemming exec "Add pagination to the tasks API" --review all
@@ -132,6 +132,14 @@ activity.
 
 Note that the agent runs unattended (`--yolo` by default), so it does not
 inherit the permission prompts of whatever launched it.
+
+Concurrent writing runs must not share a checkout. Lemming stays independent of
+Git, Mercurial, and other version control systems: the caller creates a separate
+working copy with the repository's existing VCS, passes it with
+`lemming -C <working-copy> -v exec ...`, and owns result recovery and cleanup.
+For Git, stop when the source checkout has modified or untracked files instead
+of silently excluding them. Retain every isolated working copy until its changes
+have been recovered. The packaged skill includes a minimal Git example.
 
 ### Teaching Your Agent to Use It
 
