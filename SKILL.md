@@ -48,8 +48,41 @@ The task runner is required to record its approach first and concise findings as
 it works. These entries are checkpoints rather than a continuous trace, so use
 verbose output or the log to tell whether it is actively making progress.
 
-The task starts with an empty context and sees nothing of your conversation, so
-give it everything it needs.
+The runner receives no conversation history and cannot be steered mid-run. Give
+it a self-contained handoff with:
+
+- **Goal:** the concrete outcome to produce.
+- **Hard constraints:** scope, compatibility, process, and safety requirements.
+- **Relevant findings and evidence:** paths, commands, output, and prior
+  observations it should rely on.
+- **Approaches ruled out and why:** decisions it should not revisit without new
+  evidence.
+- **Definition of done and verification:** the required result and checks that
+  prove it works.
+
+For example:
+
+```sh
+lemming -v exec -f - --runner codex <<'EOF'
+# Goal
+Fix the race that lets two workers claim the same queued job.
+
+# Hard constraints
+- Keep the SQLite schema and public CLI unchanged.
+- Make the smallest scoped change; do not reformat unrelated files.
+
+# Relevant findings and evidence
+- `uv run pytest tests/test_queue.py -k concurrent_claim` fails intermittently.
+- `src/queue.py:claim_next` reads and updates in separate transactions.
+
+# Approaches ruled out and why
+- Do not add an in-process mutex; separate worker processes would bypass it.
+
+# Definition of done and verification
+- The concurrency test passes repeatedly and no existing behavior regresses.
+- Run the focused test, then the full test suite and configured linter.
+EOF
+```
 
 ## Run a review
 
