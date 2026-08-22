@@ -9,8 +9,9 @@ from unittest import mock
 import pytest
 from click.testing import CliRunner
 
-from lemming import paths, tasks
+from lemming import paths, runner, tasks
 from lemming.cli import cli
+from lemming.cli.exec_cli import _read_log_tail
 
 
 @pytest.fixture
@@ -225,6 +226,189 @@ def test_exec_attempts_the_task_once(workspace):
     assert len(attempts) == 1
 
 
+def test_exec_retries_the_same_task_until_it_completes(workspace):
+    """Opting in spends a bounded budget without replacing task state."""
+    task_ids = []
+    task_files = []
+    working_dirs = []
+    commands = []
+
+    def finish_second(cmd, tasks_file, task_id, *args, **kwargs):
+        task_ids.append(task_id)
+        task_files.append(tasks_file)
+        working_dirs.append(kwargs.get("cwd"))
+        commands.append(cmd)
+        if len(task_ids) == 1:
+            tasks.add_progress(tasks_file, task_id, "first attempt failed")
+            data = tasks.load_tasks(tasks_file)
+            data.config.retries = 5
+            data.config.runner = "claude"
+            data.config.model = "changed-model"
+            tasks.save_tasks(tasks_file, data)
+            tasks.add_task(tasks_file, "Do unrelated work", index=0)
+            return 0, "", ""
+        return _finish("Recovered.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch(
+        "lemming.runner.run_with_heartbeat", side_effect=finish_second
+    ):
+        result = CliRunner().invoke(
+            cli,
+            [
+                "exec",
+                "Fix it",
+                "--runner",
+                "codex",
+                "--model",
+                "test-model",
+                "--retries",
+                "2",
+                "--keep",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.strip() == "Recovered."
+    assert len(set(task_ids)) == 1
+    assert len(set(task_files)) == 1
+    assert working_dirs == [workspace.resolve(), workspace.resolve()]
+    assert all(command[0] == "codex" for command in commands)
+    assert all("test-model" in command for command in commands)
+    data = tasks.load_tasks(_exec_dirs()[0] / "tasks.yml")
+    task = next(task for task in data.tasks if task.id == task_ids[0])
+    assert task.attempts == 2
+    assert task.progress == ["first attempt failed", "did the work"]
+
+
+@pytest.mark.parametrize(
+    "first_result",
+    [
+        OSError("provider unavailable"),
+        (7, "provider unavailable", ""),
+    ],
+)
+def test_exec_retries_transient_runner_failures(workspace, first_result):
+    """Launch errors and non-zero exits both consume the opt-in budget."""
+    calls = 0
+
+    def recover(cmd, tasks_file, task_id, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            if isinstance(first_result, Exception):
+                raise first_result
+            return first_result
+        return _finish("Recovered.")(cmd, tasks_file, task_id, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=recover):
+        result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "2"])
+
+    assert result.exit_code == 0, result.stderr
+    assert calls == 2
+
+
+def test_exec_retries_a_real_runner_process(workspace):
+    """The CLI preserves task state across actual subprocess launches."""
+    fake_runner = workspace / "flaky_runner.py"
+    fake_runner.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        "import os\n"
+        "import pathlib\n"
+        "import subprocess\n"
+        "import sys\n"
+        "count = pathlib.Path(__file__).with_suffix('.count')\n"
+        "if not count.exists():\n"
+        "    count.write_text('1')\n"
+        "    raise SystemExit(7)\n"
+        "task_id = os.environ['LEMMING_PARENT_TASK_ID']\n"
+        "tasks_file = os.environ['LEMMING_PARENT_TASKS_FILE']\n"
+        "base = [sys.executable, '-m', 'lemming.main', "
+        "'--tasks-file', tasks_file]\n"
+        "subprocess.run(\n"
+        "    base + ['progress', task_id, 'recovered'], check=True\n"
+        ")\n"
+        "subprocess.run(base + ['complete', task_id], check=True)\n"
+        "print(json.dumps({'type': 'result', 'result': 'Recovered.'}))\n",
+        encoding="utf-8",
+    )
+    fake_runner.chmod(0o755)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "exec",
+            "Fix it",
+            "--runner",
+            str(fake_runner),
+            "--retries",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.strip() == "Recovered."
+    assert fake_runner.with_suffix(".count").read_text() == "1"
+
+
+def test_exec_exhaustion_retains_a_pending_task(workspace):
+    """Exhaustion stays recoverable and preserves one-shot status semantics."""
+    calls = 0
+
+    def time_out(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return runner.RETURNCODE_TIMEOUT, "", ""
+
+    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=time_out):
+        result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "2"])
+
+    assert result.exit_code != 0
+    assert calls == 2
+    data = tasks.load_tasks(_exec_dirs()[0] / "tasks.yml")
+    assert data.tasks[0].attempts == 2
+    assert data.tasks[0].status == tasks.TaskStatus.PENDING
+
+
+@pytest.mark.parametrize(
+    ("status", "returncode"),
+    [
+        (tasks.TaskStatus.FAILED, 0),
+        (tasks.TaskStatus.CANCELLED, -15),
+        (None, -15),
+    ],
+)
+def test_exec_does_not_retry_terminal_outcomes(workspace, status, returncode):
+    """An explicit terminal status or interruption ends the one-task run."""
+    calls = 0
+
+    def finish_terminal(cmd, tasks_file, task_id, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if status is not None:
+            tasks.add_progress(tasks_file, task_id, "cannot continue")
+            tasks.update_task(tasks_file, task_id, status=status.value)
+        return returncode, "", ""
+
+    with mock.patch(
+        "lemming.runner.run_with_heartbeat", side_effect=finish_terminal
+    ):
+        result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "3"])
+
+    assert result.exit_code != 0
+    assert calls == 1
+    assert "Retrying" not in result.stderr
+
+
+def test_exec_rejects_non_positive_retries(workspace):
+    """A retry budget always includes at least the initial attempt."""
+    result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "0"])
+
+    assert result.exit_code != 0
+    assert "0 is not in the range" in result.stderr
+    assert _exec_dirs() == []
+
+
 def test_exec_runs_in_the_directory_it_was_invoked_from(workspace):
     """Ephemeral state must not make the agent edit an ephemeral workspace."""
     seen = {}
@@ -409,6 +593,69 @@ def test_a_failing_review_does_not_become_a_task_run(repo):
 
     assert result.exit_code != 0
     assert "Task Runner" not in headers
+
+
+def test_exec_rejects_retries_for_review_only(repo):
+    """The retry budget controls task attempts, not standalone reviews."""
+    (repo / "committed.py").write_text("x = 2\n")
+
+    result = CliRunner().invoke(
+        cli,
+        ["exec", "--review", "readability", "--retries", "2"],
+    )
+
+    assert result.exit_code != 0
+    assert "only applies when exec has a task description" in result.stderr
+
+
+def test_a_failing_review_does_not_retry_the_task(repo):
+    """Retries stop once the task reaches a failed finalization stage."""
+    (repo / "committed.py").write_text("x = 2\n")
+    headers = []
+
+    def fail_review(cmd, tasks_file, task_id, *args, **kwargs):
+        header = kwargs.get("header")
+        headers.append(header)
+        if header == "Task Runner":
+            return _finish("Implemented.")(
+                cmd, tasks_file, task_id, *args, **kwargs
+            )
+        with open(
+            paths.get_log_file(tasks_file, task_id), "a", encoding="utf-8"
+        ) as log_file:
+            log_file.write("\n--- Attempt started at now ---\n")
+        return 1, "", ""
+
+    with mock.patch(
+        "lemming.runner.run_with_heartbeat", side_effect=fail_review
+    ):
+        result = CliRunner().invoke(
+            cli,
+            [
+                "exec",
+                "Fix it",
+                "--review",
+                "readability",
+                "--retries",
+                "3",
+            ],
+        )
+
+    assert result.exit_code != 0
+    assert headers == ["Task Runner", "Hook: readability"]
+    assert result.stdout == ""
+
+
+def test_read_log_tail_starts_at_the_final_attempt(tmp_path):
+    """A failed last launch cannot expose an earlier attempt's message."""
+    log_file = tmp_path / "runner.log"
+    log_file.write_text(
+        "\n--- Attempt started at first ---\n"
+        '{"type":"result","result":"stale"}\n'
+        "\n--- Attempt started at second ---\n"
+    )
+
+    assert runner.extract_final_message(_read_log_tail(log_file)) is None
 
 
 def test_exec_retires_state_kept_by_an_old_failure(workspace):

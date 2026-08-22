@@ -90,6 +90,9 @@ runner, and the agent's closing message comes back on stdout.
 # Delegate one task to a different agent, e.g. to spare another's quota
 lemming exec "Fix the flaky test in runner_test.py" --runner codex
 
+# Allow up to three total attempts for transient runner failures
+lemming exec "Fix the flaky test in runner_test.py" --retries 3
+
 # Pipe a longer handoff instead of fighting shell quoting
 cat handoff.md | lemming -v exec -f - --runner agy
 ```
@@ -119,19 +122,25 @@ which is resolved to the files it changed. It defaults to uncommitted work, or
 to the whole tree outside a git repository.
 
 Each run is self-contained: nothing is read from the project's roadmap or its
-local hooks, one agent run is attempted, and the run's state directory is
-removed unless it failed — in which case it is kept, and its path printed, so
-the log can be read. Kept directories live in `~/.local/lemming/exec-*` and are
-retired automatically a week later, so a recent failure is always still there to
-inspect. Stdout carries the agent's message alone and everything else goes to
-stderr, so the output can be consumed directly. Stderr reports the ephemeral
-tasks file and task ID at startup; pass those to
+local hooks, it runs only the requested task and reviews, and its state
+directory is removed unless it failed — in which case it is kept, and its path
+printed, so the log can be read. Kept directories live in
+`~/.local/lemming/exec-*` and are retired automatically a week later, so a
+recent failure is always still there to inspect. Stdout carries the agent's
+message alone and everything else goes to stderr, so the output can be consumed
+directly. Stderr reports the ephemeral tasks file and task ID at startup; pass
+those to
 `lemming --tasks-file <path> status <id>` or `logs <id>` to inspect an active
 run. Use the global verbose flag (`lemming -v exec ...`) to stream runner
 activity.
 
 Note that the agent runs unattended (`--yolo` by default), so it does not
 inherit the permission prompts of whatever launched it.
+
+`--retries N` includes the first attempt and defaults to 1. Retries reuse the
+same task state and progress after incomplete runs, timeouts, launch errors, or
+non-zero exits. An explicit failure or cancellation, an interruption, or a
+failed review stops immediately. Review-only runs cannot be retried.
 
 Concurrent writing runs must not share a checkout. Lemming stays independent of
 Git, Mercurial, and other version control systems: the caller creates a separate
@@ -203,9 +212,9 @@ loops through each pending task:
     `lemming complete` or `lemming fail`. Agents can also schedule new tasks
     with `lemming add`, breaking down complex work into smaller steps that
     Lemming will pick up automatically.
-4.  **Retry or advance**: On failure, Lemming retries the task (up to
-    `--retries`) with accumulated progress as context, so the agent learns from
-    previous attempts. On success, it moves to the next task.
+4.  **Retry or advance**: On failure, Lemming retries the task up to the
+    configured roadmap limit, with accumulated progress as context so the agent
+    learns from previous attempts. On success, it moves to the next task.
 5.  **Orchestration**: After each task, Lemming can run one or more
     **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the
     results and adapt the roadmap if needed. Hooks are enabled by default but
@@ -405,6 +414,8 @@ These come before the subcommand and apply to all of them.
     revision range is resolved to the files it changed. Defaults to uncommitted
     work, or the whole tree outside a repository.
   - `--runner`, `--model`: Which agent CLI and model to use.
+  - `--retries`: Maximum total task-runner attempts, including the first
+    (default 1). Does not retry review-only runs.
   - `--time-limit`: Minutes before the agent is killed (default 60, 0 for no
     limit).
   - `--yolo/--no-yolo`: Run the agent unattended (default: True).

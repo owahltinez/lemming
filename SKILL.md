@@ -24,6 +24,9 @@ agent run can hold.
 ```sh
 lemming -v exec "Fix the flaky heartbeat test in src/runner_test.py" --runner codex
 
+# Opt into at most three total attempts for transient runner failures
+lemming -v exec "Fix the flaky heartbeat test" --retries 3
+
 # Pipe a longer handoff rather than fighting shell quoting; no length limit
 cat handoff.md | lemming -v exec -f - --runner agy
 ```
@@ -173,8 +176,9 @@ one off for the project.
 - **The agent runs unattended.** `--yolo` is the default, so it does not inherit
   the permission prompts of whatever launched it. Treat this as granting an
   agent unsupervised write access to the working directory.
-- **`exec` makes one attempt, no retry.** A failure is final. A roadmap task
-  retries (3 by default) with its progress carried forward.
+- **`exec` makes one attempt by default.** `--retries N` opts into at most `N`
+  total task attempts with progress carried forward. Explicit failure,
+  cancellation, interruption, and failed reviews stop immediately.
 - **Interrupting leaves partial edits.** Nothing is restored, so there is no
   atomicity to rely on.
 - **Concurrent runs in one checkout interleave their edits.** Give each writing
