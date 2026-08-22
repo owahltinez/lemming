@@ -137,21 +137,23 @@ inherit the permission prompts of whatever launched it.
 
 Lemming ships an Agent Skill so that an agent already running — Codex, Claude
 Code, Gemini CLI, Cursor — can reach any other agent CLI without knowing how
-each one spells its flags. Install it once:
+each one spells its flags. Install or refresh it with:
 
 ```bash
-# Cross-tool location (~/.agents/skills), and report any tool-specific ones
+# Cross-tool location plus every detected tool-specific location
 lemming skill install
-
-# Cover detected tools that require their own skill directory too
-lemming skill install --all
 
 # This repository only
 lemming skill install --to .agents/skills
+
+# Inspect every supported location
+lemming skill status
 ```
 
-`lemming skill uninstall` reverses it. Both refuse to touch a directory that
-does not hold this skill, so a mistyped `--to` fails instead of deleting work.
+`lemming skill uninstall` reverses the default installation sweep. Both refuse
+to touch a directory that does not hold this skill, so a mistyped `--to` fails
+instead of deleting work. Use `--link` on a durable installation to track
+package upgrades without reinstalling.
 
 ---
 
@@ -400,14 +402,14 @@ These come before the subcommand and apply to all of them.
   - `--yolo/--no-yolo`: Run the agent unattended (default: True).
   - `--keep`: Keep the run's state directory even when it succeeds.
 - **`skill install`**: Install the packaged Agent Skill so agents discover
-  Lemming. Writes to `~/.agents/skills` by default and names any tool-specific
-  directories it found.
+  Lemming. Writes to `~/.agents/skills` and every detected tool-specific
+  directory by default. Re-running it refreshes existing Lemming copies.
   - `--to <dir>`: Install into a specific skills directory.
-  - `--all`: Also cover every detected tool's own skills directory.
   - `--link`: Symlink instead of copying, so upgrades take effect immediately.
-  - `--force`: Replace an existing installation of this skill.
   - `--dry-run`: Print what would happen, refusals included.
-- **`skill uninstall`**: Remove it again. Same `--to`, `--all`, and `--dry-run`.
+- **`skill uninstall`**: Remove it again. Supports `--to` and `--dry-run`.
+- **`skill status`**: Show every supported location and installation state.
+  Supports `--json` for structured output.
 - **`stop`**: Stop the running loop and its runner.
   - `--after-current-task`: Drain instead — let the running task finish, then
     stop before claiming another. This is the safe way to change the runner or
