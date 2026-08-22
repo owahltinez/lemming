@@ -84,6 +84,35 @@ Fix the race that lets two workers claim the same queued job.
 EOF
 ```
 
+## Isolate concurrent writing runs
+
+Concurrent writing runs must use separate working copies. Detect and use the
+repository's existing version control system, then pass each copy with the
+global `-C` option. The caller owns creation, result recovery, and cleanup;
+Lemming remains independent of Git, Mercurial, and other VCSs.
+
+For Git, refuse modified or untracked input rather than silently excluding it,
+then create a worktree from committed `HEAD`:
+
+```sh
+repo=$(git rev-parse --show-toplevel) || exit 1
+test -z "$(git -C "$repo" status --porcelain)" || exit 1
+worktree=$(mktemp -d "${TMPDIR:-/tmp}/lemming-exec.XXXXXX") || exit 1
+branch="lemming/$(basename "$worktree")"
+git -C "$repo" worktree add -b "$branch" "$worktree" HEAD || exit 1
+printf 'Worktree: %s\nBranch: %s\n' "$worktree" "$branch"
+lemming -C "$worktree" -v exec "<self-contained task>" --runner codex
+```
+
+Retain the reported worktree after success, failure, timeout, or interruption.
+After its changes have been committed, copied, or deliberately discarded, use
+Git's non-forcing cleanup so dirty or unmerged work is not destroyed:
+
+```sh
+git -C "$repo" worktree remove "$worktree"
+git -C "$repo" branch -d "$branch"
+```
+
 ## Run a review
 
 With no description there is nothing for a task runner to do, so only the
@@ -149,7 +178,8 @@ one off for the project.
 - **Interrupting leaves partial edits.** Nothing is restored, so there is no
   atomicity to rely on.
 - **Concurrent runs in one checkout interleave their edits.** Give each writing
-  run its own worktree and address it with `-C`.
+  run its own VCS-managed working copy and address it with `-C`; retain the copy
+  until its result is recovered.
 - **Every run reports its state.** The tasks file and task ID are printed on
   stderr at startup. Successful state is removed on exit unless `--keep` is
   used; failures keep their directory and print it again for recovery. Kept
