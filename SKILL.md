@@ -136,8 +136,12 @@ lemming -C /tmp/pr-123 exec --review testing --scope main...HEAD
 which is resolved to the files it changed. It defaults to uncommitted work, and
 a clean tree stops the run rather than reviewing everything.
 
-Reviews **edit the workspace** — readability applies fixes and reruns checks.
-That is the point, but it means a review is not read-only.
+Reviews may edit the working directory. Readability intentionally applies fixes,
+and testing may repair production code or tests. UX is instructed to remain
+advisory, but its prompt and `--no-yolo` do not enforce filesystem isolation. A
+global review override may perform any actions its prompt requests. When
+isolation is required, use a separate VCS-managed working copy and pass it with
+the global `-C` option, as in the example above.
 
 ## Drive a roadmap
 

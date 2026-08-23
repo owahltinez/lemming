@@ -54,20 +54,34 @@ a broad task).
 A code quality and simplification hook that challenges unnecessary complexity,
 indirection, and duplicated implementations before reviewing changes for
 adherence to the Google Style Guide and general readability using the bundled
-`lemming readability` tool. It provides feedback via task progress or suggests
-follow-up refactoring tasks.
+`lemming readability` tool. It intentionally applies automated and targeted
+fixes in the working directory and records broader findings as task progress.
 
 ### `testing`
 
 Checks that changed behavior has focused test coverage and runs the relevant
-tests. It records larger testing gaps as task progress for the roadmap hook.
+tests. It may repair small, targeted problems in production code or tests and
+may add, merge, or remove tests. It records larger testing gaps as task progress
+for the roadmap hook.
 
 ### `ux`
 
 A lightweight journey-continuity review for user-visible changes. It considers
 at most one affected critical journey, reports only concrete and reproducible
 gaps, and exits immediately when the task did not change user-facing behavior.
-It runs after `testing` and before `roadmap`.
+Its prompt instructs the agent to stay advisory, but this is not
+sandbox-enforced. It runs after `testing` and before `roadmap`.
+
+### Reviews Are Not Read-Only
+
+When selected with `lemming exec --review`, the hooks above may edit the working
+directory. Prompt instructions and `--no-yolo` do not enforce filesystem
+isolation. When isolation is required, create a separate VCS-managed working
+copy and pass it through the global option:
+
+```bash
+lemming -C <working-copy> exec --review <name>
+```
 
 ### Editing Built-in Hook Prompts
 
@@ -104,7 +118,8 @@ Because of this precedence order, overriding a built-in hook only requires
 creating a Markdown file with the same logical name in the project or global
 directory (e.g. `~/.local/lemming/hooks/90-roadmap.md`); delete the file to
 restore the built-in version. Global hooks are available to all Lemming projects
-on the system.
+on the system. A global review override selected by `lemming exec --review` may
+perform any actions its prompt requests.
 
 ### Example: `lint` hook
 
