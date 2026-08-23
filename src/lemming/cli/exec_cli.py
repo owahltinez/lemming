@@ -223,7 +223,7 @@ def _task_status(
     help=(
         "Reviews to run after the task, comma-separated or repeated. "
         "Use 'all' for every review. With no description, only the "
-        "reviews run."
+        "reviews run. Reviews may edit the working directory."
     ),
 )
 @click.option(

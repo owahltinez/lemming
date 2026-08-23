@@ -121,6 +121,14 @@ lemming exec "Add pagination to the tasks API" --review all
 which is resolved to the files it changed. It defaults to uncommitted work, or
 to the whole tree outside a git repository.
 
+Reviews may edit the working directory. The built-in readability review
+intentionally applies fixes, and testing may repair production code or tests.
+UX is instructed to remain advisory, but its prompt and `--no-yolo` do not
+enforce filesystem isolation. A global review override may perform any actions
+its prompt requests. When isolation is required, follow the working-copy
+guidance below and pass a separate VCS-managed working copy with
+`lemming -C <working-copy> exec --review ...`.
+
 Each run is self-contained: nothing is read from the project's roadmap or its
 local hooks, it runs only the requested task and reviews, and its state
 directory is removed unless it failed — in which case it is kept, and its path
@@ -261,13 +269,15 @@ Lemming comes with several built-in hooks to help manage your project:
   unnecessary complexity and duplicate implementations, then reviews changes for
   adherence to the Google Style Guide and general readability using the
   [readability](https://github.com/owahltinez/readability) tool (exposed as
-  `lemming readability`). It can record findings as task progress or suggest
-  follow-up refactoring tasks.
+  `lemming readability`). It intentionally applies automated and targeted fixes
+  in the working directory and records broader findings as task progress.
 - **`testing`**: Verifies that changed behavior has focused test coverage and
-  that the relevant tests pass.
+  that the relevant tests pass. It may repair small, targeted problems in
+  production code or tests and may add, merge, or remove tests.
 - **`ux`**: Reviews at most one critical user journey affected by a user-visible
   change. It reports only concrete, reproducible continuity gaps and exits
-  immediately for non-user-facing tasks.
+  immediately for non-user-facing tasks. Its prompt instructs the agent to stay
+  advisory, but this is not sandbox-enforced.
 
 ### Custom and Global Hooks
 
@@ -409,7 +419,8 @@ These come before the subcommand and apply to all of them.
     `add`, there is no length cap.
   - `--review <names>`: Reviews to run after the task, comma-separated or
     repeated; `all` selects every one. With no description, only the reviews
-    run. Hooks that revise the roadmap cannot be selected.
+    run. Reviews may edit the working directory. Hooks that revise the roadmap
+    cannot be selected.
   - `--scope <path|range>`: What the reviews look at. Paths pass through; a git
     revision range is resolved to the files it changed. Defaults to uncommitted
     work, or the whole tree outside a repository.
