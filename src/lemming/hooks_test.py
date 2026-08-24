@@ -103,6 +103,7 @@ def test_disable_hooks_keeps_priority_in_mask(tmp_path, monkeypatch):
     # The mask filename carries the hook's priority so listings still
     # report the priority it would run at if re-enabled
     mask = results["roadmap"]
+    assert mask is not None
     assert mask.name == "90-roadmap.md"
     assert mask.read_text(encoding="utf-8") == ""
 

@@ -235,6 +235,7 @@ def test_get_pending_task(tmp_path):
         ]
     )
     pending = queries.get_pending_task(data)
+    assert pending is not None
     assert pending.id == "1"
 
 

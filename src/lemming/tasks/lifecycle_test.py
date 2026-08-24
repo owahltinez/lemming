@@ -169,6 +169,7 @@ def test_finish_task_attempt(tmp_path):
     persistence.save_tasks(tasks_file, data)
 
     finished = lifecycle.finish_task_attempt(tasks_file, "1")
+    assert finished is not None
     assert finished.status == models.TaskStatus.PENDING
     assert finished.pid is None
 
