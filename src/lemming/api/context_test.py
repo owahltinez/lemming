@@ -6,10 +6,13 @@ import pytest
 from lemming.api import context
 
 
-class MockAppState:
-    def __init__(self, root: pathlib.Path, tasks_file: pathlib.Path):
-        self.root = root
-        self.tasks_file = tasks_file
+def _app_state(
+    root: pathlib.Path, tasks_file: pathlib.Path
+) -> fastapi.datastructures.State:
+    """The real state object, since it is just an attribute bag."""
+    return fastapi.datastructures.State(
+        {"root": root, "tasks_file": tasks_file}
+    )
 
 
 def test_resolve_project_dir(tmp_path):
@@ -18,7 +21,7 @@ def test_resolve_project_dir(tmp_path):
     project = root / "project"
     project.mkdir()
 
-    app_state = MockAppState(root, root / "tasks.yml")
+    app_state = _app_state(root, root / "tasks.yml")
 
     # Default (no project)
     assert context.resolve_project_dir(app_state) == root
@@ -46,7 +49,7 @@ def test_resolve_tasks_file(tmp_path):
     project.mkdir()
 
     default_tasks = root / "tasks.yml"
-    app_state = MockAppState(root, default_tasks)
+    app_state = _app_state(root, default_tasks)
 
     # Default
     assert context.resolve_tasks_file(app_state) == default_tasks

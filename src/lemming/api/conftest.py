@@ -86,8 +86,7 @@ def git_repo():
     api.app.state.root = pathlib.Path(test_dir).resolve()
 
     # Clear cached git repo check from previous tests
-    if hasattr(paths.in_git_repo, "_result"):
-        del paths.in_git_repo._result
+    paths.in_git_repo.cache_clear()
 
     subprocess.run(["git", "init"], check=True)
     subprocess.run(
@@ -113,8 +112,7 @@ def git_repo():
     yield pathlib.Path(test_dir)
 
     # Clear cached git repo check and restore cwd
-    if hasattr(paths.in_git_repo, "_result"):
-        del paths.in_git_repo._result
+    paths.in_git_repo.cache_clear()
     os.chdir(orig_cwd)
     api.app.state.root = original_root
     shutil.rmtree(test_dir)
@@ -130,8 +128,7 @@ def non_git_dir():
     api.app.state.root = pathlib.Path(test_dir).resolve()
 
     # Clear cached git repo check
-    if hasattr(paths.in_git_repo, "_result"):
-        del paths.in_git_repo._result
+    paths.in_git_repo.cache_clear()
 
     # Create files (including one that would be "ignored" if git were present)
     (pathlib.Path(test_dir) / "file1.txt").write_text("content1")
@@ -139,8 +136,7 @@ def non_git_dir():
 
     yield pathlib.Path(test_dir)
 
-    if hasattr(paths.in_git_repo, "_result"):
-        del paths.in_git_repo._result
+    paths.in_git_repo.cache_clear()
     os.chdir(orig_cwd)
     api.app.state.root = original_root
     shutil.rmtree(test_dir)

@@ -27,12 +27,14 @@ def test_task_model_defaults():
 
 
 def test_task_model_validation():
-    # description is required
+    # description is required; the omission is the assertion, not a mistake
     with pytest.raises(pydantic.ValidationError):
+        # pyrefly: ignore[missing-argument]
         models.Task(id="123")
 
     # id is required
     with pytest.raises(pydantic.ValidationError):
+        # pyrefly: ignore[missing-argument]
         models.Task(description="Test")
 
 
