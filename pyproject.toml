@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lemming-cli"
-version = "0.5.1"
+version = "0.5.2"
 description = "An autonomous, iterative task runner for AI coding agents."
 readme = "README.md"
 authors = [
@@ -16,7 +16,7 @@ keywords = ["ai", "agents", "automation", "antigravity", "claude", "opencode"]
 dependencies = [
     "beautifulsoup4>=4.13.3",
     "click>=8.0.0",
-    "click-agentcli>=0.3.0",
+    "click-agentcli>=0.4.1",
     "fastapi>=0.124.4",
     "markdownify>=0.14.1",
     "pydantic>=2.12.5",
