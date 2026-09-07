@@ -354,7 +354,7 @@ def reject_task(
 
     # The reason is replayed as a progress entry, so it lives under the same
     # bound; exceeding it would fail later, halfway through finalization.
-    limits.validate_progress_entry(tasks_file, reason)
+    limits.validate_progress_entry(reason)
 
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
