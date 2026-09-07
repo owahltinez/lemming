@@ -2,6 +2,7 @@ import pathlib
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import click.testing
 
@@ -38,6 +39,18 @@ class TestMain(unittest.TestCase):
         result = self.cli_runner.invoke(main.cli, self.base_args + ["status"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Initial Task", result.output)
+
+    def test_main_refreshes_the_installed_skill(self):
+        # The console script is the only caller, so it is the only place a
+        # skill under the user's home may be rewritten.
+        with (
+            mock.patch.object(main, "refresh_skill") as refresh,
+            mock.patch.object(main, "cli") as cli,
+        ):
+            main.main()
+
+        refresh.assert_called_once_with(name="lemming", package="lemming")
+        cli.assert_called_once_with()
 
 
 if __name__ == "__main__":

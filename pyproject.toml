@@ -16,7 +16,7 @@ keywords = ["ai", "agents", "automation", "antigravity", "claude", "opencode"]
 dependencies = [
     "beautifulsoup4>=4.13.3",
     "click>=8.0.0",
-    "click-agentcli>=0.4.1",
+    "click-agentcli>=0.5.0",
     "fastapi>=0.124.4",
     "markdownify>=0.14.1",
     "pydantic>=2.12.5",
@@ -49,7 +49,7 @@ Homepage = "https://github.com/owahltinez/lemming"
 Repository = "https://github.com/owahltinez/lemming"
 
 [project.scripts]
-lemming = "lemming.main:cli"
+lemming = "lemming.main:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
