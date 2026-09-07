@@ -12,6 +12,21 @@ from . import prompts, runner, shutdown, tasks
 from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
 
 
+def _read_rejection(tasks_file: pathlib.Path, task_id: str) -> str | None:
+    """Returns the task's current rejection, if it still exists.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task a hook just ran against.
+
+    Returns:
+        The rejection reason, or None when the task is gone or accepted.
+    """
+    data = tasks.load_tasks(tasks_file)
+    task = next((t for t in data.tasks if t.id == task_id), None)
+    return task.rejection if task else None
+
+
 def run_hooks(
     tasks_file: pathlib.Path,
     task_id: str,
@@ -151,6 +166,21 @@ def run_hooks(
             exit_codes[hook_name] = runner.RETURNCODE_LAUNCH_FAILED
             click.echo(f"Hook '{hook_name}' error: {e}")
 
+        # A hook that finds a defect it cannot fix rejects the completion
+        # rather than failing its own process. Attribute it here, while it is
+        # still known which hook ran, but keep going: the later hooks (the
+        # roadmap hook above all) need to see the rejection too.
+        rejection = _read_rejection(tasks_file, task_id)
+        if rejection and rejection != task.rejection:
+            # reject_task bounds the reason to one progress entry, but the
+            # attribution prefix can still push it over; an oversized entry
+            # would raise here and take the whole loop down.
+            message = f"Hook '{hook_name}' rejected completion: {rejection}"
+            tasks.add_progress(
+                tasks_file, task_id, message[: tasks.MAX_PROGRESS_ENTRY_CHARS]
+            )
+            click.echo(message)
+
     # Finally mark the task as completed or failed if requested.
     # But first check whether a hook already changed the task (e.g. the
     # roadmap hook reset a failed task for a new approach).  If the task
@@ -169,18 +199,31 @@ def run_hooks(
             # the whole task is retried instead of being silently marked
             # completed. Failure finalization proceeds regardless: those
             # tasks have already exhausted their attempts.
+            # A rejection is the same verdict arrived at deliberately: a
+            # hook that ran to completion and refused the result.
             failed_hooks = [h for h, code in exit_codes.items() if code != 0]
-            if final_status == tasks.TaskStatus.COMPLETED and failed_hooks:
+            rejection = current.rejection if current else None
+            if final_status == tasks.TaskStatus.COMPLETED and (
+                failed_hooks or rejection
+            ):
+                reasons = []
+                if failed_hooks:
+                    reasons.append(f"hooks failed ({', '.join(failed_hooks)})")
+                if rejection:
+                    # The reason is already recorded against the hook that
+                    # gave it; repeating it here would crowd the handful of
+                    # entries the next attempt is shown.
+                    reasons.append("was rejected")
+                detail = "; ".join(reasons)
                 tasks.add_progress(
                     tasks_file,
                     task_id,
-                    "Finalization hooks failed "
-                    f"({', '.join(failed_hooks)}); task reverted to pending.",
+                    f"Finalization {detail}; task reverted to pending.",
                 )
                 tasks.revert_task_to_pending(tasks_file, task_id)
                 click.echo(
-                    f"Task {task_id} finalization hooks failed "
-                    f"({', '.join(failed_hooks)}). Reverting to pending."
+                    f"Task {task_id} finalization {detail}. "
+                    "Reverting to pending."
                 )
                 return exit_codes
 

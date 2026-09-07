@@ -38,6 +38,9 @@ from .lifecycle import (
     record_resolved_command as record_resolved_command,
 )
 from .lifecycle import (
+    reject_task as reject_task,
+)
+from .lifecycle import (
     reset_task as reset_task,
 )
 from .lifecycle import (

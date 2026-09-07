@@ -72,6 +72,33 @@ gaps, and exits immediately when the task did not change user-facing behavior.
 Its prompt instructs the agent to stay advisory, but this is not
 sandbox-enforced. It runs after `testing` and before `roadmap`.
 
+### Rejecting Completion
+
+A hook that finds a real defect it cannot fix should not exit 0 and let the
+task be marked completed. It rejects the completion instead:
+
+```bash
+lemming --tasks-file <path> reject <taskid> '<reason>'
+```
+
+A rejection only applies to a task that is finalizing as completed, and it
+does not change the task's status on the spot. The remaining hooks still run
+and see the task as `REJECTED` with the reason, so the roadmap hook can tell
+a rejected task from a finished one. Once every hook has run, the task is
+reverted to pending with its attempt count intact, exactly as it is when a
+hook process fails, and the reason is left in its progress so the next
+attempt starts with the diagnosis.
+
+Under `lemming exec` there is no second attempt: the run ends on the first
+rejection, and under `lemming run` a rejection on the task's final attempt
+sends it straight to the exhausted-retries path, where the failure hooks get
+their chance to repair it.
+
+Reject only for an objective, reproducible failure the hook could not repair
+itself, such as a failing test suite or a `lemming readability check` that
+still fails. Advisory findings, and anything the hook already fixed, belong
+in `lemming progress`.
+
 ### Reviews Are Not Read-Only
 
 When selected with `lemming exec --review`, the hooks above may edit the working

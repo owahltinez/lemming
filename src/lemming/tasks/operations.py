@@ -334,6 +334,7 @@ def update_task(
                     target.pid = None
                     target.last_heartbeat = None
                     target.requested_status = None
+                    target.rejection = None
                     target.active_execution_component = None
                     target.active_execution_started_at = None
                 elif status == models.TaskStatus.PENDING:
@@ -342,6 +343,7 @@ def update_task(
                     target.superseded_reason = None
                     target.attempts = 0
                     target.requested_status = None
+                    target.rejection = None
                     target.active_execution_component = None
                     target.active_execution_started_at = None
                 elif target.completed_at is not None:

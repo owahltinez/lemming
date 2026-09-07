@@ -30,11 +30,15 @@ the plan up-to-date with minimal friction.
       description to be more efficient, or just reset it if you think it was a
       transient issue, but be aware that if it reached the max attempts, you
       MUST change something or the project will abort.
-3.  **Refine**: If any pending, unstarted tasks are now redundant, overly broad,
+3.  **Rejections Are Not Follow-Up Work**: A task shown as REJECTED returns
+    to pending and will be retried with the rejection recorded in its
+    progress. Do NOT add, reset, or supersede anything over that feedback:
+    the next attempt addresses it.
+4.  **Refine**: If any pending, unstarted tasks are now redundant, overly broad,
     or based on invalidated assumptions, edit or delete them immediately. Never
     delete a task with attempts or execution history; supersede it so its log,
     progress, and relationship to replacement tasks remain inspectable.
-4.  **Queue-Drain Goal Audit (Mandatory)**: If the roadmap contains no
+5.  **Queue-Drain Goal Audit (Mandatory)**: If the roadmap contains no
     `PENDING` or `IN PROGRESS` tasks, do not infer that the long-term goal is
     achieved from task descriptions, progress notes, or execution logs. Before
     exiting, inspect the workspace and check each concrete clause of the goal
@@ -43,26 +47,27 @@ the plan up-to-date with minimal friction.
     source files and run targeted existing builds, tests, or commands when they
     provide useful evidence. If the workspace does not fully achieve the goal,
     add concrete, self-contained tasks that close the discovered gaps.
-5.  **Extend**: Whenever your review finds that the project goal is not yet
+6.  **Extend**: Whenever your review finds that the project goal is not yet
     fully achieved, add concrete, self-contained tasks to close the gap.
-6.  **Follow-up**: If you identify missing work from the previous task (like
+7.  **Follow-up**: If you identify missing work from the previous task (like
     forgotten teardowns, or formatting issues reported by the readability
-    hook), add new tasks to address them. A gap reported by the testing hook
-    earns a task only when it names a concrete regression the suite would miss;
-    a bare report of untested code does not.
-7.  **Task-Specific Briefs**: Keep new or rewritten task descriptions concise,
+    hook), add new tasks to address them, except where directive 3 applies.
+    A gap reported by the testing hook earns a task only when it names a
+    concrete regression the suite would miss; a bare report of untested code
+    does not.
+8.  **Task-Specific Briefs**: Keep new or rewritten task descriptions concise,
     self-contained, and no more than {{max_task_description_chars}} characters.
     Include the concrete files, symbols, motivation, and acceptance criteria the
     task needs, but do not repeat project-wide rules already present in the
     long-term goal.
-8.  **No Code Changes**: Your only persistent changes may be to the roadmap via
+9.  **No Code Changes**: Your only persistent changes may be to the roadmap via
     the `lemming` CLI. Do NOT edit source or configuration files. Reading the
     workspace and running existing build, test, and entry-point commands for
     the queue-drain audit is explicitly allowed.
-9.  **Fast Exit**: If the roadmap is accurate and well-structured, AND there
+10. **Fast Exit**: If the roadmap is accurate and well-structured, AND there
     are no failed tasks that have reached their maximum attempts, you may exit
     immediately without running any commands. The queue-drain audit in
-    directive 4 must finish before this clause applies. If a task is marked as
+    directive 5 must finish before this clause applies. If a task is marked as
     FAILED and has reached its maximum attempts, a Fast Exit will result in the
     entire project ABORTING. In that case, you MUST repair it.
 

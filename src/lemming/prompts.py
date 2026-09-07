@@ -360,9 +360,15 @@ def prepare_hook_prompt(
     # (e.g. FAILED) while status may still be IN_PROGRESS during hook execution.
     result_status = finished_task.requested_status or finished_task.status
 
+    # An earlier hook already refused this completion, so the task is going
+    # back to pending. Later hooks must not read it as finished work.
+    result_line = str(result_status)
+    if finished_task.rejection:
+        result_line += f" (REJECTED: {finished_task.rejection})"
+
     finished_str = f"Task ID: {finished_task.id}\n"
     finished_str += f"Description: {finished_task.description}\n"
-    finished_str += f"Result: {result_status}\n"
+    finished_str += f"Result: {result_line}\n"
     finished_str += (
         f"Attempts: {finished_task.attempts}/{data.config.retries}\n"
     )

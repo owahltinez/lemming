@@ -875,6 +875,58 @@ def test_run_hooks_reverts_to_pending_when_hook_killed(
 
 @mock.patch("lemming.prompts.prepare_hook_prompt")
 @mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
+    mock_run, mock_prepare, hooks_env
+):
+    """A hook that exits cleanly can still refuse the completion."""
+    tasks.update_task(
+        hooks_env, "12345678", status=tasks.TaskStatus.IN_PROGRESS
+    )
+    tasks.claim_task(hooks_env, "12345678", pid=os.getpid())
+    tasks.update_task(hooks_env, "12345678", status=tasks.TaskStatus.COMPLETED)
+
+    # The first hook rejects; the rest must still run and see the rejection.
+    seen_prompts = []
+
+    def run_hook(*args, **kwargs):
+        if kwargs["header"] == "Hook: testing":
+            tasks.reject_task(hooks_env, "12345678", "suite fails")
+        return (0, "", "")
+
+    def prepare_prompt(hook_name, data, task, *args, **kwargs):
+        seen_prompts.append((hook_name, task.rejection))
+        return "Mock Prompt"
+
+    mock_run.side_effect = run_hook
+    mock_prepare.side_effect = prepare_prompt
+
+    run_hooks(
+        hooks_env,
+        "12345678",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        hooks=["testing", "roadmap"],
+        final_status=tasks.TaskStatus.COMPLETED,
+    )
+
+    assert seen_prompts == [("testing", None), ("roadmap", "suite fails")]
+
+    task = tasks.load_tasks(hooks_env).tasks[0]
+    assert task.status == tasks.TaskStatus.PENDING
+    assert task.requested_status is None
+    assert task.rejection is None
+    assert task.attempts == 1
+    assert any(
+        "Hook 'testing' rejected completion: suite fails" in entry
+        for entry in task.progress
+    )
+
+
+@mock.patch("lemming.prompts.prepare_hook_prompt")
+@mock.patch("lemming.runner.run_with_heartbeat")
 def test_run_hooks_failure_finalization_ignores_hook_errors(
     mock_run, mock_prepare, hooks_env
 ):
@@ -924,8 +976,8 @@ def test_run_hooks_reloads_tasks(mock_run, mock_prepare, hooks_env):
             hooks=["h1", "h2"],
         )
 
-        # 1 initial load + 2 hook loads = 3
-        assert mock_load.call_count == 3
+        # 1 initial load + per hook: 1 for context, 1 for its rejection.
+        assert mock_load.call_count == 5
 
 
 @mock.patch("lemming.runner.run_with_heartbeat")

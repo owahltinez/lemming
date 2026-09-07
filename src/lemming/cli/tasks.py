@@ -736,6 +736,22 @@ def fail(ctx: click.Context, task_id: str):
         ctx.exit(1)
 
 
+@cli.command(short_help="<taskid> <reason> Reject a task's completion")
+@click.argument("task_id")
+@click.argument("reason")
+@click.pass_context
+def reject(ctx: click.Context, task_id: str, reason: str):
+    """Blocks a finalizing task's completion, sending it back for a retry."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+
+    try:
+        target_task = tasks.reject_task(tasks_file, task_id, reason)
+        click.echo(f"Task {target_task.id} completion rejected.")
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
+
+
 @cli.command(short_help="<taskid> Cancel a pending or active task")
 @click.argument("task_id")
 @click.pass_context

@@ -73,6 +73,9 @@ class Task(pydantic.BaseModel):
     parent_tasks_file: str | None = None
     index: int | None = pydantic.Field(default=None)
     requested_status: TaskStatus | None = None
+    # Set by a finalization hook that found a defect it could not fix.
+    # Blocks the requested completion and is cleared on every retry.
+    rejection: str | None = None
 
 
 class RoadmapConfig(pydantic.BaseModel):
