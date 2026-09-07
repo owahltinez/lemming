@@ -57,13 +57,38 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
    next attempt. At least one progress entry is required before completing or
    failing a task:
    `lemming --tasks-file {{tasks_file_path}} progress {{task_id}} '<what you did or found>'`
-5. **Success:** When you have completely finished and verified the task, and
+5. **Workspace Hygiene:** You share the workspace with the tasks that ran
+   before you and the ones that will run after you. Hand it over in a coherent
+   state.
+   - **Before completing:** the workspace must hold only the changes this task
+     intended. Verify that the project's automated tests pass over your
+     changes. Remove debug statements, commented-out experiments, and scratch
+     files.
+   - **Before failing:** leave the workspace in a state the next attempt can
+     build on. Finish or back out whatever edit you were in the middle of, so
+     nothing is left half-applied or syntactically broken, and delete files you
+     created that serve no purpose. Back out an edit by editing the file back
+     yourself. NEVER restore from version control history — `git checkout`,
+     `git restore`, `git reset`, `git clean`, and their equivalents elsewhere —
+     in ANY form, per-file or blanket: earlier tasks in this run share the
+     workspace and their work may be uncommitted, and restoring from history
+     silently discards it. Record in a progress entry which files you left
+     changed; if the partial work is worth keeping, save a copy under
+     `{{tasks_dir}}` and reference the path from that entry.
+   - **Checkpointing follows the project's existing convention.** If the
+     repository's workflow is to commit each unit of work, do that; otherwise
+     leave the changes in the working tree for the caller to review. Either
+     way: never push, and never rewrite history — no amend, rebase, or reset,
+     including on commits you made yourself.
+   - If the workspace is not under version control, say so in a progress entry
+     and list what you changed, since it cannot be restored automatically.
+6. **Success:** When you have completely finished and verified the task, and
    recorded relevant progress (at least one entry is required), run:
    `lemming --tasks-file {{tasks_file_path}} complete {{task_id}}`
-6. **Failure/Blocker:** If you hit a technical roadblock, cannot fix a bug, or
+7. **Failure/Blocker:** If you hit a technical roadblock, cannot fix a bug, or
    are unable to complete the task, after recording relevant progress (at least
    one entry is required), run:
    `lemming --tasks-file {{tasks_file_path}} fail {{task_id}}`
 
-7. Stop and exit after running either the complete or fail command.
+8. Stop and exit after running either the complete or fail command.
    {{time_limit_section}}

@@ -54,7 +54,9 @@ the plan up-to-date with minimal friction.
     hook), add new tasks to address them, except where directive 3 applies.
     A gap reported by the testing hook earns a task only when it names a
     concrete regression the suite would miss; a bare report of untested code
-    does not.
+    does not. If the log or progress shows the task left half-applied edits,
+    broken files, or stray scratch files behind, add a task to clean them up,
+    naming the paths.
 8.  **Task-Specific Briefs**: Keep new or rewritten task descriptions concise,
     self-contained, and no more than {{max_task_description_chars}} characters.
     Include the concrete files, symbols, motivation, and acceptance criteria the
