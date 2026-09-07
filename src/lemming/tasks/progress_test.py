@@ -1,6 +1,6 @@
 import pytest
 
-from lemming import models, paths, persistence
+from lemming import models, persistence
 from lemming.tasks import limits, progress
 
 
@@ -50,5 +50,5 @@ def test_add_progress_enforces_entry_size_limit(tmp_path, monkeypatch):
     message = str(excinfo.value)
     assert "281 characters (limit 280)" in message
     assert "Record the finding in one line" in message
-    assert str(paths.get_project_dir(tasks_file)) in message
+    assert "lemming artifact <id> <name> --file -" in message
     assert len(persistence.load_tasks(tasks_file).tasks[0].progress) == 1

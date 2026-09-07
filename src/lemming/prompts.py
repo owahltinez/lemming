@@ -15,6 +15,7 @@ DEFAULT_SCOPE_DESCRIPTION = (
 
 MAX_LOG_CONTEXT_BYTES = 16 * 1024
 MAX_DETAILED_PROGRESS_ENTRIES = 3
+MAX_LISTED_ARTIFACTS = 20
 MAX_DETAILED_PROGRESS_ENTRY_CHARS = 4_000
 _LOG_SCAN_MULTIPLIER = 4
 _OMISSION_MARKER_RESERVE = 160
@@ -176,6 +177,37 @@ def _format_task_block(
             indent="  ",
         )
     return block
+
+
+def _format_task_artifacts(tasks_file: pathlib.Path, task_id: str) -> str:
+    """Lists a task's stored artifacts by name, never by content.
+
+    Inlining the contents would defeat the purpose of storing them out of
+    band, so the prompt only says what exists and where to read it.
+
+    Args:
+        tasks_file: Path to the tasks YAML file associated with the task.
+        task_id: The unique task ID.
+
+    Returns:
+        A prompt section, or an empty string if the task stored nothing.
+    """
+    entries = paths.list_artifacts(tasks_file, task_id)
+    if not entries:
+        return ""
+
+    artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
+    section = (
+        f"\n## Task Artifacts\n\nDiagnostics stored by earlier attempts in "
+        f"{artifacts_dir} (read them with `lemming artifact {task_id} "
+        f"<name>`):\n"
+    )
+    for entry in entries[:MAX_LISTED_ARTIFACTS]:
+        section += f"- {entry}\n"
+    omitted = len(entries) - MAX_LISTED_ARTIFACTS
+    if omitted > 0:
+        section += f"- … {omitted} more artifact(s) not listed\n"
+    return section
 
 
 def _read_log_excerpt(log_file: pathlib.Path) -> str:
@@ -398,6 +430,11 @@ def prepare_hook_prompt(
             entry_chars=MAX_DETAILED_PROGRESS_ENTRY_CHARS,
         )
 
+    # A review hook zeroes its progress budget on purpose, so it has no use
+    # for the previous attempt's diagnostics either.
+    if policy.progress_entries:
+        finished_str += _format_task_artifacts(tasks_file, finished_task.id)
+
     # Include a byte-bounded tail of the runner log for the finished task.
     # We filter out 'Command:' lines because they contain the full previous
     # prompt and cause exponential escaping growth when prompts are re-quoted.
@@ -511,6 +548,8 @@ def prepare_prompt(
         if brief_text:
             brief_section = f"\n## Task Brief\n\n{brief_text}\n"
 
+    artifacts_section = _format_task_artifacts(tasks_file, task.id)
+
     time_limit_section = ""
     if time_limit > 0:
         time_limit_section = (
@@ -553,5 +592,10 @@ def prepare_prompt(
         )
         .replace("{{task_id}}", task.id)
         .replace("{{brief_section}}", brief_section)
+        .replace("{{artifacts_section}}", artifacts_section)
+        .replace(
+            "{{artifacts_dir}}",
+            str(paths.get_artifacts_dir(tasks_file, task.id)),
+        )
         .replace("{{time_limit_section}}", time_limit_section)
     )

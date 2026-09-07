@@ -356,10 +356,16 @@ These come before the subcommand and apply to all of them.
   description it has no length cap, and it is appended to the runner prompt
   automatically — the right home for measured timings, exact failing selectors,
   or why a previous attempt was wrong. Supports `-f/--file`.
-- **`delete <id>`**: Remove an unstarted task while retaining its runner log.
-  Tasks with execution history require `--force`; autonomous restructuring
-  should use `supersede`. Supports `--all` and `--completed` for bulk cleanup,
-  including logs.
+- **`artifact <id> [name] [text]`**: Store or read a task's verbose
+  diagnostics — stack traces, test dumps, long logs — outside `tasks.yml`, so
+  they never bloat the prompts of later attempts. With no name it lists what the
+  task has stored; with `--note` it also records the one-line progress pointer
+  for you. Later attempts see the artifact names in their prompt automatically.
+  Supports `-f/--file`.
+- **`delete <id>`**: Remove an unstarted task while retaining its runner log;
+  its artifacts go with it. Tasks with execution history require `--force`;
+  autonomous restructuring should use `supersede`. Supports `--all` and
+  `--completed` for bulk cleanup, including logs.
 - **`supersede <id> --reason <text>`**: Retire a replaced or split task without
   losing its progress, timings, log, or links to replacement tasks.
 - **`progress`**: Manage progress entries and findings for specific tasks.
@@ -467,6 +473,10 @@ lemming -C ~/src/other-project add "check --fix drops the trailing newline"
 
 # Attach the evidence; the brief has no length cap
 lemming -C ~/src/other-project brief <id> --file repro.md
+
+# Park a failed attempt's output out of band, with a one-line pointer
+lemming -C ~/src/other-project artifact <id> pytest.log --file pytest.log \
+  --note 'suite fails in teardown'
 
 # Read the other project's roadmap without leaving yours
 lemming -C ~/src/other-project status

@@ -13,6 +13,8 @@ import time
 
 logger = logging.getLogger(__name__)
 
+MAX_ARTIFACT_NAME_CHARS = 80
+
 
 def _parse_dotenv(path: pathlib.Path) -> dict[str, str]:
     """Parse a .env file into a dict, skipping comments and blank lines."""
@@ -287,6 +289,56 @@ def get_brief_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     project_dir = get_project_dir(tasks_file)
     project_dir.mkdir(parents=True, exist_ok=True)
     return project_dir / f"{task_id}-brief.md"
+
+
+def get_artifacts_dir(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
+    """Returns the out-of-band artifacts directory for a specific task.
+
+    Artifacts hold verbose diagnostics (traces, diffs, reports) that would
+    bloat the prompt if recorded as progress. They live beside the task's
+    log and brief, outside the workspace, and are listed by name in the
+    prompts of later attempts.
+
+    Args:
+        tasks_file: Path to the tasks YAML file associated with the task.
+        task_id: The unique task ID.
+
+    Returns:
+        A pathlib.Path to the artifacts directory, which may not exist yet.
+    """
+    return get_project_dir(tasks_file) / f"{task_id}-artifacts"
+
+
+def list_artifacts(tasks_file: pathlib.Path, task_id: str) -> list[str]:
+    """Describes a task's stored artifacts in a stable order.
+
+    The lines are user-facing in both the CLI listing and the runner
+    prompt, so the two share this formatting. Long filenames are truncated
+    because a prompt pays for every character of them.
+
+    Args:
+        tasks_file: Path to the tasks YAML file associated with the task.
+        task_id: The unique task ID.
+
+    Returns:
+        One "name (N bytes)" line per artifact; empty if the task has none.
+    """
+    artifacts_dir = get_artifacts_dir(tasks_file, task_id)
+    if not artifacts_dir.is_dir():
+        return []
+
+    entries = sorted(path for path in artifacts_dir.iterdir() if path.is_file())
+    return [
+        f"{_truncate_name(path.name)} ({path.stat().st_size:,} bytes)"
+        for path in entries
+    ]
+
+
+def _truncate_name(name: str) -> str:
+    """Shortens a filename that would otherwise dominate a prompt line."""
+    if len(name) <= MAX_ARTIFACT_NAME_CHARS:
+        return name
+    return name[: MAX_ARTIFACT_NAME_CHARS - 1] + "…"
 
 
 @functools.cache

@@ -55,6 +55,6 @@ def test_progress_reports_actionable_size_error(setup_env):
 
     assert result.exit_code == 1
     assert "281 characters (limit 280)" in result.output
-    assert "Write detailed evidence or verbose command output" in result.output
+    assert "lemming artifact <id> <name> --file -" in result.output
     assert str(tasks_file.parent) not in result.output
     assert tasks.load_tasks(tasks_file).tasks[0].progress == []

@@ -2,6 +2,7 @@
 
 import os
 import pathlib
+import shutil
 import time
 
 from .. import models, paths, persistence
@@ -102,6 +103,22 @@ def add_task(
     return new_task
 
 
+def _remove_task_files(
+    tasks_file: pathlib.Path, task_id: str, keep_log: bool = False
+) -> None:
+    """Removes a deleted task's artifacts, and optionally its runner log.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: The ID of the task being removed.
+        keep_log: Whether to retain the runner log for later inspection.
+    """
+    if not keep_log:
+        lifecycle.reset_task_logs(tasks_file, task_id)
+    artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
+    shutil.rmtree(artifacts_dir, ignore_errors=True)
+
+
 def delete_tasks(
     tasks_file: pathlib.Path,
     task_id: str | None = None,
@@ -127,7 +144,7 @@ def delete_tasks(
 
         if all_tasks:
             for t in data.tasks:
-                lifecycle.reset_task_logs(tasks_file, t.id)
+                _remove_task_files(tasks_file, t.id)
             data.tasks = []
             data.goal = ""
         elif completed_only:
@@ -143,7 +160,7 @@ def delete_tasks(
                 )
             ]
             for t in completed_tasks:
-                lifecycle.reset_task_logs(tasks_file, t.id)
+                _remove_task_files(tasks_file, t.id)
             data.tasks = [
                 t
                 for t in data.tasks
@@ -176,6 +193,9 @@ def delete_tasks(
                         "Supersede it to preserve lineage, or use --force "
                         "to remove it explicitly."
                     )
+                # The runner log is retained deliberately; the artifacts
+                # belong to a task that no longer exists.
+                _remove_task_files(tasks_file, target.id, keep_log=True)
                 data.tasks = [t for t in data.tasks if t.id != target.id]
 
         persistence.save_tasks(tasks_file, data)
