@@ -102,6 +102,11 @@ def _echo_task_summary(
     "--parent-tasks-file",
     help="Path to the parent tasks file (optional).",
 )
+@click.option(
+    "--oneshot",
+    is_flag=True,
+    help="Skip post-task orchestrator hooks when this task completes.",
+)
 @click.pass_context
 def add(
     ctx: click.Context,
@@ -112,6 +117,7 @@ def add(
     model_name: str | None,
     parent: str | None,
     parent_tasks_file: str | None,
+    oneshot: bool,
 ):
     """Adds a new task to the roadmap queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -138,6 +144,7 @@ def add(
             model=model_name,
             parent=parent,
             parent_tasks_file=parent_tasks_file,
+            oneshot=oneshot,
         )
     except ValueError as e:
         click.echo(f"Error: {e}")
@@ -178,6 +185,11 @@ def add(
     "--parent-tasks-file",
     help="New parent tasks file path (use empty string to remove).",
 )
+@click.option(
+    "--oneshot/--no-oneshot",
+    default=None,
+    help="Skip (or resume running) post-task hooks once this task completes.",
+)
 @click.pass_context
 def edit(
     ctx: click.Context,
@@ -189,8 +201,9 @@ def edit(
     index: int | None,
     parent: str | None,
     parent_tasks_file: str | None,
+    oneshot: bool | None,
 ):
-    """Edits a task's description, runner, model, position, or parent."""
+    """Edits a task's description, runner, model, position, parent or flags."""
     if file:
         if description:
             click.echo("Error: Cannot provide both description and --file.")
@@ -206,10 +219,12 @@ def edit(
         and index is None
         and parent is None
         and parent_tasks_file is None
+        and oneshot is None
     ):
         click.echo(
             "Error: At least one of --description, --runner, --model,"
-            " --index, --parent, or --parent-tasks-file must be provided."
+            " --index, --parent, --parent-tasks-file, or --oneshot"
+            " must be provided."
         )
         ctx.exit(1)
 
@@ -225,6 +240,7 @@ def edit(
             index=index,
             parent=parent,
             parent_tasks_file=parent_tasks_file,
+            oneshot=oneshot,
         )
         click.echo(f"Task {target_task.id} updated.")
     except ValueError as e:
@@ -491,6 +507,8 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
         click.echo(f"Custom Runner: {target.runner}")
     if target.model:
         click.echo(f"Custom Model:  {target.model}")
+    if target.oneshot:
+        click.echo("Oneshot:       post-task hooks skipped on completion")
     # The resolved command is the only record of which runner and model
     # actually produced the work.
     if target.resolved_command:

@@ -246,6 +246,9 @@ conventions control their behavior:
   runs before `90-roadmap.md`); files without a prefix default to priority 50.
 - **Failure hooks**: Hooks at priority 90 and above also run when a task fails;
   all others only run on success.
+- **Oneshot tasks**: A task added with `--oneshot` skips all hooks once it
+  completes, so mechanical work (a typo fix, a version bump) does not pay for
+  the full review lifecycle. Failure hooks still run if it fails.
 - **Disabling**: An empty file masks (disables) the hook of the same name from a
   lower-precedence layer.
 
@@ -349,9 +352,10 @@ These come before the subcommand and apply to all of them.
   - `--brief`: Omit task descriptions, which otherwise dominate the output.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
-- **`add <desc>`**: Append a new task. Supports `--index`, `--runner`, and
-  `--model`.
-- **`edit <id>`**: Modify a task's description, runner, model, or position.
+- **`add <desc>`**: Append a new task. Supports `--index`, `--runner`,
+  `--model`, and `--oneshot`.
+- **`edit <id>`**: Modify a task's description, runner, model, position, or
+  oneshot flag (`--oneshot/--no-oneshot`).
 - **`brief <id> [text]`**: View or set a task's long-form brief. Unlike the
   description it has no length cap, and it is appended to the runner prompt
   automatically — the right home for measured timings, exact failing selectors,

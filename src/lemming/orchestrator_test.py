@@ -733,6 +733,70 @@ def test_run_hooks_no_hooks(mock_run, hooks_env):
     assert data.tasks[0].status == tasks.TaskStatus.COMPLETED
 
 
+def _exit_oneshot_task(tasks_file, active_hooks):
+    """Runs the post-runner handling of a finalizing oneshot task."""
+    return _handle_runner_exit(
+        tasks_file,
+        "12345678",
+        returncode=0,
+        stdout="",
+        stderr="",
+        retries=3,
+        retry_delay=0,
+        runner_name="agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        active_hooks=active_hooks,
+        working_dir=None,
+        time_limit=1,
+    )
+
+
+@mock.patch("lemming.prompts.prepare_hook_prompt")
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_oneshot_task_completes_without_hooks(
+    mock_run, mock_prepare, hooks_env
+):
+    tasks.update_task(
+        hooks_env,
+        "12345678",
+        oneshot=True,
+        status=tasks.TaskStatus.IN_PROGRESS,
+    )
+    tasks.update_task(hooks_env, "12345678", status=tasks.TaskStatus.COMPLETED)
+
+    should_abort = _exit_oneshot_task(hooks_env, ["readability", "roadmap"])
+
+    assert not should_abort
+    assert not mock_run.called
+    data = tasks.load_tasks(hooks_env)
+    assert data.tasks[0].status == tasks.TaskStatus.COMPLETED
+
+
+@mock.patch("lemming.prompts.prepare_hook_prompt")
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_oneshot_task_failure_still_runs_failure_hooks(
+    mock_run, mock_prepare, hooks_env
+):
+    """The skip is scoped to success: an unconditional one loses recovery."""
+    mock_run.return_value = (0, "stdout", "")
+    mock_prepare.return_value = "Hook Prompt"
+    tasks.update_task(
+        hooks_env,
+        "12345678",
+        oneshot=True,
+        status=tasks.TaskStatus.IN_PROGRESS,
+    )
+    tasks.update_task(hooks_env, "12345678", status=tasks.TaskStatus.FAILED)
+
+    _exit_oneshot_task(hooks_env, ["readability", "roadmap"])
+
+    assert mock_prepare.call_count == 1
+    assert mock_prepare.call_args[0][0] == "roadmap"
+
+
 @mock.patch("lemming.prompts.prepare_hook_prompt")
 @mock.patch("lemming.runner.run_with_heartbeat")
 def test_run_hooks_failure_filters_hooks(mock_run, mock_prepare, hooks_env):

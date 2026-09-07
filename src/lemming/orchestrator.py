@@ -53,7 +53,8 @@ def run_hooks(
         no_defaults: Whether to skip the runner's default arguments.
         verbose: Whether to echo prompts and hook diagnostics.
         hooks: Explicit list of hooks to run. If None, discovers the active
-            hooks from the filesystem (see hooks.resolve_hooks).
+            hooks from the filesystem (see hooks.resolve_hooks). A oneshot
+            task runs none of them on success.
         working_dir: Working directory for the hook runner processes.
         final_status: If provided, mark the task with this status after hooks.
         time_limit: Time limit in minutes for each hook run (0 disables it).
@@ -73,6 +74,11 @@ def run_hooks(
 
     # Use provided hooks or discover the active set from the filesystem
     active_hooks = hooks if hooks is not None else list_hooks(tasks_file)
+
+    # A oneshot task buys its latency back by skipping the post-task
+    # review, but a failing one still gets failure-hook recovery below.
+    if task.oneshot and final_status == tasks.TaskStatus.COMPLETED:
+        active_hooks = []
 
     # On failure, only failure hooks (9x priority prefix) run
     if final_status == tasks.TaskStatus.FAILED:

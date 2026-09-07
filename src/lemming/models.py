@@ -53,6 +53,8 @@ class Task(pydantic.BaseModel):
     progress: list[str] = pydantic.Field(default_factory=list)
     runner: str | None = None
     model: str | None = None
+    # Atomic tasks (typo fix, version bump) skip post-task hooks on success.
+    oneshot: bool = False
     # Runner command of the most recent attempt, with the prompt elided. Set
     # when the runner starts so provenance survives the process.
     resolved_command: str | None = None
