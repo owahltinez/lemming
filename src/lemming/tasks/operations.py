@@ -51,6 +51,7 @@ def add_task(
     model: str | None = None,
     parent: str | None = None,
     parent_tasks_file: str | None = None,
+    oneshot: bool = False,
 ) -> models.Task:
     """Adds a new task to the roadmap.
 
@@ -62,6 +63,7 @@ def add_task(
         model: Optional model to request for this task.
         parent: Optional parent task ID.
         parent_tasks_file: Optional parent tasks file path.
+        oneshot: If True, skip post-task hooks when the task completes.
 
     Returns:
         The newly created Task.
@@ -94,6 +96,7 @@ def add_task(
             model=model,
             parent=parent,
             parent_tasks_file=parent_tasks_file,
+            oneshot=oneshot,
         )
 
         data.tasks = _insert_at_queue_index(data.tasks, new_task, index)
@@ -239,6 +242,7 @@ def update_task(
     require_progress: bool = False,
     parent: str | None = None,
     parent_tasks_file: str | None = None,
+    oneshot: bool | None = None,
     force: bool = False,
 ) -> models.Task:
     """Updates an existing task.
@@ -255,6 +259,7 @@ def update_task(
             progress.
         parent: New parent task ID.
         parent_tasks_file: New parent tasks file path.
+        oneshot: New oneshot flag; None leaves it unchanged.
         force: If True, force status transition even if task is in progress.
 
     Returns:
@@ -288,6 +293,8 @@ def update_task(
             target.runner = runner
         if model is not None:
             target.model = model or None
+        if oneshot is not None:
+            target.oneshot = oneshot
         if parent is not None:
             if parent == "":
                 target.parent = None

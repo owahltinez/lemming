@@ -31,6 +31,11 @@ conventions control their behavior:
 - **Failure hooks**: Hooks at priority 90 and above also run when a task fails.
   All other hooks only run after successful tasks. The built-in `roadmap` hook
   ships as `90-roadmap.md` so it can react to failures.
+- **Oneshot tasks**: No hook runs after a task marked `--oneshot` completes,
+  keeping mechanical changes cheap. A oneshot task that fails still gets its
+  failure hooks, so recovery is never skipped. Note that `roadmap` is skipped
+  too: if a oneshot task is the last one in the queue, the run ends without a
+  goal audit, so nothing is queued to carry the goal further.
 - **Masking**: An empty file disables the hook of the same name from a
   lower-precedence layer (see below). For example, an empty
   `.lemming/hooks/readability.md` disables the built-in `readability` hook for

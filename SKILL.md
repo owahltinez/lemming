@@ -173,7 +173,9 @@ lemming stop --after-current-task                             # drain, then stop
 
 After each task, review hooks run automatically and a roadmap hook may revise
 the queue. `lemming hooks list` shows them; `lemming hooks disable <name>` turns
-one off for the project.
+one off for the project. Queue a mechanical task — a typo fix, a version bump, a
+rename — with `lemming add "..." --oneshot` to skip those hooks when it
+completes.
 
 ## What to know before running any of it
 

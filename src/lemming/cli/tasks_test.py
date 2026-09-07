@@ -425,6 +425,19 @@ class TestCLITaskModel(unittest.TestCase):
         updated = tasks.load_tasks(self.test_tasks_file).tasks[0]
         self.assertIsNone(updated.model)
 
+    def test_oneshot_round_trips_through_add_and_edit(self):
+        """The flag must be settable and clearable from the CLI."""
+        task = self._add("--oneshot")
+        self.assertTrue(task.oneshot)
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["edit", task.id, "--no-oneshot"]
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        updated = tasks.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertFalse(updated.oneshot)
+
     def test_status_shows_provenance(self):
         """After the fact, status answers which command produced the work."""
         task = self._add("--model", "fast-model")
