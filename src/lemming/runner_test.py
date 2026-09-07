@@ -5,7 +5,8 @@ import sys
 import time
 import unittest.mock
 
-from lemming import models, paths, persistence, runner, tasks
+from lemming import models, paths, persistence, runner
+from lemming.tasks import lifecycle
 
 
 def test_build_runner_command_agy():
@@ -406,11 +407,11 @@ def test_shlex_join_pretty():
 def test_run_with_heartbeat_truncation_only_affects_log(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "test_task"
-    tasks.save_tasks(
+    persistence.save_tasks(
         tasks_file,
-        tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test")]),
+        models.Roadmap(tasks=[models.Task(id=task_id, description="test")]),
     )
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
     log_file = paths.get_log_file(tasks_file, task_id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -447,17 +448,17 @@ def test_run_with_heartbeat_log_header(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "test_task"
     task_id_2 = "test_task_2"
-    tasks.save_tasks(
+    persistence.save_tasks(
         tasks_file,
-        tasks.Roadmap(
+        models.Roadmap(
             tasks=[
-                tasks.Task(id=task_id, description="test"),
-                tasks.Task(id=task_id_2, description="test 2"),
+                models.Task(id=task_id, description="test"),
+                models.Task(id=task_id_2, description="test 2"),
             ]
         ),
     )
-    tasks.mark_task_in_progress(tasks_file, task_id)
-    tasks.mark_task_in_progress(tasks_file, task_id_2)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.mark_task_in_progress(tasks_file, task_id_2)
     log_file = paths.get_log_file(tasks_file, task_id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -525,11 +526,13 @@ def test_opencode_environment_accepts_gemini_api_key(tmp_path, monkeypatch):
 def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "timed_task"
-    tasks.save_tasks(
+    persistence.save_tasks(
         tasks_file,
-        tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="timed task")]),
+        models.Roadmap(
+            tasks=[models.Task(id=task_id, description="timed task")]
+        ),
     )
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     runner.run_with_heartbeat(["true"], tasks_file, task_id, verbose=False)
     runner.run_with_heartbeat(
@@ -540,7 +543,7 @@ def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):
         header="Hook: testing",
     )
 
-    task = tasks.load_tasks(tasks_file).tasks[0]
+    task = persistence.load_tasks(tasks_file).tasks[0]
     assert task.execution_times is not None
     assert task.execution_times["runner"] > 0
     assert task.execution_times["hook:testing"] > 0
@@ -553,9 +556,11 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
     task_id = "test_task"
 
     # 1. Setup a dummy Roadmap
-    roadmap = tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test")])
-    tasks.save_tasks(tasks_file, roadmap)
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    roadmap = models.Roadmap(
+        tasks=[models.Task(id=task_id, description="test")]
+    )
+    persistence.save_tasks(tasks_file, roadmap)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     # 2. Mock subprocess.Popen and related functions
     mock_process = unittest.mock.MagicMock()
@@ -586,14 +591,14 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
 def test_run_with_heartbeat_kills_runner_if_task_was_cancelled(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "cancelled"
-    tasks.save_tasks(
+    persistence.save_tasks(
         tasks_file,
-        tasks.Roadmap(
+        models.Roadmap(
             tasks=[
-                tasks.Task(
+                models.Task(
                     id=task_id,
                     description="cancelled task",
-                    status=tasks.TaskStatus.CANCELLED,
+                    status=models.TaskStatus.CANCELLED,
                 )
             ]
         ),
@@ -645,11 +650,11 @@ def test_run_with_heartbeat_timeout(tmp_path):
     task_id = "timeout_task"
 
     # Setup a task so heartbeat updates work
-    roadmap = tasks.Roadmap(
-        tasks=[tasks.Task(id=task_id, description="test timeout")]
+    roadmap = models.Roadmap(
+        tasks=[models.Task(id=task_id, description="test timeout")]
     )
-    tasks.save_tasks(tasks_file, roadmap)
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    persistence.save_tasks(tasks_file, roadmap)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     # Use a 1-minute time limit. Mock time.monotonic to simulate elapsed
     # time so the heartbeat loop detects the timeout immediately without
@@ -677,7 +682,7 @@ def test_run_with_heartbeat_timeout(tmp_path):
     assert returncode == runner.RETURNCODE_TIMEOUT
 
     # Verify the timeout progress was recorded
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     task = next(t for t in data.tasks if t.id == task_id)
     assert any("time limit" in o for o in task.progress)
 
@@ -687,11 +692,11 @@ def test_run_with_heartbeat_no_timeout(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "no_timeout"
 
-    roadmap = tasks.Roadmap(
-        tasks=[tasks.Task(id=task_id, description="test no timeout")]
+    roadmap = models.Roadmap(
+        tasks=[models.Task(id=task_id, description="test no timeout")]
     )
-    tasks.save_tasks(tasks_file, roadmap)
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    persistence.save_tasks(tasks_file, roadmap)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     returncode, _, _ = runner.run_with_heartbeat(
         ["true"],
@@ -727,11 +732,11 @@ def test_run_with_heartbeat_timeout_kills_sigterm_immune_runner(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "sigterm_immune"
 
-    roadmap = tasks.Roadmap(
-        tasks=[tasks.Task(id=task_id, description="test escalation")]
+    roadmap = models.Roadmap(
+        tasks=[models.Task(id=task_id, description="test escalation")]
     )
-    tasks.save_tasks(tasks_file, roadmap)
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    persistence.save_tasks(tasks_file, roadmap)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     # The runner ignores SIGTERM and signals readiness via a sentinel file.
     sentinel = tmp_path / "ready"
@@ -752,7 +757,7 @@ def test_run_with_heartbeat_timeout_kills_sigterm_immune_runner(tmp_path):
     start = real_monotonic()
     with (
         unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
-        unittest.mock.patch.object(tasks, "STALE_THRESHOLD", 2),
+        unittest.mock.patch.object(persistence, "STALE_THRESHOLD", 2),
         unittest.mock.patch.object(runner, "KILL_GRACE_SECONDS", 1),
     ):
         returncode, _, _ = runner.run_with_heartbeat(
@@ -777,11 +782,11 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task_id = "detached_grandchild"
 
-    roadmap = tasks.Roadmap(
-        tasks=[tasks.Task(id=task_id, description="test pipe hold")]
+    roadmap = models.Roadmap(
+        tasks=[models.Task(id=task_id, description="test pipe hold")]
     )
-    tasks.save_tasks(tasks_file, roadmap)
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    persistence.save_tasks(tasks_file, roadmap)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     child_code = (
         "import subprocess, sys\n"
@@ -818,7 +823,7 @@ def _run_interrupted_at(tmp_path, patched: str) -> subprocess.Popen:
         tasks_file,
         models.Roadmap(tasks=[models.Task(id="t1", description="d")]),
     )
-    tasks.mark_task_in_progress(tasks_file, "t1")
+    lifecycle.mark_task_in_progress(tasks_file, "t1")
 
     spawned: list[subprocess.Popen] = []
     real_popen = subprocess.Popen
@@ -845,7 +850,9 @@ def _run_interrupted_at(tmp_path, patched: str) -> subprocess.Popen:
 
 def test_interrupt_during_heartbeat_kills_the_child(tmp_path):
     """A stop landing on the heartbeat write must not leak the runner."""
-    child = _run_interrupted_at(tmp_path, "lemming.tasks.update_heartbeat")
+    child = _run_interrupted_at(
+        tmp_path, "lemming.tasks.lifecycle.update_heartbeat"
+    )
 
     child.wait(timeout=10)
 
@@ -853,7 +860,7 @@ def test_interrupt_during_heartbeat_kills_the_child(tmp_path):
 def test_interrupt_during_marking_kills_the_child(tmp_path):
     """The earliest bookkeeping call is inside the protected window too."""
     child = _run_interrupted_at(
-        tmp_path, "lemming.tasks.mark_execution_started"
+        tmp_path, "lemming.tasks.lifecycle.mark_execution_started"
     )
 
     child.wait(timeout=10)
@@ -1084,17 +1091,17 @@ def test_run_with_heartbeat_kills_the_child_when_tasks_file_is_corrupted(
     """A corruption mid-run must not strand an unsupervised child process."""
     tasks_file = tmp_path / "tasks.yml"
     task_id = "test_task"
-    tasks.save_tasks(
+    persistence.save_tasks(
         tasks_file,
-        tasks.Roadmap(tasks=[tasks.Task(id=task_id, description="test")]),
+        models.Roadmap(tasks=[models.Task(id=task_id, description="test")]),
     )
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     # The claim succeeds, then the file becomes unreadable on the next
     # heartbeat: the thread that owns cancellation and the time limit.
-    corrupted = tasks.CorruptedTasksError(tasks_file, ValueError("boom"))
+    corrupted = persistence.CorruptedTasksError(tasks_file, ValueError("boom"))
     with unittest.mock.patch.object(
-        tasks, "update_heartbeat", side_effect=[True, corrupted]
+        lifecycle, "update_heartbeat", side_effect=[True, corrupted]
     ):
         start = time.monotonic()
         returncode, _, _ = runner.run_with_heartbeat(

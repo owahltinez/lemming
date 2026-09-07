@@ -2,7 +2,7 @@
 
 import click
 
-from .. import hooks, tasks
+from .. import hooks, persistence
 from ..orchestrator import format_duration, parse_timeout
 from .main import cli
 
@@ -18,7 +18,7 @@ def config_group():
 def config_list(ctx: click.Context):
     """Shows the current project configuration."""
     tasks_file = ctx.obj["TASKS_FILE"]
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     c = data.config
 
     click.secho(f"Configuration for {tasks_file}:", bold=True)
@@ -57,7 +57,7 @@ def config_set(ctx: click.Context, key: str, value: str):
       lemming config set time_limit 30m
     """
     tasks_file = ctx.obj["TASKS_FILE"]
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
 
     if key == "runner":
         data.config.runner = value
@@ -76,5 +76,5 @@ def config_set(ctx: click.Context, key: str, value: str):
             seconds = parse_timeout(value)
             data.config.time_limit = int(seconds // 60)
 
-    tasks.save_tasks(tasks_file, data)
+    persistence.save_tasks(tasks_file, data)
     click.echo(f"Updated {key} to {value}")

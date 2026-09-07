@@ -7,7 +7,7 @@ import sys
 
 import fastapi
 
-from .. import tasks
+from ..tasks import lifecycle
 
 
 def start_loop_if_needed(
@@ -19,7 +19,7 @@ def start_loop_if_needed(
     if getattr(app_state, "disable_auto_start", False):
         return
 
-    if tasks.is_loop_running(tasks_file):
+    if lifecycle.is_loop_running(tasks_file):
         return
 
     # Use sys.executable -m lemming.main to ensure we use the same environment

@@ -3,8 +3,9 @@ import shutil
 import tempfile
 import unittest
 
-from lemming import models, tasks
+from lemming import models
 from lemming.evals import fixtures, roadmap, scenarios, suites
+from lemming.tasks import lifecycle, operations
 
 
 def _scenario(name: str) -> scenarios.Scenario:
@@ -13,7 +14,7 @@ def _scenario(name: str) -> scenarios.Scenario:
 
 def _finalize(workspace: pathlib.Path, task_id: str = "task1"):
     """Simulates the trial applying the final status after a no-op hook."""
-    tasks.update_task(
+    operations.update_task(
         fixtures.tasks_file(workspace),
         task_id,
         status=models.TaskStatus.COMPLETED,
@@ -53,13 +54,13 @@ class TestRepairScenario(ScenarioTestCase):
         self.assertIn("repaired", self.check_names(checks))
 
     def test_naive_reset_fails(self):
-        tasks.reset_task(self.tasks_file, "task1")
+        lifecycle.reset_task(self.tasks_file, "task1")
 
         checks = self.scenario.grade(self.workspace)
         self.assertIn("repaired", self.check_names(checks))
 
     def test_rewrite_and_reset_passes(self):
-        tasks.update_task(
+        operations.update_task(
             self.tasks_file,
             "task1",
             description=(
@@ -68,18 +69,18 @@ class TestRepairScenario(ScenarioTestCase):
             ),
             force=True,
         )
-        tasks.reset_task(self.tasks_file, "task1")
+        lifecycle.reset_task(self.tasks_file, "task1")
 
         checks = self.scenario.grade(self.workspace)
         self.assertEqual(self.check_names(checks), set())
 
     def test_supersede_and_replace_passes(self):
-        tasks.add_task(
+        operations.add_task(
             self.tasks_file,
             "Add a dispatch helper to calc/ops.py.",
             parent="task1",
         )
-        tasks.supersede_task(
+        operations.supersede_task(
             self.tasks_file,
             "task1",
             "split into a prerequisite dispatch task",
@@ -89,7 +90,7 @@ class TestRepairScenario(ScenarioTestCase):
         self.assertEqual(self.check_names(checks), set())
 
     def test_source_edit_fails(self):
-        tasks.delete_tasks(self.tasks_file, "task1", force=True)
+        operations.delete_tasks(self.tasks_file, "task1", force=True)
         (self.workspace / "calc" / "ops.py").write_text("# rewritten\n")
 
         checks = self.scenario.grade(self.workspace)
@@ -115,14 +116,16 @@ class TestFastExitScenario(ScenarioTestCase):
 
     def test_churn_fails(self):
         _finalize(self.workspace)
-        tasks.add_task(self.tasks_file, "Review code quality holistically.")
+        operations.add_task(
+            self.tasks_file, "Review code quality holistically."
+        )
 
         checks = self.scenario.grade(self.workspace)
         self.assertIn("roadmap-untouched", self.check_names(checks))
 
     def test_deleting_pending_work_fails(self):
         _finalize(self.workspace)
-        tasks.delete_tasks(self.tasks_file, "task3")
+        operations.delete_tasks(self.tasks_file, "task3")
 
         checks = self.scenario.grade(self.workspace)
         self.assertIn("roadmap-untouched", self.check_names(checks))
@@ -137,7 +140,7 @@ class TestPruneScenario(ScenarioTestCase):
 
     def test_delete_redundant_passes(self):
         _finalize(self.workspace)
-        tasks.delete_tasks(self.tasks_file, "task2")
+        operations.delete_tasks(self.tasks_file, "task2")
 
         checks = self.scenario.grade(self.workspace)
         self.assertEqual(self.check_names(checks), set())
@@ -158,7 +161,7 @@ class TestExtendScenario(ScenarioTestCase):
 
     def test_adding_gap_task_passes(self):
         _finalize(self.workspace)
-        tasks.add_task(
+        operations.add_task(
             self.tasks_file,
             "Implement the multiply command in calc/ops.py with unit tests.",
         )
@@ -176,7 +179,7 @@ class TestExtendScenario(ScenarioTestCase):
 
     def test_unrelated_task_flags_gap_check_as_advisory(self):
         _finalize(self.workspace)
-        tasks.add_task(self.tasks_file, "Polish the README wording.")
+        operations.add_task(self.tasks_file, "Polish the README wording.")
 
         checks = self.scenario.grade(self.workspace)
         # The keyword proxy fails only as an inspect-me signal.
@@ -193,7 +196,7 @@ class TestWorkspaceGapScenario(ScenarioTestCase):
 
     def test_scheduling_integration_task_passes(self):
         _finalize(self.workspace)
-        tasks.add_task(
+        operations.add_task(
             self.tasks_file,
             "Register the multiply command in the CLI dispatch table and add "
             "an end-to-end command test.",
@@ -214,7 +217,7 @@ class TestWorkspaceGapScenario(ScenarioTestCase):
 
     def test_unrelated_task_flags_target_check_as_advisory(self):
         _finalize(self.workspace)
-        tasks.add_task(self.tasks_file, "Polish the README wording.")
+        operations.add_task(self.tasks_file, "Polish the README wording.")
 
         checks = self.scenario.grade(self.workspace)
         self.assertEqual(self.check_names(checks), {"workspace-gap-targeted"})
@@ -243,7 +246,7 @@ class TestFollowUpScenario(ScenarioTestCase):
 
     def test_scheduling_bug_fix_passes(self):
         _finalize(self.workspace)
-        tasks.add_task(
+        operations.add_task(
             self.tasks_file,
             "Fix subtract() in calc/ops.py to return a - b, with a test.",
         )
@@ -268,7 +271,7 @@ class TestFollowUpScenario(ScenarioTestCase):
 
     def test_vague_follow_up_passes_with_advisory_flag(self):
         _finalize(self.workspace)
-        tasks.add_task(
+        operations.add_task(
             self.tasks_file, "Address the bug reported by the last task."
         )
 

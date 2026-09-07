@@ -10,12 +10,8 @@ import fastapi.staticfiles
 
 from .. import paths, persistence
 from . import auth, config, directories, files, hooks, tasks
-from . import logging as lemming_logging
 
 logger = logging.getLogger(__name__)
-
-# Re-exported so logging configs can reference lemming.api.QuietPollFilter
-QuietPollFilter = lemming_logging.QuietPollFilter
 
 
 class FilteredStaticFiles(fastapi.staticfiles.StaticFiles):

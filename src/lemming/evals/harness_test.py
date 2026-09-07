@@ -7,8 +7,9 @@ import threading
 import unittest
 import unittest.mock
 
-from lemming import models, tasks
+from lemming import models
 from lemming.evals import fixtures, harness, roadmap, scenarios
+from lemming.tasks import operations
 
 
 def _scenario(name: str) -> scenarios.Scenario:
@@ -17,7 +18,7 @@ def _scenario(name: str) -> scenarios.Scenario:
 
 def _finalizing_runner(scenario, workspace, lemming_home, config):
     """Fake trial runner simulating a fast-exiting hook plus finalization."""
-    tasks.update_task(
+    operations.update_task(
         fixtures.tasks_file(workspace),
         scenario.task_id,
         status=models.TaskStatus.COMPLETED,

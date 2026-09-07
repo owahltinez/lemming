@@ -464,7 +464,7 @@ def test_is_task_active(mock_is_pid_alive):
 
     # 4. IN_PROGRESS, has PID, PID alive, stale heartbeat -> not active
     mock_is_pid_alive.return_value = True
-    stale_time = now - lifecycle.STALE_THRESHOLD - 10
+    stale_time = now - persistence.STALE_THRESHOLD - 10
     task_stale = models.Task(
         id="4",
         description="test",

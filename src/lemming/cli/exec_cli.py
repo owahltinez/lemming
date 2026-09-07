@@ -17,9 +17,10 @@ import typing
 
 import click
 
-from .. import paths, runner, scope, shutdown, tasks
+from .. import models, paths, persistence, runner, scope, shutdown
 from ..hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
 from ..orchestrator import run_loop
+from ..tasks import lifecycle, limits, operations
 from .main import cli
 
 # Requests every review rather than making the caller name each one.
@@ -98,13 +99,15 @@ def _create_review_task(
         The new task's ID.
     """
     tasks_file = exec_dir / "tasks.yml"
-    task = tasks.Task(
-        id=tasks.generate_task_id(),
+    task = models.Task(
+        id=lifecycle.generate_task_id(),
         description=f"Review the workspace: {', '.join(reviews)}.",
-        status=tasks.TaskStatus.IN_PROGRESS,
-        requested_status=tasks.TaskStatus.COMPLETED,
+        status=models.TaskStatus.IN_PROGRESS,
+        requested_status=models.TaskStatus.COMPLETED,
     )
-    tasks.save_tasks(tasks_file, tasks.Roadmap(config=config, tasks=[task]))
+    persistence.save_tasks(
+        tasks_file, models.Roadmap(config=config, tasks=[task])
+    )
     return task.id
 
 
@@ -125,12 +128,12 @@ def _create_task(exec_dir: pathlib.Path, prompt: str, config) -> str:
         The new task's ID.
     """
     tasks_file = exec_dir / "tasks.yml"
-    tasks.save_tasks(tasks_file, tasks.Roadmap(config=config))
+    persistence.save_tasks(tasks_file, models.Roadmap(config=config))
 
-    limit = tasks.MAX_TASK_DESCRIPTION_CHARS
+    limit = limits.MAX_TASK_DESCRIPTION_CHARS
     fits = len(prompt) <= limit
     description = prompt if fits else f"{prompt[: limit - 1]}…"
-    task = tasks.add_task(tasks_file, description)
+    task = operations.add_task(tasks_file, description)
     if not fits:
         paths.get_brief_file(tasks_file, task.id).write_text(
             prompt, encoding="utf-8"
@@ -191,7 +194,7 @@ def _resolve_reviews(values: tuple[str, ...]) -> list[str]:
 
 def _task_status(
     tasks_file: pathlib.Path, task_id: str
-) -> tasks.TaskStatus | None:
+) -> models.TaskStatus | None:
     """Returns the task's status, or None if it is no longer there.
 
     Args:
@@ -202,7 +205,7 @@ def _task_status(
         The task's current status, or None if it could not be read.
     """
     try:
-        data = tasks.load_tasks(tasks_file)
+        data = persistence.load_tasks(tasks_file)
     except Exception:
         return None
     return next((t.status for t in data.tasks if t.id == task_id), None)
@@ -323,7 +326,7 @@ def exec_command(
         scope_text = scope.describe(entries)
 
     # Extra attempts require opt-in because each can incur runner cost.
-    config = tasks.RoadmapConfig(retries=retries, time_limit=time_limit)
+    config = models.RoadmapConfig(retries=retries, time_limit=time_limit)
     if runner_name:
         config.runner = runner_name
     if model_name:
@@ -372,7 +375,7 @@ def exec_command(
         # just as well as a finished one. Only the task's own status says
         # whether the work the caller asked for actually happened.
         status = _task_status(tasks_file, task_id)
-        succeeded = status == tasks.TaskStatus.COMPLETED
+        succeeded = status == models.TaskStatus.COMPLETED
         if not succeeded:
             click.echo(f"Task {status or 'lost'}.", err=True)
 

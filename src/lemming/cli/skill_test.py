@@ -6,7 +6,7 @@ import pathlib
 import pytest
 from click.testing import CliRunner
 
-from lemming.cli import cli
+from lemming.cli import main
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def test_shared_manager_installs_the_packaged_skill(home):
     """Lemming registers agentcli with its package and skill name."""
     (home / ".claude").mkdir()
 
-    result = CliRunner().invoke(cli, ["skill", "install"])
+    result = CliRunner().invoke(main.cli, ["skill", "install"])
 
     assert result.exit_code == 0, result.output
     source = pathlib.Path(__file__).resolve().parents[3] / "SKILL.md"
@@ -39,7 +39,7 @@ def test_shared_manager_installs_the_packaged_skill(home):
 
 def test_shared_manager_exposes_structured_status(home):
     """The registered group includes agentcli's status command."""
-    result = CliRunner().invoke(cli, ["skill", "status", "--json"])
+    result = CliRunner().invoke(main.cli, ["skill", "status", "--json"])
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)

@@ -7,7 +7,9 @@ import unittest
 
 import click.testing
 
-from lemming import cli, models, paths, prompts, tasks
+from lemming import models, paths, persistence, prompts
+from lemming.cli import main as cli
+from lemming.tasks import limits, operations
 
 EVIDENCE = "Measured: first paint 2.4s. The failing selector is [data-x=1]."
 
@@ -22,7 +24,7 @@ class TestTaskBrief(unittest.TestCase):
             goal="Ship it",
             tasks=[models.Task(id="task1", description="Fix the thing")],
         )
-        tasks.save_tasks(self.tasks_file, self.data)
+        persistence.save_tasks(self.tasks_file, self.data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -84,7 +86,7 @@ class TestTaskBrief(unittest.TestCase):
 
     def test_brief_has_no_length_cap(self):
         """The brief is where evidence too large for a description belongs."""
-        long_evidence = "y" * (tasks.MAX_TASK_DESCRIPTION_CHARS * 3)
+        long_evidence = "y" * (limits.MAX_TASK_DESCRIPTION_CHARS * 3)
 
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["brief", "task1", long_evidence]
@@ -97,7 +99,7 @@ class TestTaskBrief(unittest.TestCase):
     def test_description_cap_error_points_at_the_brief(self):
         """Hitting the cap must name the supported way to attach evidence."""
         with self.assertRaises(ValueError) as caught:
-            tasks.add_task(self.tasks_file, "z" * 5000)
+            operations.add_task(self.tasks_file, "z" * 5000)
 
         self.assertIn("lemming brief", str(caught.exception))
 

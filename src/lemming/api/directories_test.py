@@ -2,12 +2,12 @@ import pathlib
 import shutil
 import tempfile
 
-from lemming import api
+from lemming.api import main
 
 
 def test_list_directories(client, test_tasks):
     """GET /api/directories lists subdirectories under the server root."""
-    root = api.app.state.root
+    root = main.app.state.root
     (root / "subproject_a").mkdir(exist_ok=True)
     (root / "subproject_b").mkdir(exist_ok=True)
     (root / ".hidden").mkdir(exist_ok=True)
@@ -23,7 +23,7 @@ def test_list_directories(client, test_tasks):
 
 def test_create_directory(client, test_tasks):
     """POST /api/directories creates a new directory."""
-    root = api.app.state.root
+    root = main.app.state.root
     response = client.post("/api/directories", json={"name": "new_dir"})
     assert response.status_code == 200
     data = response.json()
@@ -42,7 +42,7 @@ def test_create_directory(client, test_tasks):
 
 def test_create_directory_exists(client, test_tasks):
     """POST /api/directories fails if directory already exists."""
-    root = api.app.state.root
+    root = main.app.state.root
     (root / "existing").mkdir()
     response = client.post("/api/directories", json={"name": "existing"})
     assert response.status_code == 400
@@ -74,7 +74,7 @@ def test_project_param_traversal_rejected(client, test_tasks):
 
 def test_symlink_traversal_rejected(client, test_tasks):
     """Symlinks pointing outside the root are rejected."""
-    root = api.app.state.root
+    root = main.app.state.root
     external_dir = pathlib.Path(tempfile.mkdtemp())
     try:
         symlink = root / "sneaky_link"

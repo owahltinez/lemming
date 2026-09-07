@@ -6,7 +6,8 @@ import unittest.mock
 
 import click.testing
 
-from lemming import cli, hooks, tasks
+from lemming import hooks, models, persistence
+from lemming.cli import main as cli
 
 
 class TestCLIHooks(unittest.TestCase):
@@ -33,11 +34,11 @@ class TestCLIHooks(unittest.TestCase):
         self.env_patch.start()
 
         # Scaffold a valid file
-        data = tasks.Roadmap(
+        data = models.Roadmap(
             goal="Initial goal",
             tasks=[],
         )
-        tasks.save_tasks(self.test_tasks_file, data)
+        persistence.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         self.env_patch.stop()

@@ -2,7 +2,7 @@ import pathlib
 
 import pytest
 
-from lemming import models, paths, prompts, tasks
+from lemming import models, paths, persistence, prompts
 
 
 def test_load_prompt():
@@ -36,17 +36,17 @@ def test_prepare_prompt(tmp_path, monkeypatch):
     lemming_home = tmp_path / "lemming-home"
     monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
     tasks_file = tmp_path / "tasks.yml"
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="My goal",
         tasks=[
-            tasks.Task(
+            models.Task(
                 id="1",
                 description="T1",
-                status=tasks.TaskStatus.COMPLETED,
+                status=models.TaskStatus.COMPLETED,
                 progress=["O1"],
             ),
-            tasks.Task(
-                id="2", description="T2", status=tasks.TaskStatus.PENDING
+            models.Task(
+                id="2", description="T2", status=models.TaskStatus.PENDING
             ),
         ],
     )
@@ -68,22 +68,22 @@ def test_prepare_prompt_with_parent_context(tmp_path):
     sub_tasks_file = tmp_path / "sub_tasks.yml"
 
     # Setup parent task
-    parent_task = tasks.Task(
+    parent_task = models.Task(
         id="parent123",
         description="Parent Task Description",
         progress=["Parent Outcome 1"],
     )
-    root_data = tasks.Roadmap(tasks=[parent_task])
-    tasks.save_tasks(root_tasks_file, root_data)
+    root_data = models.Roadmap(tasks=[parent_task])
+    persistence.save_tasks(root_tasks_file, root_data)
 
     # Setup child task referencing parent
-    child_task = tasks.Task(
+    child_task = models.Task(
         id="child456",
         description="Child Task",
         parent="parent123",
         parent_tasks_file=str(root_tasks_file),
     )
-    sub_data = tasks.Roadmap(tasks=[child_task])
+    sub_data = models.Roadmap(tasks=[child_task])
 
     prompt = prompts.prepare_prompt(sub_data, child_task, sub_tasks_file)
 
@@ -132,19 +132,19 @@ def test_prepare_hook_prompt_substitution(tmp_path, monkeypatch):
     monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
 
     tasks_file = tmp_path / "tasks.yml"
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="The Long-Term Goal",
         tasks=[
-            tasks.Task(
+            models.Task(
                 id="task1",
                 description="Task 1",
-                status=tasks.TaskStatus.COMPLETED,
+                status=models.TaskStatus.COMPLETED,
                 progress=["Done"],
             ),
-            tasks.Task(
+            models.Task(
                 id="task2",
                 description="Task 2",
-                status=tasks.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.IN_PROGRESS,
             ),
         ],
     )
@@ -199,8 +199,8 @@ def test_prepare_prompt_deduplicates_current_task_and_bounds_progress(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     description = "Unique current assignment"
     progress = [f"attempt finding {index}" for index in range(5)]
-    task = tasks.Task(id="current", description=description, progress=progress)
-    data = tasks.Roadmap(tasks=[task])
+    task = models.Task(id="current", description=description, progress=progress)
+    data = models.Roadmap(tasks=[task])
 
     prompt = prompts.prepare_prompt(data, task, tasks_file)
 
@@ -215,24 +215,24 @@ def test_prepare_prompt_deduplicates_current_task_and_bounds_progress(tmp_path):
 
 def test_format_roadmap_has_global_budget_and_prioritizes_active_tasks():
     completed = [
-        tasks.Task(
+        models.Task(
             id=f"done-{index}",
             description=f"completed {index} " + ("d" * 5_000),
-            status=tasks.TaskStatus.COMPLETED,
+            status=models.TaskStatus.COMPLETED,
             progress=["p" * 5_000 for _ in range(10)],
         )
         for index in range(400)
     ]
-    active = tasks.Task(
+    active = models.Task(
         id="next",
         description="ACTIONABLE TASK " + ("a" * 5_000),
         progress=["important " + ("p" * 5_000) for _ in range(10)],
     )
-    current = tasks.Task(
+    current = models.Task(
         id="current",
         description="CURRENT DESCRIPTION MUST NOT BE IN ROADMAP",
     )
-    data = tasks.Roadmap(tasks=[*completed, active, current])
+    data = models.Roadmap(tasks=[*completed, active, current])
 
     roadmap = prompts._format_roadmap(
         data,
@@ -248,10 +248,10 @@ def test_format_roadmap_has_global_budget_and_prioritizes_active_tasks():
 
 
 def test_review_hook_roadmap_uses_smaller_context_budget():
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="g" * 10_000,
         tasks=[
-            tasks.Task(id=str(index), description="d" * 1_000)
+            models.Task(id=str(index), description="d" * 1_000)
             for index in range(100)
         ],
     )
@@ -291,9 +291,9 @@ def test_prepare_prompt_local_override(tmp_path):
         "LOCAL OVERRIDE {{description}}"
     )
 
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         tasks=[
-            tasks.Task(id="1", description="My Task"),
+            models.Task(id="1", description="My Task"),
         ],
     )
     task = data.tasks[0]
@@ -307,13 +307,13 @@ def test_prepare_hook_prompt_filters_command_noise(tmp_path, monkeypatch):
     monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
 
     tasks_file = tmp_path / "tasks.yml"
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="The Long-Term Goal",
         tasks=[
-            tasks.Task(
+            models.Task(
                 id="task1",
                 description="Task 1",
-                status=tasks.TaskStatus.COMPLETED,
+                status=models.TaskStatus.COMPLETED,
             ),
         ],
     )
@@ -380,8 +380,8 @@ def test_hook_override_precedence(tmp_path, monkeypatch):
 def test_prepare_prompt_time_limit_section(tmp_path):
     """Verifies the time limit section is injected when time_limit > 0."""
     tasks_file = tmp_path / "tasks.yml"
-    data = tasks.Roadmap(
-        tasks=[tasks.Task(id="1", description="T1")],
+    data = models.Roadmap(
+        tasks=[models.Task(id="1", description="T1")],
     )
     task = data.tasks[0]
 
@@ -402,8 +402,8 @@ def test_prepare_prompt_time_limit_section(tmp_path):
 def test_prepare_prompt_time_limit_custom(tmp_path):
     """Verifies the time limit section uses the correct minute value."""
     tasks_file = tmp_path / "tasks.yml"
-    data = tasks.Roadmap(
-        tasks=[tasks.Task(id="1", description="T1")],
+    data = models.Roadmap(
+        tasks=[models.Task(id="1", description="T1")],
     )
     task = data.tasks[0]
 
@@ -422,19 +422,19 @@ def test_prepare_hook_prompt_shows_failed_for_exhausted_task(
     tasks_file = tmp_path / "tasks.yml"
     # Simulate the state during hook execution after retry exhaustion:
     # status=IN_PROGRESS, requested_status=FAILED
-    failed_task = tasks.Task(
+    failed_task = models.Task(
         id="task1",
         description="Flaky task",
-        status=tasks.TaskStatus.IN_PROGRESS,
-        requested_status=tasks.TaskStatus.FAILED,
+        status=models.TaskStatus.IN_PROGRESS,
+        requested_status=models.TaskStatus.FAILED,
         attempts=3,
         progress=["Task killed: time limit of 60 minutes reached."],
     )
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="Test",
         tasks=[
             failed_task,
-            tasks.Task(id="task2", description="Next task"),
+            models.Task(id="task2", description="Next task"),
         ],
     )
 
@@ -537,7 +537,7 @@ def test_no_hook_sees_more_goal_than_the_runner(tmp_path):
         goal=goal,
         tasks=[models.Task(id="t1", description="do the thing")],
     )
-    tasks.save_tasks(tasks_file, data)
+    persistence.save_tasks(tasks_file, data)
 
     runner_prompt = prompts.prepare_prompt(data, data.tasks[0], tasks_file)
     hook_prompt = prompts.prepare_hook_prompt(
@@ -566,8 +566,8 @@ def _hook_prompt_with_scope(tmp_path, monkeypatch, scope=None):
     (hooks_dir / "readability.md").write_text("Scope: {{scope}}")
 
     tasks_file = tmp_path / "tasks.yml"
-    data = tasks.Roadmap(tasks=[tasks.Task(id="task1", description="Task 1")])
-    tasks.save_tasks(tasks_file, data)
+    data = models.Roadmap(tasks=[models.Task(id="task1", description="Task 1")])
+    persistence.save_tasks(tasks_file, data)
     monkeypatch.chdir(tmp_path)
 
     return prompts.prepare_hook_prompt(

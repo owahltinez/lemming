@@ -1,4 +1,4 @@
-import lemming.api
+from lemming.api import main
 
 
 def test_list_hooks(client, test_tasks, monkeypatch, tmp_path):
@@ -27,7 +27,7 @@ def test_list_hooks(client, test_tasks, monkeypatch, tmp_path):
 def test_list_hooks_with_project(client, test_tasks, monkeypatch, tmp_path):
     """The /api/hooks endpoint works with a specified project."""
     monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
-    root = lemming.api.app.state.root
+    root = main.app.state.root
     project_dir = root / "project1"
     project_dir.mkdir()
     tasks_file = project_dir / "tasks.yml"

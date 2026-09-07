@@ -4,7 +4,7 @@ import typing
 
 import click
 
-from .. import tasks
+from ..tasks import progress as task_progress
 from .main import cli
 
 
@@ -40,7 +40,7 @@ def progress(
         ctx.exit(1)
 
     try:
-        target_task = tasks.add_progress(tasks_file, task_id, text)
+        target_task = task_progress.add_progress(tasks_file, task_id, text)
         click.echo(f"Progress added to task {target_task.id}.")
     except ValueError as e:
         click.echo(f"Error: {e}")

@@ -7,10 +7,10 @@ import unittest
 
 import click.testing
 
-from lemming import paths, tasks
+from lemming import models, paths, persistence
 
 # Imported from the package so that every command is registered.
-from lemming.cli import cli
+from lemming.cli import main
 
 
 class TestCLIMain(unittest.TestCase):
@@ -18,14 +18,14 @@ class TestCLIMain(unittest.TestCase):
         self.cli_runner = click.testing.CliRunner()
 
     def test_cli_help(self):
-        result = self.cli_runner.invoke(cli, ["--help"])
+        result = self.cli_runner.invoke(main.cli, ["--help"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn(
             "Lemming: An autonomous, iterative task runner", result.output
         )
 
     def test_cli_version_reports_the_installed_version(self):
-        result = self.cli_runner.invoke(cli, ["--version"])
+        result = self.cli_runner.invoke(main.cli, ["--version"])
 
         self.assertEqual(result.exit_code, 0, result.output)
         # Read back from package metadata so the flag cannot drift from
@@ -33,9 +33,11 @@ class TestCLIMain(unittest.TestCase):
         self.assertIn(importlib.metadata.version("lemming-cli"), result.output)
 
     def test_command_help_hides_internal_docstrings(self):
-        for command_name in cli.commands:
+        for command_name in main.cli.commands:
             with self.subTest(command=command_name):
-                result = self.cli_runner.invoke(cli, [command_name, "--help"])
+                result = self.cli_runner.invoke(
+                    main.cli, [command_name, "--help"]
+                )
                 self.assertEqual(result.exit_code, 0)
                 self.assertNotIn("Args:", result.output)
                 self.assertNotIn("ctx: The click context", result.output)
@@ -46,7 +48,7 @@ class TestCLIMain(unittest.TestCase):
             tasks_file.write_text("tasks: [unclosed\n", encoding="utf-8")
 
             result = self.cli_runner.invoke(
-                cli, ["--tasks-file", str(tasks_file), "status"]
+                main.cli, ["--tasks-file", str(tasks_file), "status"]
             )
 
             self.assertEqual(result.exit_code, 1)
@@ -76,15 +78,15 @@ class TestProjectDirOption(unittest.TestCase):
 
     def test_targets_local_tasks_file_of_other_project(self):
         other_tasks = self.other / "tasks.yml"
-        tasks.save_tasks(other_tasks, tasks.Roadmap())
+        persistence.save_tasks(other_tasks, models.Roadmap())
 
         result = self.cli_runner.invoke(
-            cli, ["-C", str(self.other), "add", "Filed from elsewhere"]
+            main.cli, ["-C", str(self.other), "add", "Filed from elsewhere"]
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
         descriptions = [
-            t.description for t in tasks.load_tasks(other_tasks).tasks
+            t.description for t in persistence.load_tasks(other_tasks).tasks
         ]
         self.assertEqual(descriptions, ["Filed from elsewhere"])
 
@@ -92,13 +94,15 @@ class TestProjectDirOption(unittest.TestCase):
         # Neither project has a local tasks.yml, so the task must land in the
         # target's isolated file rather than the current directory's.
         result = self.cli_runner.invoke(
-            cli, ["--project-dir", str(self.other), "add", "Isolated file"]
+            main.cli, ["--project-dir", str(self.other), "add", "Isolated file"]
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
         target = paths.get_tasks_file_for_dir(self.other)
         self.assertNotEqual(target, paths.get_tasks_file_for_dir(self.here))
-        descriptions = [t.description for t in tasks.load_tasks(target).tasks]
+        descriptions = [
+            t.description for t in persistence.load_tasks(target).tasks
+        ]
         self.assertEqual(descriptions, ["Isolated file"])
 
     def test_working_dir_follows_project_dir(self):
@@ -106,31 +110,31 @@ class TestProjectDirOption(unittest.TestCase):
         # keys off the working directory, not just the tasks file.
         seen: list[pathlib.Path] = []
 
-        @cli.command("probe-working-dir", hidden=True)
+        @main.cli.command("probe-working-dir", hidden=True)
         def probe():
             seen.append(paths.get_working_dir(paths.get_default_tasks_file()))
 
         try:
             result = self.cli_runner.invoke(
-                cli, ["-C", str(self.other), "probe-working-dir"]
+                main.cli, ["-C", str(self.other), "probe-working-dir"]
             )
         finally:
-            del cli.commands["probe-working-dir"]
+            del main.cli.commands["probe-working-dir"]
 
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertEqual(seen, [self.other])
 
     def test_restores_the_original_working_directory(self):
-        self.cli_runner.invoke(cli, ["-C", str(self.other), "status"])
+        self.cli_runner.invoke(main.cli, ["-C", str(self.other), "status"])
 
         self.assertEqual(pathlib.Path.cwd(), self.here)
 
     def test_tasks_file_wins_and_resolves_against_project_dir(self):
         explicit = self.other / "explicit.yml"
-        tasks.save_tasks(explicit, tasks.Roadmap())
+        persistence.save_tasks(explicit, models.Roadmap())
 
         result = self.cli_runner.invoke(
-            cli,
+            main.cli,
             [
                 "-C",
                 str(self.other),
@@ -142,12 +146,14 @@ class TestProjectDirOption(unittest.TestCase):
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
-        descriptions = [t.description for t in tasks.load_tasks(explicit).tasks]
+        descriptions = [
+            t.description for t in persistence.load_tasks(explicit).tasks
+        ]
         self.assertEqual(descriptions, ["Explicit target"])
 
     def test_rejects_a_missing_project_dir(self):
         result = self.cli_runner.invoke(
-            cli, ["-C", str(self.other / "nope"), "status"]
+            main.cli, ["-C", str(self.other / "nope"), "status"]
         )
 
         self.assertEqual(result.exit_code, 1)

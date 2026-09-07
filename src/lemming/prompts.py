@@ -3,7 +3,8 @@
 import dataclasses
 import pathlib
 
-from . import hooks, paths, runner, tasks
+from . import hooks, models, paths, persistence, runner
+from .tasks import limits
 
 # What a review looks at when the caller named nothing. The orchestrator
 # runs hooks right after a task, so the work it left behind is the scope.
@@ -67,9 +68,9 @@ _REVIEW_HOOK_POLICY = _RoadmapContextPolicy(
 )
 _TERMINAL_STATUSES = frozenset(
     {
-        tasks.TaskStatus.COMPLETED,
-        tasks.TaskStatus.CANCELLED,
-        tasks.TaskStatus.SUPERSEDED,
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.CANCELLED,
+        models.TaskStatus.SUPERSEDED,
     }
 )
 
@@ -89,27 +90,27 @@ def _compact_text(text: str, max_chars: int) -> str:
 
 
 def _status_marker(
-    task: tasks.Task,
-    effective_status: tasks.TaskStatus,
+    task: models.Task,
+    effective_status: models.TaskStatus,
     retries: int,
     *,
     is_current: bool,
 ) -> str:
     """Formats a task status without allowing metadata to dominate context."""
-    if effective_status == tasks.TaskStatus.COMPLETED:
+    if effective_status == models.TaskStatus.COMPLETED:
         return "[COMPLETED]"
-    if effective_status == tasks.TaskStatus.FAILED:
+    if effective_status == models.TaskStatus.FAILED:
         return f"[FAILED - {task.attempts}/{retries} attempt(s)]"
-    if effective_status == tasks.TaskStatus.SUPERSEDED:
+    if effective_status == models.TaskStatus.SUPERSEDED:
         reason = (
             f" - {_compact_text(task.superseded_reason, 200)}"
             if task.superseded_reason
             else ""
         )
         return f"[SUPERSEDED{reason}]"
-    if effective_status == tasks.TaskStatus.CANCELLED:
+    if effective_status == models.TaskStatus.CANCELLED:
         return "[CANCELLED]"
-    if task.status == tasks.TaskStatus.IN_PROGRESS or is_current:
+    if task.status == models.TaskStatus.IN_PROGRESS or is_current:
         return "[IN PROGRESS]"
     if task.attempts > 0:
         return f"[PENDING - {task.attempts}/{retries} attempt(s) so far]"
@@ -137,7 +138,7 @@ def _format_recent_progress(
 
 
 def _format_task_block(
-    task: tasks.Task,
+    task: models.Task,
     *,
     current_task_id: str | None,
     retries: int,
@@ -166,7 +167,7 @@ def _format_task_block(
     block = f"- {marker} ({task_id}) {description}\n"
 
     include_progress = (
-        effective_status != tasks.TaskStatus.COMPLETED
+        effective_status != models.TaskStatus.COMPLETED
         or task.id in recent_completed_ids
     )
     if include_progress:
@@ -237,7 +238,7 @@ def _read_log_excerpt(log_file: pathlib.Path) -> str:
 
 
 def _roadmap_task_priority(
-    task: tasks.Task,
+    task: models.Task,
     index: int,
     current_task_id: str | None,
 ) -> tuple[int, int]:
@@ -283,7 +284,7 @@ def load_prompt(name: str, tasks_file: pathlib.Path | None = None) -> str:
 
 
 def _format_roadmap(
-    data: tasks.Roadmap,
+    data: models.Roadmap,
     current_task_id: str | None = None,
     *,
     policy: _RoadmapContextPolicy = _ROADMAP_HOOK_POLICY,
@@ -304,7 +305,7 @@ def _format_roadmap(
     completed_ids = [
         task.id
         for task in data.tasks
-        if (task.requested_status or task.status) == tasks.TaskStatus.COMPLETED
+        if (task.requested_status or task.status) == models.TaskStatus.COMPLETED
     ]
     recent_completed_ids = (
         set(completed_ids[-policy.completed_progress_tasks :])
@@ -358,8 +359,8 @@ def _format_roadmap(
 
 def prepare_hook_prompt(
     hook_name: str,
-    data: tasks.Roadmap,
-    finished_task: tasks.Task,
+    data: models.Roadmap,
+    finished_task: models.Task,
     tasks_file: pathlib.Path,
     scope: str | None = None,
 ) -> str:
@@ -407,7 +408,7 @@ def prepare_hook_prompt(
 
     if (
         finished_task.attempts >= data.config.retries
-        and result_status == tasks.TaskStatus.FAILED
+        and result_status == models.TaskStatus.FAILED
     ):
         finished_str += "\n!!! WARNING: FINAL ATTEMPT FAILED !!!\n"
         finished_str += (
@@ -466,18 +467,18 @@ def prepare_hook_prompt(
         .replace("{{tasks_dir}}", tasks_dir)
         .replace(
             "{{max_task_description_chars}}",
-            f"{tasks.MAX_TASK_DESCRIPTION_CHARS:,}",
+            f"{limits.MAX_TASK_DESCRIPTION_CHARS:,}",
         )
         .replace(
             "{{max_progress_entry_chars}}",
-            f"{tasks.MAX_PROGRESS_ENTRY_CHARS:,}",
+            f"{limits.MAX_PROGRESS_ENTRY_CHARS:,}",
         )
     )
 
 
 def prepare_prompt(
-    data: tasks.Roadmap,
-    task: tasks.Task,
+    data: models.Roadmap,
+    task: models.Task,
     tasks_file: pathlib.Path,
     time_limit: int = 0,
 ) -> str:
@@ -503,7 +504,7 @@ def prepare_prompt(
         try:
             parent_tasks_path = pathlib.Path(task.parent_tasks_file)
             if parent_tasks_path.exists():
-                parent_roadmap = tasks.load_tasks(parent_tasks_path)
+                parent_roadmap = persistence.load_tasks(parent_tasks_path)
                 parent_task = next(
                     (t for t in parent_roadmap.tasks if t.id == task.parent),
                     None,
@@ -584,11 +585,11 @@ def prepare_prompt(
         .replace("{{tasks_dir}}", tasks_dir)
         .replace(
             "{{max_task_description_chars}}",
-            f"{tasks.MAX_TASK_DESCRIPTION_CHARS:,}",
+            f"{limits.MAX_TASK_DESCRIPTION_CHARS:,}",
         )
         .replace(
             "{{max_progress_entry_chars}}",
-            f"{tasks.MAX_PROGRESS_ENTRY_CHARS:,}",
+            f"{limits.MAX_PROGRESS_ENTRY_CHARS:,}",
         )
         .replace("{{task_id}}", task.id)
         .replace("{{brief_section}}", brief_section)

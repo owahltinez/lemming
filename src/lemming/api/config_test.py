@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from lemming import api
+from lemming.api import main
 
 
 def test_run_loop(client, test_tasks):
@@ -25,7 +25,7 @@ def test_get_runners(client):
 
 def test_project_goal_isolation(client, test_tasks):
     """The goal is isolated per project."""
-    root = api.app.state.root
+    root = main.app.state.root
     subdir = root / "goal_test"
     subdir.mkdir(exist_ok=True)
 
@@ -50,7 +50,7 @@ def test_project_goal_isolation(client, test_tasks):
 
 def test_run_loop_with_project(client, test_tasks):
     """POST /api/run with project param uses the correct tasks file."""
-    root = api.app.state.root
+    root = main.app.state.root
     subdir = root / "run_project"
     subdir.mkdir(exist_ok=True)
     (subdir / "tasks.yml").touch()

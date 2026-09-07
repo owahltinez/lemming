@@ -9,9 +9,10 @@ from unittest import mock
 import pytest
 from click.testing import CliRunner
 
-from lemming import paths, runner, tasks
-from lemming.cli import cli
+from lemming import models, paths, persistence, runner
+from lemming.cli import main
 from lemming.cli.exec_cli import _read_log_tail
+from lemming.tasks import operations, progress
 
 
 @pytest.fixture
@@ -28,7 +29,7 @@ def workspace(tmp_path, monkeypatch):
     return project
 
 
-def _finish(message, returncode=0, status=tasks.TaskStatus.COMPLETED):
+def _finish(message, returncode=0, status=models.TaskStatus.COMPLETED):
     """Builds a run_with_heartbeat fake that finishes the claimed task.
 
     A real agent settles its task by invoking the CLI, which records the
@@ -44,13 +45,13 @@ def _finish(message, returncode=0, status=tasks.TaskStatus.COMPLETED):
 
         # A hook runs against a task that already asked to finish; asking
         # again would be the hook overriding the agent it is reviewing.
-        data = tasks.load_tasks(tasks_file)
+        data = persistence.load_tasks(tasks_file)
         task = next(t for t in data.tasks if t.id == task_id)
         if task.requested_status:
             return returncode, output, ""
 
-        tasks.add_progress(tasks_file, task_id, "did the work")
-        tasks.update_task(tasks_file, task_id, status=status.value)
+        progress.add_progress(tasks_file, task_id, "did the work")
+        operations.update_task(tasks_file, task_id, status=status.value)
         return returncode, output, ""
 
     return fake
@@ -66,7 +67,7 @@ def test_exec_prints_the_final_message_to_stdout(workspace):
     with mock.patch(
         "lemming.runner.run_with_heartbeat", _finish("Fixed the flaky test.")
     ):
-        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "Fixed the flaky test."
@@ -75,7 +76,7 @@ def test_exec_prints_the_final_message_to_stdout(workspace):
 def test_exec_keeps_progress_chatter_off_stdout(workspace):
     """Stdout is the interface, so loop output belongs on stderr."""
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
-        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert result.stdout.strip() == "Done."
     assert "Attempt" in result.stderr
@@ -91,7 +92,7 @@ def test_exec_announces_monitoring_coordinates_on_stderr(workspace):
         return _finish("Done.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", finish):
-        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert result.exit_code == 0, result.stderr
     assert result.stdout.strip() == "Done."
@@ -102,16 +103,16 @@ def test_exec_announces_monitoring_coordinates_on_stderr(workspace):
 def test_exec_removes_its_state_directory_on_success(workspace):
     """A one-shot leaves nothing behind when it worked."""
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
-        CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert _exec_dirs() == []
 
 
 def test_exec_keeps_its_state_directory_on_failure(workspace):
     """A failed run must stay debuggable through its log."""
-    fake = _finish("Could not fix it.", status=tasks.TaskStatus.FAILED)
+    fake = _finish("Could not fix it.", status=models.TaskStatus.FAILED)
     with mock.patch("lemming.runner.run_with_heartbeat", fake):
-        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert result.exit_code != 0
     assert len(_exec_dirs()) == 1
@@ -122,7 +123,7 @@ def test_exec_keeps_its_state_directory_when_asked(workspace):
     """--keep retains the log of a run that succeeded."""
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
         result = CliRunner().invoke(
-            cli, ["exec", "Fix the flaky test", "--keep"]
+            main.cli, ["exec", "Fix the flaky test", "--keep"]
         )
 
     assert result.exit_code == 0
@@ -135,7 +136,7 @@ def test_exec_accepts_a_prompt_over_the_description_limit(workspace):
     assert len(prompt) > 2_000
 
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
-        result = CliRunner().invoke(cli, ["exec", prompt])
+        result = CliRunner().invoke(main.cli, ["exec", prompt])
 
     assert result.exit_code == 0, result.stderr
 
@@ -144,7 +145,7 @@ def test_exec_reads_the_prompt_from_stdin(workspace):
     """Piping the prompt avoids shell quoting for long handoffs."""
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
         result = CliRunner().invoke(
-            cli, ["exec", "-f", "-"], input="Fix the flaky test\n"
+            main.cli, ["exec", "-f", "-"], input="Fix the flaky test\n"
         )
 
     assert result.exit_code == 0, result.stderr
@@ -153,7 +154,7 @@ def test_exec_reads_the_prompt_from_stdin(workspace):
 
 def test_exec_requires_a_prompt(workspace):
     """With no description and no reviews there is nothing to run."""
-    result = CliRunner().invoke(cli, ["exec"])
+    result = CliRunner().invoke(main.cli, ["exec"])
 
     assert result.exit_code != 0
 
@@ -161,17 +162,17 @@ def test_exec_requires_a_prompt(workspace):
 def test_exec_does_not_touch_the_project_roadmap(workspace):
     """A stale roadmap must neither be read nor written by a one-shot."""
     project_tasks = workspace / "tasks.yml"
-    tasks.save_tasks(
+    persistence.save_tasks(
         project_tasks,
-        tasks.Roadmap(
+        models.Roadmap(
             goal="An abandoned goal from months ago",
-            tasks=[tasks.Task(id="old1", description="Old task")],
+            tasks=[models.Task(id="old1", description="Old task")],
         ),
     )
     before = project_tasks.read_text(encoding="utf-8")
 
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
-        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert result.exit_code == 0, result.stderr
     assert project_tasks.read_text(encoding="utf-8") == before
@@ -186,7 +187,7 @@ def test_exec_runs_no_hooks_by_default(workspace):
         return _finish("Done.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert headers == ["Task Runner"]
 
@@ -201,7 +202,7 @@ def test_exec_passes_the_requested_runner_and_model(workspace):
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
         result = CliRunner().invoke(
-            cli,
+            main.cli,
             ["exec", "Fix it", "--runner", "codex", "--model", "gpt-5.2"],
         )
 
@@ -216,12 +217,12 @@ def test_exec_attempts_the_task_once(workspace):
 
     def record(cmd, tasks_file, task_id, *args, **kwargs):
         attempts.append(task_id)
-        return _finish("Failed.", status=tasks.TaskStatus.FAILED)(
+        return _finish("Failed.", status=models.TaskStatus.FAILED)(
             cmd, tasks_file, task_id, *args, **kwargs
         )
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert len(attempts) == 1
 
@@ -239,13 +240,13 @@ def test_exec_retries_the_same_task_until_it_completes(workspace):
         working_dirs.append(kwargs.get("cwd"))
         commands.append(cmd)
         if len(task_ids) == 1:
-            tasks.add_progress(tasks_file, task_id, "first attempt failed")
-            data = tasks.load_tasks(tasks_file)
+            progress.add_progress(tasks_file, task_id, "first attempt failed")
+            data = persistence.load_tasks(tasks_file)
             data.config.retries = 5
             data.config.runner = "claude"
             data.config.model = "changed-model"
-            tasks.save_tasks(tasks_file, data)
-            tasks.add_task(tasks_file, "Do unrelated work", index=0)
+            persistence.save_tasks(tasks_file, data)
+            operations.add_task(tasks_file, "Do unrelated work", index=0)
             return 0, "", ""
         return _finish("Recovered.")(cmd, tasks_file, task_id, *args, **kwargs)
 
@@ -253,7 +254,7 @@ def test_exec_retries_the_same_task_until_it_completes(workspace):
         "lemming.runner.run_with_heartbeat", side_effect=finish_second
     ):
         result = CliRunner().invoke(
-            cli,
+            main.cli,
             [
                 "exec",
                 "Fix it",
@@ -274,7 +275,7 @@ def test_exec_retries_the_same_task_until_it_completes(workspace):
     assert working_dirs == [workspace.resolve(), workspace.resolve()]
     assert all(command[0] == "codex" for command in commands)
     assert all("test-model" in command for command in commands)
-    data = tasks.load_tasks(_exec_dirs()[0] / "tasks.yml")
+    data = persistence.load_tasks(_exec_dirs()[0] / "tasks.yml")
     task = next(task for task in data.tasks if task.id == task_ids[0])
     assert task.attempts == 2
     assert task.progress == ["first attempt failed", "did the work"]
@@ -301,7 +302,9 @@ def test_exec_retries_transient_runner_failures(workspace, first_result):
         return _finish("Recovered.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", side_effect=recover):
-        result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "2"])
+        result = CliRunner().invoke(
+            main.cli, ["exec", "Fix it", "--retries", "2"]
+        )
 
     assert result.exit_code == 0, result.stderr
     assert calls == 2
@@ -335,7 +338,7 @@ def test_exec_retries_a_real_runner_process(workspace):
     fake_runner.chmod(0o755)
 
     result = CliRunner().invoke(
-        cli,
+        main.cli,
         [
             "exec",
             "Fix it",
@@ -361,20 +364,22 @@ def test_exec_exhaustion_retains_a_pending_task(workspace):
         return runner.RETURNCODE_TIMEOUT, "", ""
 
     with mock.patch("lemming.runner.run_with_heartbeat", side_effect=time_out):
-        result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "2"])
+        result = CliRunner().invoke(
+            main.cli, ["exec", "Fix it", "--retries", "2"]
+        )
 
     assert result.exit_code != 0
     assert calls == 2
-    data = tasks.load_tasks(_exec_dirs()[0] / "tasks.yml")
+    data = persistence.load_tasks(_exec_dirs()[0] / "tasks.yml")
     assert data.tasks[0].attempts == 2
-    assert data.tasks[0].status == tasks.TaskStatus.PENDING
+    assert data.tasks[0].status == models.TaskStatus.PENDING
 
 
 @pytest.mark.parametrize(
     ("status", "returncode"),
     [
-        (tasks.TaskStatus.FAILED, 0),
-        (tasks.TaskStatus.CANCELLED, -15),
+        (models.TaskStatus.FAILED, 0),
+        (models.TaskStatus.CANCELLED, -15),
         (None, -15),
     ],
 )
@@ -386,14 +391,16 @@ def test_exec_does_not_retry_terminal_outcomes(workspace, status, returncode):
         nonlocal calls
         calls += 1
         if status is not None:
-            tasks.add_progress(tasks_file, task_id, "cannot continue")
-            tasks.update_task(tasks_file, task_id, status=status.value)
+            progress.add_progress(tasks_file, task_id, "cannot continue")
+            operations.update_task(tasks_file, task_id, status=status.value)
         return returncode, "", ""
 
     with mock.patch(
         "lemming.runner.run_with_heartbeat", side_effect=finish_terminal
     ):
-        result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "3"])
+        result = CliRunner().invoke(
+            main.cli, ["exec", "Fix it", "--retries", "3"]
+        )
 
     assert result.exit_code != 0
     assert calls == 1
@@ -402,7 +409,7 @@ def test_exec_does_not_retry_terminal_outcomes(workspace, status, returncode):
 
 def test_exec_rejects_non_positive_retries(workspace):
     """A retry budget always includes at least the initial attempt."""
-    result = CliRunner().invoke(cli, ["exec", "Fix it", "--retries", "0"])
+    result = CliRunner().invoke(main.cli, ["exec", "Fix it", "--retries", "0"])
 
     assert result.exit_code != 0
     assert "0 is not in the range" in result.stderr
@@ -418,7 +425,7 @@ def test_exec_runs_in_the_directory_it_was_invoked_from(workspace):
         return _finish("Done.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert seen["cwd"] == workspace.resolve()
 
@@ -428,13 +435,13 @@ def test_exec_reports_a_runner_that_produced_no_message(workspace):
 
     def silent(cmd, tasks_file, task_id, *args, **kwargs):
         paths.get_log_file(tasks_file, task_id).write_text("", encoding="utf-8")
-        tasks.update_task(
-            tasks_file, task_id, status=tasks.TaskStatus.COMPLETED, force=True
+        operations.update_task(
+            tasks_file, task_id, status=models.TaskStatus.COMPLETED, force=True
         )
         return 0, "", ""
 
     with mock.patch("lemming.runner.run_with_heartbeat", silent):
-        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert result.exit_code == 0
     assert result.stdout.strip() == ""
@@ -470,7 +477,9 @@ def test_review_runs_the_hook_without_a_task_runner(repo):
         return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        result = CliRunner().invoke(cli, ["exec", "--review", "readability"])
+        result = CliRunner().invoke(
+            main.cli, ["exec", "--review", "readability"]
+        )
 
     assert result.exit_code == 0, result.stderr
     assert headers == ["Hook: readability"]
@@ -486,7 +495,7 @@ def test_review_tells_the_agent_what_changed(repo):
         return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        CliRunner().invoke(cli, ["exec", "--review", "readability"])
+        CliRunner().invoke(main.cli, ["exec", "--review", "readability"])
 
     assert "- committed.py" in prompts_seen[0]
 
@@ -501,7 +510,7 @@ def test_review_accepts_an_explicit_scope(repo):
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
         result = CliRunner().invoke(
-            cli, ["exec", "--review", "readability", "--scope", "src/api/"]
+            main.cli, ["exec", "--review", "readability", "--scope", "src/api/"]
         )
 
     assert result.exit_code == 0, result.stderr
@@ -510,7 +519,7 @@ def test_review_accepts_an_explicit_scope(repo):
 
 def test_review_refuses_the_orchestration_hook(repo):
     """Roadmap revision would add tasks to a roadmap about to be deleted."""
-    result = CliRunner().invoke(cli, ["exec", "--review", "roadmap"])
+    result = CliRunner().invoke(main.cli, ["exec", "--review", "roadmap"])
 
     assert result.exit_code != 0
     assert "roadmap" in result.stderr.lower()
@@ -526,7 +535,7 @@ def test_review_all_excludes_the_orchestration_band(repo):
         return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        CliRunner().invoke(cli, ["exec", "--review", "all"])
+        CliRunner().invoke(main.cli, ["exec", "--review", "all"])
 
     assert "Hook: roadmap" not in headers
     assert "Hook: readability" in headers
@@ -541,7 +550,9 @@ def test_review_stops_when_nothing_changed(repo):
         return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        result = CliRunner().invoke(cli, ["exec", "--review", "readability"])
+        result = CliRunner().invoke(
+            main.cli, ["exec", "--review", "readability"]
+        )
 
     assert calls == []
     assert "no changes" in result.stderr.lower()
@@ -550,7 +561,7 @@ def test_review_stops_when_nothing_changed(repo):
 def test_review_rejects_an_unresolvable_scope(repo):
     """A typo must fail loudly rather than review the wrong thing."""
     result = CliRunner().invoke(
-        cli,
+        main.cli,
         ["exec", "--review", "readability", "--scope", "no-branch...HEAD"],
     )
 
@@ -567,7 +578,7 @@ def test_a_task_can_be_followed_by_reviews(repo):
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
         CliRunner().invoke(
-            cli, ["exec", "Add pagination", "--review", "readability"]
+            main.cli, ["exec", "Add pagination", "--review", "readability"]
         )
 
     assert headers == ["Task Runner", "Hook: readability"]
@@ -589,7 +600,9 @@ def test_a_failing_review_does_not_become_a_task_run(repo):
         return 1, "", ""
 
     with mock.patch("lemming.runner.run_with_heartbeat", failing):
-        result = CliRunner().invoke(cli, ["exec", "--review", "readability"])
+        result = CliRunner().invoke(
+            main.cli, ["exec", "--review", "readability"]
+        )
 
     assert result.exit_code != 0
     assert "Task Runner" not in headers
@@ -600,7 +613,7 @@ def test_exec_rejects_retries_for_review_only(repo):
     (repo / "committed.py").write_text("x = 2\n")
 
     result = CliRunner().invoke(
-        cli,
+        main.cli,
         ["exec", "--review", "readability", "--retries", "2"],
     )
 
@@ -630,7 +643,7 @@ def test_a_failing_review_does_not_retry_the_task(repo):
         "lemming.runner.run_with_heartbeat", side_effect=fail_review
     ):
         result = CliRunner().invoke(
-            cli,
+            main.cli,
             [
                 "exec",
                 "Fix it",
@@ -666,7 +679,7 @@ def test_exec_retires_state_kept_by_an_old_failure(workspace):
     os.utime(stale, (old, old))
 
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
-        result = CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert result.exit_code == 0, result.stderr
     assert not stale.exists()
@@ -678,6 +691,6 @@ def test_exec_leaves_a_recent_failure_alone(workspace):
     (recent / "tasks.yml").write_text("tasks: []")
 
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):
-        CliRunner().invoke(cli, ["exec", "Fix the flaky test"])
+        CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
 
     assert recent.exists()

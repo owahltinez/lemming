@@ -4,7 +4,8 @@ import pathlib
 
 import click
 
-from .. import tasks
+from .. import persistence
+from ..tasks import operations
 from .main import cli
 
 
@@ -22,11 +23,11 @@ def goal(ctx: click.Context, goal_text: str | None, file: pathlib.Path | None):
     tasks_file = ctx.obj["TASKS_FILE"]
 
     if file:
-        tasks.update_goal(tasks_file, file.read_text(encoding="utf-8"))
+        operations.update_goal(tasks_file, file.read_text(encoding="utf-8"))
         click.echo("Long-term goal updated.")
     elif goal_text:
-        tasks.update_goal(tasks_file, goal_text)
+        operations.update_goal(tasks_file, goal_text)
         click.echo("Long-term goal updated.")
     else:
-        data = tasks.load_tasks(tasks_file)
+        data = persistence.load_tasks(tasks_file)
         click.echo(data.goal or "No goal set.")

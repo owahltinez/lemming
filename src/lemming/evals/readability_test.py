@@ -3,8 +3,9 @@ import shutil
 import tempfile
 import unittest
 
-from lemming import models, tasks
+from lemming import models
 from lemming.evals import fixtures, readability, scenarios, suites
+from lemming.tasks import operations, progress
 
 
 def _scenario(name: str) -> scenarios.Scenario:
@@ -44,7 +45,7 @@ class ScenarioTestCase(unittest.TestCase):
         self.scenario.build(self.workspace)
         self.tasks_file = fixtures.tasks_file(self.workspace)
         # Simulate the trial finalizing the finished task after the hook.
-        tasks.update_task(
+        operations.update_task(
             self.tasks_file,
             "task1",
             status=models.TaskStatus.COMPLETED,
@@ -120,7 +121,7 @@ class TestDeadCodeScenario(ScenarioTestCase):
 
     def test_recording_finding_passes(self):
         self.build("fix-or-report-dead-code")
-        tasks.add_progress(
+        progress.add_progress(
             self.tasks_file,
             "task1",
             "Readability: _add_legacy() in calc/ops.py duplicates add() "
@@ -133,7 +134,7 @@ class TestDeadCodeScenario(ScenarioTestCase):
     def test_status_noise_progress_does_not_count(self):
         # Logging "checks passed" over surviving dead code must not pass.
         self.build("fix-or-report-dead-code")
-        tasks.add_progress(
+        progress.add_progress(
             self.tasks_file,
             "task1",
             "Automated readability checks passed. No violations found.",
@@ -213,7 +214,7 @@ def subtract_for_receipt(a: float, b: float) -> float:
 
     def test_recording_live_duplication_passes(self):
         self.build("consolidate-or-report-live-duplication")
-        tasks.add_progress(
+        progress.add_progress(
             self.tasks_file,
             "task1",
             "Readability: add_for_receipt() and subtract_for_receipt() "
@@ -337,7 +338,7 @@ class TestLintDebtScenario(ScenarioTestCase):
 class TestNoOrchestrationScenario(ScenarioTestCase):
     def test_recording_progress_passes(self):
         self.build("no-orchestration")
-        tasks.add_progress(
+        progress.add_progress(
             self.tasks_file,
             "task1",
             "Readability: confirmed the cross-file duplication; recorded "
@@ -349,7 +350,7 @@ class TestNoOrchestrationScenario(ScenarioTestCase):
 
     def test_adding_a_task_fails(self):
         self.build("no-orchestration")
-        tasks.add_task(
+        operations.add_task(
             self.tasks_file,
             "Refactor formatting logic shared by ops.py and legacy.py.",
         )

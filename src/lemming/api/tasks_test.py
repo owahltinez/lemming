@@ -1,6 +1,8 @@
 from unittest.mock import patch
 
-from lemming import api, paths, tasks
+from lemming import models, paths, persistence
+from lemming.api import main
+from lemming.tasks import limits, operations, progress
 
 
 def test_get_data(client, test_tasks):
@@ -11,7 +13,7 @@ def test_get_data(client, test_tasks):
     assert len(data["tasks"]) == 3
     # Check that task1 is in the list
     task1 = next(t for t in data["tasks"] if t["id"] == "task1")
-    assert task1["status"] == tasks.TaskStatus.COMPLETED
+    assert task1["status"] == models.TaskStatus.COMPLETED
     assert data["loop_running"] is True
 
 
@@ -23,10 +25,10 @@ def test_add_task(client, test_tasks):
     data = response.json()
     assert data["description"] == "New task from test"
     assert data["id"]  # id should be auto-generated
-    assert data["status"] == tasks.TaskStatus.PENDING
+    assert data["status"] == models.TaskStatus.PENDING
 
     # Verify task was persisted
-    roadmap = tasks.load_tasks(test_tasks)
+    roadmap = persistence.load_tasks(test_tasks)
     assert any(t.description == "New task from test" for t in roadmap.tasks)
 
 
@@ -34,13 +36,13 @@ def test_add_task_rejects_oversized_description(client, test_tasks):
     response = client.post(
         "/api/tasks",
         json={
-            "description": "x" * (tasks.MAX_TASK_DESCRIPTION_CHARS + 1),
+            "description": "x" * (limits.MAX_TASK_DESCRIPTION_CHARS + 1),
         },
     )
 
     assert response.status_code == 400
     assert "2,001 characters (limit 2,000)" in response.json()["detail"]
-    assert len(tasks.load_tasks(test_tasks).tasks) == 3
+    assert len(persistence.load_tasks(test_tasks).tasks) == 3
 
 
 def test_add_task_with_runner(client, test_tasks):
@@ -57,7 +59,7 @@ def test_delete_completed_tasks(client, test_tasks):
     assert response.json() == {"status": "ok"}
 
     # Verify tasks in file
-    data = tasks.load_tasks(test_tasks)
+    data = persistence.load_tasks(test_tasks)
     task_ids = [t.id for t in data.tasks]
     assert "task1" not in task_ids
     assert "task2" in task_ids
@@ -67,25 +69,25 @@ def test_delete_completed_tasks(client, test_tasks):
 
 def test_delete_completed_tasks_includes_failed(client, test_tasks):
     # Setup data with a failed task
-    with tasks.lock_tasks(test_tasks):
-        data = tasks.load_tasks(test_tasks)
+    with persistence.lock_tasks(test_tasks):
+        data = persistence.load_tasks(test_tasks)
         data.tasks.append(
-            tasks.Task(
+            models.Task(
                 id="failed_task",
                 description="Failed Task",
-                status=tasks.TaskStatus.FAILED,
+                status=models.TaskStatus.FAILED,
                 attempts=1,
                 progress=["Error"],
                 completed_at=123456789.0,
             )
         )
-        tasks.save_tasks(test_tasks, data)
+        persistence.save_tasks(test_tasks, data)
 
     response = client.post("/api/tasks/delete-completed")
     assert response.status_code == 200
 
     # Verify tasks in file
-    data = tasks.load_tasks(test_tasks)
+    data = persistence.load_tasks(test_tasks)
     task_ids = [t.id for t in data.tasks]
     assert "task1" not in task_ids  # task1 is completed
     assert "failed_task" not in task_ids  # failed_task should be deleted
@@ -98,7 +100,7 @@ def test_delete_specific_task(client, test_tasks):
     response = client.post("/api/tasks/task2/delete")
     assert response.status_code == 200
 
-    data = tasks.load_tasks(test_tasks)
+    data = persistence.load_tasks(test_tasks)
     task_ids = [t.id for t in data.tasks]
     assert "task2" not in task_ids
     assert len(data.tasks) == 2
@@ -111,7 +113,7 @@ def test_update_task_description(client, test_tasks):
     assert response.status_code == 200
     assert response.json()["description"] == "Updated Pending Task"
 
-    data = tasks.load_tasks(test_tasks)
+    data = persistence.load_tasks(test_tasks)
     task2 = next(t for t in data.tasks if t.id == "task2")
     assert task2.description == "Updated Pending Task"
 
@@ -132,58 +134,58 @@ def test_mark_task_failed_via_api(client, test_tasks):
     # task2 is pending with no progress
     # 1. Try to fail without progress -> should fail
     response = client.post(
-        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.FAILED}
+        "/api/tasks/task2/update", json={"status": models.TaskStatus.FAILED}
     )
     assert response.status_code == 400
     assert "has no recorded progress" in response.json()["detail"]
 
     # 2. Add progress and try again
-    with tasks.lock_tasks(test_tasks):
-        data = tasks.load_tasks(test_tasks)
+    with persistence.lock_tasks(test_tasks):
+        data = persistence.load_tasks(test_tasks)
         task2 = next(t for t in data.tasks if t.id == "task2")
         task2.progress = ["Failed attempt"]
-        tasks.save_tasks(test_tasks, data)
+        persistence.save_tasks(test_tasks, data)
 
     response = client.post(
-        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.FAILED}
+        "/api/tasks/task2/update", json={"status": models.TaskStatus.FAILED}
     )
     assert response.status_code == 200
-    assert response.json()["status"] == tasks.TaskStatus.FAILED
+    assert response.json()["status"] == models.TaskStatus.FAILED
 
-    data = tasks.load_tasks(test_tasks)
+    data = persistence.load_tasks(test_tasks)
     task2 = next(t for t in data.tasks if t.id == "task2")
-    assert task2.status == tasks.TaskStatus.FAILED
+    assert task2.status == models.TaskStatus.FAILED
 
 
 def test_uncomplete_task_via_api(client, test_tasks):
     # Updating status of a completed task should still be allowed
     response = client.post(
-        "/api/tasks/task1/update", json={"status": tasks.TaskStatus.PENDING}
+        "/api/tasks/task1/update", json={"status": models.TaskStatus.PENDING}
     )
     assert response.status_code == 200
-    assert response.json()["status"] == tasks.TaskStatus.PENDING
+    assert response.json()["status"] == models.TaskStatus.PENDING
     assert response.json()["attempts"] == 0
 
-    data = tasks.load_tasks(test_tasks)
+    data = persistence.load_tasks(test_tasks)
     task1 = next(t for t in data.tasks if t.id == "task1")
-    assert task1.status == tasks.TaskStatus.PENDING
+    assert task1.status == models.TaskStatus.PENDING
     assert task1.attempts == 0
 
 
 def test_reopen_cancelled_task_via_api(client, test_tasks):
     # First cancel task2 (pending), then reopen it
     response = client.post(
-        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.CANCELLED}
+        "/api/tasks/task2/update", json={"status": models.TaskStatus.CANCELLED}
     )
     assert response.status_code == 200
-    assert response.json()["status"] == tasks.TaskStatus.CANCELLED
+    assert response.json()["status"] == models.TaskStatus.CANCELLED
 
     # Now reopen the cancelled task back to pending
     response = client.post(
-        "/api/tasks/task2/update", json={"status": tasks.TaskStatus.PENDING}
+        "/api/tasks/task2/update", json={"status": models.TaskStatus.PENDING}
     )
     assert response.status_code == 200
-    assert response.json()["status"] == tasks.TaskStatus.PENDING
+    assert response.json()["status"] == models.TaskStatus.PENDING
     assert response.json()["attempts"] == 0
 
 
@@ -193,15 +195,15 @@ def test_supersede_and_reopen_task_via_api(client, test_tasks):
         json={"reason": "split after timeout"},
     )
     assert response.status_code == 200
-    assert response.json()["status"] == tasks.TaskStatus.SUPERSEDED
+    assert response.json()["status"] == models.TaskStatus.SUPERSEDED
     assert response.json()["superseded_reason"] == "split after timeout"
 
     response = client.post(
         "/api/tasks/task2/update",
-        json={"status": tasks.TaskStatus.PENDING},
+        json={"status": models.TaskStatus.PENDING},
     )
     assert response.status_code == 200
-    assert response.json()["status"] == tasks.TaskStatus.PENDING
+    assert response.json()["status"] == models.TaskStatus.PENDING
     assert response.json()["superseded_reason"] is None
     assert response.json()["superseded_at"] is None
 
@@ -215,7 +217,7 @@ def test_has_log_population(client, test_tasks):
         assert task["has_runner_log"] is False
 
     # Create a runner log for task1
-    log_file = paths.get_log_file(api.app.state.tasks_file, "task1")
+    log_file = paths.get_log_file(main.app.state.tasks_file, "task1")
     log_file.write_text("Some logs")
 
     response = client.get("/api/data")
@@ -260,18 +262,18 @@ def test_api_log(client, test_tasks):
 def test_api_delete_retains_log(client, test_tasks):
     test_tasks_file = test_tasks
     # 1. Add a task
-    data = tasks.load_tasks(test_tasks_file)
+    data = persistence.load_tasks(test_tasks_file)
     task_id = "api_delete_test"
     data.tasks.append(
-        tasks.Task(
+        models.Task(
             id=task_id,
             description="api delete test",
-            status=tasks.TaskStatus.PENDING,
+            status=models.TaskStatus.PENDING,
             attempts=0,
             progress=[],
         )
     )
-    tasks.save_tasks(test_tasks_file, data)
+    persistence.save_tasks(test_tasks_file, data)
 
     # 2. Create log manually
     log_file = paths.get_log_file(test_tasks_file, task_id)
@@ -300,7 +302,7 @@ def test_api_delete_completed_cleans_up_log(client, test_tasks):
 
 def test_project_param_get_data(client, test_tasks):
     """GET /api/data?project=subdir returns data for that project."""
-    root = api.app.state.root
+    root = main.app.state.root
     subdir = root / "myproject"
     subdir.mkdir(exist_ok=True)
 
@@ -329,7 +331,7 @@ def test_project_param_get_data(client, test_tasks):
 
 def test_project_delete_completed_isolation(client, test_tasks):
     """Deleting completed tasks in root does not affect sub-projects."""
-    root = api.app.state.root
+    root = main.app.state.root
     subdir = root / "isolated"
     subdir.mkdir(exist_ok=True)
 
@@ -342,10 +344,10 @@ def test_project_delete_completed_isolation(client, test_tasks):
     assert res.status_code == 200
     task_id = res.json()["id"]
     # Mark it completed (requires progress, so use update_task directly)
-    tasks.update_task(
+    operations.update_task(
         paths.get_tasks_file_for_dir(subdir),
         task_id,
-        status=tasks.TaskStatus.COMPLETED,
+        status=models.TaskStatus.COMPLETED,
         require_progress=False,
     )
 
@@ -362,9 +364,11 @@ def test_project_delete_completed_isolation(client, test_tasks):
 def test_add_task_auto_starts_loop(client, test_tasks):
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return False
-        with patch("lemming.tasks.is_loop_running", return_value=False):
+        with patch(
+            "lemming.tasks.lifecycle.is_loop_running", return_value=False
+        ):
             # Set auto-start to True for this test
-            api.app.state.disable_auto_start = False
+            main.app.state.disable_auto_start = False
             try:
                 response = client.post(
                     "/api/tasks", json={"description": "New task"}
@@ -378,13 +382,15 @@ def test_add_task_auto_starts_loop(client, test_tasks):
                 assert "run" in cmd
                 assert str(test_tasks) in cmd
             finally:
-                api.app.state.disable_auto_start = True
+                main.app.state.disable_auto_start = True
 
 
 def test_add_task_does_not_restart_if_running(client, test_tasks):
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return True
-        with patch("lemming.tasks.is_loop_running", return_value=True):
+        with patch(
+            "lemming.tasks.lifecycle.is_loop_running", return_value=True
+        ):
             response = client.post(
                 "/api/tasks", json={"description": "New task"}
             )
@@ -396,17 +402,21 @@ def test_add_task_does_not_restart_if_running(client, test_tasks):
 
 def test_update_task_to_pending_does_not_start_loop(client, test_tasks):
     # Add a completed task
-    task = tasks.add_task(test_tasks, "Completed task")
-    tasks.add_progress(test_tasks, task.id, "Done")
-    tasks.update_task(test_tasks, task.id, status=tasks.TaskStatus.COMPLETED)
+    task = operations.add_task(test_tasks, "Completed task")
+    progress.add_progress(test_tasks, task.id, "Done")
+    operations.update_task(
+        test_tasks, task.id, status=models.TaskStatus.COMPLETED
+    )
 
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return False
-        with patch("lemming.tasks.is_loop_running", return_value=False):
+        with patch(
+            "lemming.tasks.lifecycle.is_loop_running", return_value=False
+        ):
             # Update to pending
             response = client.post(
                 f"/api/tasks/{task.id}/update",
-                json={"status": tasks.TaskStatus.PENDING},
+                json={"status": models.TaskStatus.PENDING},
             )
             assert response.status_code == 200
 
@@ -416,13 +426,17 @@ def test_update_task_to_pending_does_not_start_loop(client, test_tasks):
 
 def test_clear_task_does_not_start_loop(client, test_tasks):
     # Add a completed task
-    task = tasks.add_task(test_tasks, "Completed task")
-    tasks.add_progress(test_tasks, task.id, "Done")
-    tasks.update_task(test_tasks, task.id, status=tasks.TaskStatus.COMPLETED)
+    task = operations.add_task(test_tasks, "Completed task")
+    progress.add_progress(test_tasks, task.id, "Done")
+    operations.update_task(
+        test_tasks, task.id, status=models.TaskStatus.COMPLETED
+    )
 
     with patch("subprocess.Popen") as mock_popen:
         # Mock is_loop_running to return False
-        with patch("lemming.tasks.is_loop_running", return_value=False):
+        with patch(
+            "lemming.tasks.lifecycle.is_loop_running", return_value=False
+        ):
             # Clear task
             response = client.post(f"/api/tasks/{task.id}/clear")
             assert response.status_code == 200
@@ -432,9 +446,11 @@ def test_clear_task_does_not_start_loop(client, test_tasks):
 
 
 def test_add_task_respects_disable_auto_start(client, test_tasks):
-    api.app.state.disable_auto_start = True
+    main.app.state.disable_auto_start = True
     with patch("subprocess.Popen") as mock_popen:
-        with patch("lemming.tasks.is_loop_running", return_value=False):
+        with patch(
+            "lemming.tasks.lifecycle.is_loop_running", return_value=False
+        ):
             response = client.post(
                 "/api/tasks", json={"description": "No auto-start task"}
             )
@@ -462,12 +478,12 @@ def test_add_task_starts_loop_with_cwd(test_workspace, client):
 
 
 def test_cancel_task_endpoint(client, test_tasks):
-    with patch("lemming.tasks.cancel_task", return_value=True):
+    with patch("lemming.tasks.lifecycle.cancel_task", return_value=True):
         response = client.post("/api/tasks/task3/cancel")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
-    with patch("lemming.tasks.cancel_task", return_value=False):
+    with patch("lemming.tasks.lifecycle.cancel_task", return_value=False):
         response = client.post("/api/tasks/nonexistent/cancel")
         assert response.status_code == 404
 

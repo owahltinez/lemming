@@ -1,8 +1,9 @@
 import pytest
 from click.testing import CliRunner
 
-from lemming import tasks
+from lemming import models, persistence
 from lemming.cli import main as cli
+from lemming.tasks import limits
 
 
 @pytest.fixture
@@ -11,17 +12,17 @@ def setup_env(tmp_path):
     base_args = ["--tasks-file", str(tasks_file)]
     runner = CliRunner()
 
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="Initial goal",
         tasks=[
-            tasks.Task(
+            models.Task(
                 id="12345678",
                 description="Test task",
-                status=tasks.TaskStatus.PENDING,
+                status=models.TaskStatus.PENDING,
             )
         ],
     )
-    tasks.save_tasks(tasks_file, data)
+    persistence.save_tasks(tasks_file, data)
 
     return runner, base_args, tasks_file
 
@@ -36,7 +37,7 @@ def test_progress(setup_env):
     assert result.exit_code == 0
     assert "Progress added to task" in result.output
 
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     assert "Observed behavior X" in data.tasks[0].progress
 
 
@@ -49,7 +50,7 @@ def test_progress_reports_actionable_size_error(setup_env):
         + [
             "progress",
             "12345678",
-            "x" * (tasks.MAX_PROGRESS_ENTRY_CHARS + 1),
+            "x" * (limits.MAX_PROGRESS_ENTRY_CHARS + 1),
         ],
     )
 
@@ -57,4 +58,4 @@ def test_progress_reports_actionable_size_error(setup_env):
     assert "281 characters (limit 280)" in result.output
     assert "lemming artifact <id> <name> --file -" in result.output
     assert str(tasks_file.parent) not in result.output
-    assert tasks.load_tasks(tasks_file).tasks[0].progress == []
+    assert persistence.load_tasks(tasks_file).tasks[0].progress == []

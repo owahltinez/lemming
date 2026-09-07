@@ -5,7 +5,8 @@ import unittest
 
 import click.testing
 
-from lemming import cli, tasks
+from lemming import models, persistence
+from lemming.cli import main as cli
 
 
 class TestCLIConfig(unittest.TestCase):
@@ -20,11 +21,11 @@ class TestCLIConfig(unittest.TestCase):
         ]
 
         # Scaffold a valid file
-        data = tasks.Roadmap(
+        data = models.Roadmap(
             goal="Initial goal",
             tasks=[],
         )
-        tasks.save_tasks(self.test_tasks_file, data)
+        persistence.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -45,7 +46,7 @@ class TestCLIConfig(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Updated runner to new-runner", result.output)
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         self.assertEqual(data.config.runner, "new-runner")
 
 
@@ -59,7 +60,7 @@ class TestCLIConfigModel(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
-        tasks.save_tasks(self.test_tasks_file, tasks.Roadmap(goal="g"))
+        persistence.save_tasks(self.test_tasks_file, models.Roadmap(goal="g"))
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -71,7 +72,7 @@ class TestCLIConfigModel(unittest.TestCase):
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         self.assertEqual(data.config.model, "fast-model")
 
     def test_switching_runner_preserves_model(self):
@@ -84,7 +85,7 @@ class TestCLIConfigModel(unittest.TestCase):
             cli.cli, self.base_args + ["config", "set", "runner", "codex"]
         )
 
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         self.assertEqual(data.config.runner, "codex")
         self.assertEqual(data.config.model, "fast-model")
 
@@ -98,7 +99,7 @@ class TestCLIConfigModel(unittest.TestCase):
             cli.cli, self.base_args + ["config", "set", "model", "default"]
         )
 
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         self.assertIsNone(data.config.model)
 
     def test_config_list_shows_model(self):

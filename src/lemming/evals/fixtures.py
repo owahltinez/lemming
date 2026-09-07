@@ -8,7 +8,7 @@ any source drift caused by the agent under eval with plain git status.
 import pathlib
 import subprocess
 
-from .. import models, tasks
+from .. import models, persistence
 
 TASKS_FILE_NAME = "tasks.yml"
 
@@ -103,12 +103,12 @@ def tasks_file(workspace: pathlib.Path) -> pathlib.Path:
 
 def save_roadmap(workspace: pathlib.Path, roadmap: models.Roadmap) -> None:
     """Persists a roadmap to the workspace tasks file."""
-    tasks.save_tasks(tasks_file(workspace), roadmap)
+    persistence.save_tasks(tasks_file(workspace), roadmap)
 
 
 def load_roadmap(workspace: pathlib.Path) -> models.Roadmap:
     """Loads the roadmap from the workspace tasks file."""
-    return tasks.load_tasks(tasks_file(workspace))
+    return persistence.load_tasks(tasks_file(workspace))
 
 
 def dirty_paths(workspace: pathlib.Path) -> list[str]:

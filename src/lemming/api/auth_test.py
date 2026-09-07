@@ -1,17 +1,17 @@
 import fastapi.testclient
 
-from lemming import api
+from lemming.api import main
 
 
 def test_share_token_middleware():
     # Setup test client
-    original_token = getattr(api.app.state, "share_token", None)
+    original_token = getattr(main.app.state, "share_token", None)
     try:
-        api.app.state.share_token = "secret123"
+        main.app.state.share_token = "secret123"
         # We need a fresh client for each test that modifies app state
         # middleware if it uses the app state, but here TestClient is
-        # created with api.app
-        client = fastapi.testclient.TestClient(api.app)
+        # created with main.app
+        client = fastapi.testclient.TestClient(main.app)
 
         # Missing token -> 401
         response = client.get("/api/data")
@@ -36,15 +36,15 @@ def test_share_token_middleware():
             assert response.status_code == 401, host
     finally:
         # Restore
-        api.app.state.share_token = original_token
+        main.app.state.share_token = original_token
 
 
 def test_share_token_middleware_rejects_exotic_tokens():
     """Odd tokens must be rejected, not crash the comparison."""
-    original_token = getattr(api.app.state, "share_token", None)
+    original_token = getattr(main.app.state, "share_token", None)
     try:
-        api.app.state.share_token = "secret123"
-        client = fastapi.testclient.TestClient(api.app)
+        main.app.state.share_token = "secret123"
+        client = fastapi.testclient.TestClient(main.app)
 
         # Non-ASCII and differing lengths must stay a clean 401. A digest
         # comparison rejects both only if the values are encoded first.
@@ -53,15 +53,15 @@ def test_share_token_middleware_rejects_exotic_tokens():
             assert response.status_code == 401, token
     finally:
         # Restore
-        api.app.state.share_token = original_token
+        main.app.state.share_token = original_token
 
 
 def test_share_token_middleware_inert_without_token():
     """Local (non-tunnel) mode sets no share token, so nothing is required."""
-    original_token = getattr(api.app.state, "share_token", None)
+    original_token = getattr(main.app.state, "share_token", None)
     try:
-        api.app.state.share_token = None
-        client = fastapi.testclient.TestClient(api.app)
+        main.app.state.share_token = None
+        client = fastapi.testclient.TestClient(main.app)
 
         response = client.get("/api/data")
         assert response.status_code == 200
@@ -70,4 +70,4 @@ def test_share_token_middleware_inert_without_token():
         )
     finally:
         # Restore
-        api.app.state.share_token = original_token
+        main.app.state.share_token = original_token

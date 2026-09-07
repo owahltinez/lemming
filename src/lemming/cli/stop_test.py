@@ -10,7 +10,8 @@ from unittest import mock
 
 import click.testing
 
-from lemming import cli, shutdown, tasks
+from lemming import models, persistence, shutdown
+from lemming.cli import main as cli
 
 _WAIT_TARGET = "lemming.cli.operations._wait_for_loop_exit"
 
@@ -21,15 +22,15 @@ class TestCLIStop(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.tasks_file = pathlib.Path(self.test_dir) / "tasks.yml"
         self.base_args = ["--tasks-file", str(self.tasks_file)]
-        tasks.save_tasks(
+        persistence.save_tasks(
             self.tasks_file,
-            tasks.Roadmap(
+            models.Roadmap(
                 goal="g",
                 tasks=[
-                    tasks.Task(
+                    models.Task(
                         id="task1",
                         description="running task",
-                        status=tasks.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.IN_PROGRESS,
                         pid=424242,
                     )
                 ],
@@ -53,7 +54,7 @@ class TestCLIStop(unittest.TestCase):
 
     def test_sends_terminate_signal_to_the_loop(self):
         """The default stop asks the loop to shut down immediately."""
-        tasks.acquire_loop_lock(self.tasks_file)
+        persistence.acquire_loop_lock(self.tasks_file)
         try:
             with (
                 mock.patch("os.kill") as mock_kill,
@@ -61,38 +62,38 @@ class TestCLIStop(unittest.TestCase):
             ):
                 result = self._invoke()
         finally:
-            tasks.release_loop_lock(self.tasks_file)
+            persistence.release_loop_lock(self.tasks_file)
 
         self.assertEqual(result.exit_code, 0, result.output)
         mock_kill.assert_any_call(os.getpid(), signal.SIGTERM)
 
     def test_after_current_task_sends_drain_signal(self):
         """Draining leaves the running task alone."""
-        tasks.acquire_loop_lock(self.tasks_file)
+        persistence.acquire_loop_lock(self.tasks_file)
         try:
             with mock.patch("os.kill") as mock_kill:
                 result = self._invoke("--after-current-task")
         finally:
-            tasks.release_loop_lock(self.tasks_file)
+            persistence.release_loop_lock(self.tasks_file)
 
         self.assertEqual(result.exit_code, 0, result.output)
         mock_kill.assert_any_call(os.getpid(), shutdown.DRAIN_SIGNAL)
 
     def test_drain_does_not_strand_the_running_task(self):
         """A drain must not touch the in-flight task's state."""
-        tasks.acquire_loop_lock(self.tasks_file)
+        persistence.acquire_loop_lock(self.tasks_file)
         try:
             with mock.patch("os.kill"):
                 self._invoke("--after-current-task")
         finally:
-            tasks.release_loop_lock(self.tasks_file)
+            persistence.release_loop_lock(self.tasks_file)
 
-        task = tasks.load_tasks(self.tasks_file).tasks[0]
-        self.assertEqual(task.status, tasks.TaskStatus.IN_PROGRESS)
+        task = persistence.load_tasks(self.tasks_file).tasks[0]
+        self.assertEqual(task.status, models.TaskStatus.IN_PROGRESS)
 
     def test_immediate_stop_releases_the_queue(self):
         """A stopped task returns to pending instead of blocking the queue."""
-        tasks.acquire_loop_lock(self.tasks_file)
+        persistence.acquire_loop_lock(self.tasks_file)
         try:
             with (
                 mock.patch("os.kill"),
@@ -100,11 +101,11 @@ class TestCLIStop(unittest.TestCase):
             ):
                 result = self._invoke()
         finally:
-            tasks.release_loop_lock(self.tasks_file)
+            persistence.release_loop_lock(self.tasks_file)
 
         self.assertEqual(result.exit_code, 0, result.output)
-        task = tasks.load_tasks(self.tasks_file).tasks[0]
-        self.assertEqual(task.status, tasks.TaskStatus.PENDING)
+        task = persistence.load_tasks(self.tasks_file).tasks[0]
+        self.assertEqual(task.status, models.TaskStatus.PENDING)
         self.assertIsNone(task.pid)
 
 

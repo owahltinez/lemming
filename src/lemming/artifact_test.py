@@ -7,7 +7,9 @@ import unittest
 
 import click.testing
 
-from lemming import cli, models, paths, prompts, tasks
+from lemming import models, paths, persistence, prompts
+from lemming.cli import main as cli
+from lemming.tasks import lifecycle, limits, operations
 
 TRACE = "Traceback (most recent call last):\nAssertionError: boom"
 
@@ -22,7 +24,7 @@ class TestTaskArtifacts(unittest.TestCase):
             goal="Ship it",
             tasks=[models.Task(id="task1", description="Fix the thing")],
         )
-        tasks.save_tasks(self.tasks_file, self.data)
+        persistence.save_tasks(self.tasks_file, self.data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -53,7 +55,7 @@ class TestTaskArtifacts(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0, result.output)
 
-        entry = tasks.load_tasks(self.tasks_file).tasks[0].progress[0]
+        entry = persistence.load_tasks(self.tasks_file).tasks[0].progress[0]
         self.assertTrue(entry.startswith("suite fails (see "))
         self.assertIn("task1-artifacts/pytest.log", entry)
 
@@ -64,14 +66,14 @@ class TestTaskArtifacts(unittest.TestCase):
             "pytest.log",
             TRACE,
             "--note",
-            "x" * tasks.MAX_PROGRESS_ENTRY_CHARS,
+            "x" * limits.MAX_PROGRESS_ENTRY_CHARS,
         )
 
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Shorten --note", result.output)
         self.assertEqual(paths.list_artifacts(self.tasks_file, "task1"), [])
         self.assertEqual(
-            tasks.load_tasks(self.tasks_file).tasks[0].progress, []
+            persistence.load_tasks(self.tasks_file).tasks[0].progress, []
         )
 
     def test_rejects_content_without_a_name(self):
@@ -128,10 +130,10 @@ class TestTaskArtifacts(unittest.TestCase):
         self._invoke("artifact", "task1", "pytest.log", TRACE)
         artifacts = paths.get_artifacts_dir(self.tasks_file, "task1")
 
-        tasks.reset_task_logs(self.tasks_file, "task1")
+        lifecycle.reset_task_logs(self.tasks_file, "task1")
         self.assertTrue((artifacts / "pytest.log").exists())
 
-        tasks.delete_tasks(self.tasks_file, task_id="task1", force=True)
+        operations.delete_tasks(self.tasks_file, task_id="task1", force=True)
         self.assertFalse((artifacts / "pytest.log").exists())
 
 

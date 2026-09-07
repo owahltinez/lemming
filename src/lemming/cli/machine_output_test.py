@@ -8,7 +8,8 @@ import unittest
 
 import click.testing
 
-from lemming import cli, paths, tasks
+from lemming import models, paths, persistence
+from lemming.cli import main as cli
 
 LONG_DESCRIPTION = "x" * 1500
 
@@ -19,21 +20,21 @@ class TestMachineOutput(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.tasks_file = pathlib.Path(self.test_dir) / "tasks.yml"
         self.base_args = ["--tasks-file", str(self.tasks_file)]
-        tasks.save_tasks(
+        persistence.save_tasks(
             self.tasks_file,
-            tasks.Roadmap(
+            models.Roadmap(
                 goal="Ship it",
                 tasks=[
-                    tasks.Task(
+                    models.Task(
                         id="task1",
                         description=LONG_DESCRIPTION,
-                        status=tasks.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.IN_PROGRESS,
                         model="fast-model",
                         resolved_command="agy --model fast-model",
                     ),
-                    tasks.Task(id="task2", description=LONG_DESCRIPTION),
+                    models.Task(id="task2", description=LONG_DESCRIPTION),
                 ],
-                config=tasks.RoadmapConfig(runner="agy", model="fast-model"),
+                config=models.RoadmapConfig(runner="agy", model="fast-model"),
             ),
         )
 
