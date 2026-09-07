@@ -1,3 +1,4 @@
+import logging.config
 import pathlib
 import shutil
 import tempfile
@@ -7,7 +8,9 @@ from unittest import mock
 
 import click.testing
 
-from lemming import cli, tasks
+from lemming import models, persistence
+from lemming.cli import main as cli
+from lemming.cli import operations
 
 
 class TestCLIOperations(unittest.TestCase):
@@ -22,11 +25,11 @@ class TestCLIOperations(unittest.TestCase):
         ]
 
         # Scaffold a valid file
-        data = tasks.Roadmap(
+        data = models.Roadmap(
             goal="Initial goal",
             tasks=[],
         )
-        tasks.save_tasks(self.test_tasks_file, data)
+        persistence.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -43,21 +46,21 @@ class TestCLIOperations(unittest.TestCase):
         self.assertIn("All tasks completed!", result.output)
 
     def test_run_blocked_queue_exits_nonzero(self):
-        tasks.save_tasks(
+        persistence.save_tasks(
             self.test_tasks_file,
-            tasks.Roadmap(
+            models.Roadmap(
                 tasks=[
-                    tasks.Task(
+                    models.Task(
                         id="active123",
                         description="Active task",
-                        status=tasks.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.IN_PROGRESS,
                         pid=1234,
                         last_heartbeat=time.time(),
                     ),
-                    tasks.Task(
+                    models.Task(
                         id="pending456",
                         description="Pending task",
-                        status=tasks.TaskStatus.PENDING,
+                        status=models.TaskStatus.PENDING,
                     ),
                 ]
             ),
@@ -74,11 +77,11 @@ class TestCLIOperations(unittest.TestCase):
         self.assertNotIn("All tasks completed!", result.output)
 
     def test_run_rejects_live_loop_owner(self):
-        tasks.acquire_loop_lock(self.test_tasks_file)
+        persistence.acquire_loop_lock(self.test_tasks_file)
         try:
             result = self.cli_runner.invoke(cli.cli, self.base_args + ["run"])
         finally:
-            tasks.release_loop_lock(self.test_tasks_file)
+            persistence.release_loop_lock(self.test_tasks_file)
 
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Another loop is already running", result.output)
@@ -87,6 +90,16 @@ class TestCLIOperations(unittest.TestCase):
         result = self.cli_runner.invoke(cli.cli, ["serve", "--help"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Launches the local web dashboard", result.output)
+
+
+class TestQuietPollLogConfig(unittest.TestCase):
+    def test_filter_path_resolves(self):
+        """`serve` names the filter by string; nothing else resolves it."""
+        log_config = operations.quiet_poll_log_config()
+        factory = log_config["filters"]["quiet_poll"]["()"]
+
+        # resolve() is what dictConfig calls, minus the global side effects.
+        logging.config.BaseConfigurator({}).resolve(factory)
 
 
 if __name__ == "__main__":

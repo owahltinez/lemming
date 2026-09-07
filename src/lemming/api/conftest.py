@@ -10,13 +10,14 @@ import time
 import fastapi.testclient
 import pytest
 
-from lemming import api, paths, tasks
+from lemming import models, paths, persistence
+from lemming.api import main
 
 
 @pytest.fixture
 def client():
     """A TestClient bound to the lemming FastAPI app."""
-    return fastapi.testclient.TestClient(api.app)
+    return fastapi.testclient.TestClient(main.app)
 
 
 @pytest.fixture
@@ -27,28 +28,28 @@ def test_tasks():
     test_tasks_file = pathlib.Path(test_dir) / "tasks_test.yml"
 
     # Scaffold a valid file
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="Initial goal",
         tasks=[
-            tasks.Task(
+            models.Task(
                 id="task1",
                 description="Completed Task",
-                status=tasks.TaskStatus.COMPLETED,
+                status=models.TaskStatus.COMPLETED,
                 attempts=1,
                 progress=["All good"],
                 completed_at=123456789.0,
             ),
-            tasks.Task(
+            models.Task(
                 id="task2",
                 description="Pending Task",
-                status=tasks.TaskStatus.PENDING,
+                status=models.TaskStatus.PENDING,
                 attempts=0,
                 progress=[],
             ),
-            tasks.Task(
+            models.Task(
                 id="task3",
                 description="In Progress Task",
-                status=tasks.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.IN_PROGRESS,
                 attempts=1,
                 progress=[],
                 pid=os.getpid(),
@@ -56,22 +57,22 @@ def test_tasks():
             ),
         ],
     )
-    tasks.save_tasks(test_tasks_file, data)
+    persistence.save_tasks(test_tasks_file, data)
 
     # Override the TASKS_FILE and root in the api module
-    original_tasks_file = api.app.state.tasks_file
-    original_root = api.app.state.root
-    original_auto_start = api.app.state.disable_auto_start
-    api.app.state.tasks_file = test_tasks_file
-    api.app.state.root = pathlib.Path(test_dir).resolve()
-    api.app.state.disable_auto_start = True
+    original_tasks_file = main.app.state.tasks_file
+    original_root = main.app.state.root
+    original_auto_start = main.app.state.disable_auto_start
+    main.app.state.tasks_file = test_tasks_file
+    main.app.state.root = pathlib.Path(test_dir).resolve()
+    main.app.state.disable_auto_start = True
 
     yield test_tasks_file
 
     # Restore the originals
-    api.app.state.tasks_file = original_tasks_file
-    api.app.state.root = original_root
-    api.app.state.disable_auto_start = original_auto_start
+    main.app.state.tasks_file = original_tasks_file
+    main.app.state.root = original_root
+    main.app.state.disable_auto_start = original_auto_start
     shutil.rmtree(test_dir)
 
 
@@ -81,9 +82,9 @@ def git_repo():
     # Create a temporary directory and initialize a git repo
     test_dir = tempfile.mkdtemp()
     orig_cwd = os.getcwd()
-    original_root = api.app.state.root
+    original_root = main.app.state.root
     os.chdir(test_dir)
-    api.app.state.root = pathlib.Path(test_dir).resolve()
+    main.app.state.root = pathlib.Path(test_dir).resolve()
 
     # Clear cached git repo check from previous tests
     paths.in_git_repo.cache_clear()
@@ -114,7 +115,7 @@ def git_repo():
     # Clear cached git repo check and restore cwd
     paths.in_git_repo.cache_clear()
     os.chdir(orig_cwd)
-    api.app.state.root = original_root
+    main.app.state.root = original_root
     shutil.rmtree(test_dir)
 
 
@@ -123,9 +124,9 @@ def non_git_dir():
     """A temporary directory that is NOT a git repo."""
     test_dir = tempfile.mkdtemp()
     orig_cwd = os.getcwd()
-    original_root = api.app.state.root
+    original_root = main.app.state.root
     os.chdir(test_dir)
-    api.app.state.root = pathlib.Path(test_dir).resolve()
+    main.app.state.root = pathlib.Path(test_dir).resolve()
 
     # Clear cached git repo check
     paths.in_git_repo.cache_clear()
@@ -138,7 +139,7 @@ def non_git_dir():
 
     paths.in_git_repo.cache_clear()
     os.chdir(orig_cwd)
-    api.app.state.root = original_root
+    main.app.state.root = original_root
     shutil.rmtree(test_dir)
 
 
@@ -148,14 +149,14 @@ def temp_repo(tmp_path, monkeypatch):
     root = tmp_path / "repo"
     root.mkdir()
 
-    # Mock api.app.state.root
-    original_root = api.app.state.root
-    api.app.state.root = root
+    # Mock main.app.state.root
+    original_root = main.app.state.root
+    main.app.state.root = root
 
     yield root
 
     # Restore original root
-    api.app.state.root = original_root
+    main.app.state.root = original_root
 
 
 @pytest.fixture
@@ -170,31 +171,31 @@ def test_workspace():
 
     # Set up some tasks in the subproject
     sub_tasks_file = subproject_dir / "tasks.yml"
-    data = tasks.Roadmap(
+    data = models.Roadmap(
         goal="Subproject goal",
         tasks=[
-            tasks.Task(
+            models.Task(
                 id="sub1",
                 description="Sub Task 1",
-                status=tasks.TaskStatus.PENDING,
+                status=models.TaskStatus.PENDING,
             ),
         ],
     )
-    tasks.save_tasks(sub_tasks_file, data)
+    persistence.save_tasks(sub_tasks_file, data)
 
     # Override app state
-    original_root = api.app.state.root
-    original_tasks_file = api.app.state.tasks_file
-    original_auto_start = api.app.state.disable_auto_start
+    original_root = main.app.state.root
+    original_tasks_file = main.app.state.tasks_file
+    original_auto_start = main.app.state.disable_auto_start
 
-    api.app.state.root = root_dir
-    api.app.state.tasks_file = root_dir / "tasks.yml"
-    api.app.state.disable_auto_start = False  # Enable auto-start for testing
+    main.app.state.root = root_dir
+    main.app.state.tasks_file = root_dir / "tasks.yml"
+    main.app.state.disable_auto_start = False  # Enable auto-start for testing
 
     yield root_dir, subproject_dir
 
     # Restore app state
-    api.app.state.root = original_root
-    api.app.state.tasks_file = original_tasks_file
-    api.app.state.disable_auto_start = original_auto_start
+    main.app.state.root = original_root
+    main.app.state.tasks_file = original_tasks_file
+    main.app.state.disable_auto_start = original_auto_start
     shutil.rmtree(root_dir)

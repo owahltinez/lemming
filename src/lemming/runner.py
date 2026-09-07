@@ -11,7 +11,8 @@ import threading
 import time
 from typing import Callable
 
-from . import paths, tasks
+from . import paths, persistence
+from .tasks import lifecycle, progress
 
 logger = logging.getLogger(__name__)
 
@@ -653,7 +654,7 @@ def run_with_heartbeat(
     # must take it down; see the except clause below.
     try:
         try:
-            tasks.mark_execution_started(tasks_file, task_id, component)
+            lifecycle.mark_execution_started(tasks_file, task_id, component)
         except Exception:
             logger.warning(
                 "Could not mark %s execution as active for task %s",
@@ -663,7 +664,7 @@ def run_with_heartbeat(
             )
 
         # Heartbeat and cancellation management
-        is_claimed = tasks.update_heartbeat(
+        is_claimed = lifecycle.update_heartbeat(
             tasks_file, task_id, pid=process.pid
         )
         start_time = execution_started
@@ -673,7 +674,7 @@ def run_with_heartbeat(
             nonlocal timed_out
             while process.poll() is None:
                 try:
-                    if not tasks.update_heartbeat(tasks_file, task_id):
+                    if not lifecycle.update_heartbeat(tasks_file, task_id):
                         # Task was cancelled or finished.
                         _kill_process_tree(process)
                         return
@@ -683,7 +684,7 @@ def run_with_heartbeat(
                         elapsed = time.monotonic() - start_time
                         if elapsed >= time_limit * 60:
                             timed_out = True
-                            tasks.add_progress(
+                            progress.add_progress(
                                 tasks_file,
                                 task_id,
                                 f"Task killed: time limit of {time_limit}"
@@ -691,7 +692,7 @@ def run_with_heartbeat(
                             )
                             _kill_process_tree(process)
                             return
-                except tasks.CorruptedTasksError:
+                except persistence.CorruptedTasksError:
                     # This thread owns cancellation and the time limit, so
                     # letting it die would leave the child running
                     # unsupervised and unkillable. Stop the process and let
@@ -704,7 +705,7 @@ def run_with_heartbeat(
                     _kill_process_tree(process)
                     return
 
-                time.sleep(tasks.STALE_THRESHOLD // 2)
+                time.sleep(persistence.STALE_THRESHOLD // 2)
 
         if is_claimed:
             heartbeat_thread = threading.Thread(
@@ -742,7 +743,7 @@ def run_with_heartbeat(
         raise
     finally:
         try:
-            tasks.record_execution_time(
+            lifecycle.record_execution_time(
                 tasks_file,
                 task_id,
                 component,

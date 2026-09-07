@@ -11,7 +11,9 @@ def test_start_loop_if_needed_already_running():
     app_state.disable_auto_start = False
     tasks_file = pathlib.Path("/tmp/tasks.yml")
 
-    with mock.patch("lemming.tasks.is_loop_running", return_value=True):
+    with mock.patch(
+        "lemming.tasks.lifecycle.is_loop_running", return_value=True
+    ):
         with mock.patch("subprocess.Popen") as mock_popen:
             loop.start_loop_if_needed(app_state, tasks_file)
             mock_popen.assert_not_called()
@@ -22,7 +24,9 @@ def test_start_loop_if_needed_disabled():
     app_state.disable_auto_start = True
     tasks_file = pathlib.Path("/tmp/tasks.yml")
 
-    with mock.patch("lemming.tasks.is_loop_running", return_value=False):
+    with mock.patch(
+        "lemming.tasks.lifecycle.is_loop_running", return_value=False
+    ):
         with mock.patch("subprocess.Popen") as mock_popen:
             loop.start_loop_if_needed(app_state, tasks_file)
             mock_popen.assert_not_called()
@@ -37,7 +41,9 @@ def test_start_loop_if_needed_starts_process(tmp_path):
     persistence.save_tasks(tasks_file, models.Roadmap())
     cwd = pathlib.Path("/tmp/cwd")
 
-    with mock.patch("lemming.tasks.is_loop_running", return_value=False):
+    with mock.patch(
+        "lemming.tasks.lifecycle.is_loop_running", return_value=False
+    ):
         with mock.patch("subprocess.Popen") as mock_popen:
             loop.start_loop_if_needed(app_state, tasks_file, cwd=cwd)
 

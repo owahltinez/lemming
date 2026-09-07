@@ -1,11 +1,11 @@
 import logging
 
-from lemming import api
+from lemming.api import logging as lemming_logging
 
 
 def test_quiet_poll_filter():
     """QuietPollFilter suppresses access-log lines for polling endpoints."""
-    filt = api.QuietPollFilter()
+    filt = lemming_logging.QuietPollFilter()
 
     # Simulate a uvicorn access-log record for the polling endpoints.
     for path in ("/api/data", "/api/files/burger", "/api/files"):

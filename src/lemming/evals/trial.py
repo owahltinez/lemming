@@ -14,9 +14,10 @@ import pathlib
 
 import click
 
-from .. import models, runner, tasks
-from ..cli import cli as lemming_cli
+from .. import models, runner
+from ..cli.main import cli as lemming_cli
 from ..orchestrator import run_hooks
+from ..tasks import lifecycle, operations
 
 
 def _write_result(
@@ -138,9 +139,11 @@ def _run_hook(
     )
 
     # Mirror orchestrator._process_exhausted_retries before the hook.
-    tasks.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
     if final_status == models.TaskStatus.FAILED:
-        tasks.update_task(tasks_file, task_id, status=models.TaskStatus.FAILED)
+        operations.update_task(
+            tasks_file, task_id, status=models.TaskStatus.FAILED
+        )
 
     return run_hooks(
         tasks_file,

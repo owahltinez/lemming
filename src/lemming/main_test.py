@@ -6,7 +6,7 @@ from unittest import mock
 
 import click.testing
 
-from lemming import main, tasks
+from lemming import main, models, persistence
 
 
 class TestMain(unittest.TestCase):
@@ -17,19 +17,19 @@ class TestMain(unittest.TestCase):
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
 
         # Scaffold a valid file
-        data = tasks.Roadmap(
+        data = models.Roadmap(
             goal="Initial goal",
             tasks=[
-                tasks.Task(
+                models.Task(
                     id="12345678",
                     description="Initial Task",
-                    status=tasks.TaskStatus.PENDING,
+                    status=models.TaskStatus.PENDING,
                     attempts=0,
                     progress=[],
                 )
             ],
         )
-        tasks.save_tasks(self.test_tasks_file, data)
+        persistence.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)

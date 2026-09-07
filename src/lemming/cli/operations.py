@@ -11,12 +11,32 @@ import time
 
 import click
 
-from .. import paths, providers, shutdown, tasks
+from .. import models, paths, persistence, providers, shutdown
 from ..orchestrator import parse_timeout, run_loop
+from ..tasks import lifecycle, queries
 from .main import cli
 
 # How long `lemming stop` waits for the loop to shut down before giving up.
 LOOP_EXIT_TIMEOUT = 30.0
+
+
+def quiet_poll_log_config() -> dict:
+    """Builds uvicorn's log config with UI polling endpoints suppressed.
+
+    The filter is named by dotted path, which nothing resolves until the
+    server boots, so this lives at module level for a test to check.
+
+    Returns:
+        A uvicorn logging config dict with the quiet_poll filter attached.
+    """
+    import uvicorn.config  # noqa: PLC0415
+
+    log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    log_config["filters"] = {
+        "quiet_poll": {"()": "lemming.api.logging.QuietPollFilter"},
+    }
+    log_config["handlers"]["access"]["filters"] = ["quiet_poll"]
+    return log_config
 
 
 @cli.command(
@@ -78,8 +98,8 @@ def run(
 
     completed = False
     try:
-        tasks.acquire_loop_lock(tasks_file)
-    except tasks.LoopAlreadyRunningError as e:
+        persistence.acquire_loop_lock(tasks_file)
+    except persistence.LoopAlreadyRunningError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
     try:
@@ -93,7 +113,7 @@ def run(
             working_dir=working_dir,
         )
     finally:
-        tasks.release_loop_lock(tasks_file)
+        persistence.release_loop_lock(tasks_file)
     if not completed:
         ctx.exit(1)
 
@@ -110,10 +130,10 @@ def _wait_for_loop_exit(pid: int, timeout: float = LOOP_EXIT_TIMEOUT) -> bool:
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not tasks.is_pid_alive(pid):
+        if not lifecycle.is_pid_alive(pid):
             return True
         time.sleep(0.1)
-    return not tasks.is_pid_alive(pid)
+    return not lifecycle.is_pid_alive(pid)
 
 
 def _release_stopped_tasks(tasks_file: pathlib.Path) -> list[str]:
@@ -131,12 +151,13 @@ def _release_stopped_tasks(tasks_file: pathlib.Path) -> list[str]:
     now = time.time()
     reverted = []
 
-    for task in tasks.load_tasks(tasks_file).tasks:
+    for task in persistence.load_tasks(tasks_file).tasks:
         is_unfinished = (
-            task.status == tasks.TaskStatus.IN_PROGRESS or task.requested_status
+            task.status == models.TaskStatus.IN_PROGRESS
+            or task.requested_status
         )
-        if is_unfinished and not tasks.is_task_active(task, now):
-            tasks.revert_task_to_pending(tasks_file, task.id)
+        if is_unfinished and not lifecycle.is_task_active(task, now):
+            lifecycle.revert_task_to_pending(tasks_file, task.id)
             reverted.append(task.id)
 
     return reverted
@@ -158,8 +179,8 @@ def stop(ctx: click.Context, after_current_task: bool) -> None:
     """
     tasks_file = ctx.obj["TASKS_FILE"]
 
-    loop_pid = tasks.get_loop_pid(tasks_file)
-    if loop_pid is None or not tasks.is_pid_alive(loop_pid):
+    loop_pid = persistence.get_loop_pid(tasks_file)
+    if loop_pid is None or not lifecycle.is_pid_alive(loop_pid):
         click.echo("No orchestrator loop is running.")
         return
 
@@ -220,11 +241,11 @@ def serve(
     import uvicorn  # noqa: PLC0415
     import uvicorn.config  # noqa: PLC0415
 
-    from .. import api  # noqa: PLC0415
+    from ..api import main as api_main  # noqa: PLC0415
 
-    api.app.state.tasks_file = ctx.obj["TASKS_FILE"]
-    api.app.state.verbose = ctx.obj["VERBOSE"]
-    api.app.state.root = pathlib.Path.cwd().resolve()
+    api_main.app.state.tasks_file = ctx.obj["TASKS_FILE"]
+    api_main.app.state.verbose = ctx.obj["VERBOSE"]
+    api_main.app.state.root = pathlib.Path.cwd().resolve()
 
     tunnel_proc = None
     if tunnel:
@@ -245,7 +266,7 @@ def serve(
             sys.exit(1)
 
         token = secrets.token_urlsafe(32)
-        api.app.state.share_token = token
+        api_main.app.state.share_token = token
 
         click.echo("[ Lemming ] ")
         click.echo("[ Lemming ] ⚠️  SECURITY WARNING ")
@@ -286,11 +307,11 @@ def serve(
             if tunnel_proc:
                 tunnel_proc.stop()
 
-            tasks_file = api.app.state.tasks_file
+            tasks_file = api_main.app.state.tasks_file
             while True:
                 try:
-                    project_data = tasks.get_project_data(tasks_file)
-                except tasks.CorruptedTasksError as e:
+                    project_data = queries.get_project_data(tasks_file)
+                except persistence.CorruptedTasksError as e:
                     # This runs in a daemon thread: without this the shutdown
                     # would die with a traceback and leave the server up. Exit
                     # here rather than breaking out, so the shutdown does not
@@ -313,15 +334,10 @@ def serve(
             " shut down the server."
         )
 
-    # Suppress repetitive access-log lines from UI polling endpoints.
-    log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
-    log_config["filters"] = {
-        "quiet_poll": {"()": "lemming.api.QuietPollFilter"},
-    }
-    log_config["handlers"]["access"]["filters"] = ["quiet_poll"]
+    log_config = quiet_poll_log_config()
 
     try:
-        uvicorn.run(api.app, host=host, port=port, log_config=log_config)
+        uvicorn.run(api_main.app, host=host, port=port, log_config=log_config)
     except KeyboardInterrupt:
         pass
     finally:

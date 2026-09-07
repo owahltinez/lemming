@@ -2,7 +2,7 @@
 
 from agentcli import refresh_skill
 
-from .cli import cli
+from .cli.main import cli
 
 
 def main() -> None:

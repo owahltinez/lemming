@@ -4,7 +4,8 @@ import typing
 
 import click
 
-from .. import paths, tasks
+from .. import models, paths, persistence
+from ..tasks import limits, progress, queries
 from .main import cli
 
 
@@ -59,10 +60,10 @@ def artifact(
     """
     tasks_file = ctx.obj["TASKS_FILE"]
 
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     try:
-        target = tasks.resolve_task(data.tasks, task_id)
-    except (tasks.TaskNotFoundError, tasks.AmbiguousTaskIdError) as e:
+        target = queries.resolve_task(data.tasks, task_id)
+    except (models.TaskNotFoundError, models.AmbiguousTaskIdError) as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
 
@@ -119,10 +120,10 @@ def artifact(
     # An over-long pointer is caught before the write so the common mistake
     # does not leave a stale artifact behind.
     pointer = f"{note.strip()} (see {artifact_file})" if note else ""
-    if pointer and len(pointer) > tasks.MAX_PROGRESS_ENTRY_CHARS:
+    if pointer and len(pointer) > limits.MAX_PROGRESS_ENTRY_CHARS:
         click.echo(
             f"Error: Progress note would be {len(pointer):,} characters "
-            f"(limit {tasks.MAX_PROGRESS_ENTRY_CHARS:,}). Shorten --note; "
+            f"(limit {limits.MAX_PROGRESS_ENTRY_CHARS:,}). Shorten --note; "
             "the artifact itself has no cap."
         )
         ctx.exit(1)
@@ -133,7 +134,7 @@ def artifact(
 
     if pointer:
         try:
-            tasks.add_progress(tasks_file, target.id, pointer)
+            progress.add_progress(tasks_file, target.id, pointer)
         except ValueError as e:
             click.echo(f"Error: {e}")
             ctx.exit(1)

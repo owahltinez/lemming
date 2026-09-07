@@ -12,9 +12,6 @@ from . import limits
 
 logger = logging.getLogger(__name__)
 
-# Re-export constants for internal/external use
-STALE_THRESHOLD = persistence.STALE_THRESHOLD
-
 # Grace period after SIGTERM before escalating to SIGKILL.
 KILL_GRACE_SECONDS = 5
 
@@ -159,7 +156,7 @@ def is_task_active(task: models.Task, now: float) -> bool:
         return False
 
     last_heartbeat = task.last_heartbeat or 0
-    if now - last_heartbeat > STALE_THRESHOLD:
+    if now - last_heartbeat > persistence.STALE_THRESHOLD:
         return False
 
     return True

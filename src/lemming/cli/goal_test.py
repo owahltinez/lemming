@@ -5,7 +5,8 @@ import unittest
 
 import click.testing
 
-from lemming import cli, tasks
+from lemming import models, persistence
+from lemming.cli import main as cli
 
 
 class TestCLIGoal(unittest.TestCase):
@@ -20,11 +21,11 @@ class TestCLIGoal(unittest.TestCase):
         ]
 
         # Scaffold a valid file
-        data = tasks.Roadmap(
+        data = models.Roadmap(
             goal="Initial goal",
             tasks=[],
         )
-        tasks.save_tasks(self.test_tasks_file, data)
+        persistence.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -41,7 +42,7 @@ class TestCLIGoal(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Long-term goal updated.", result.output)
 
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         self.assertEqual(data.goal, "Updated goal via CLI")
 
 

@@ -7,7 +7,8 @@ import sys
 import fastapi
 import pydantic
 
-from .. import models, tasks
+from .. import models, persistence
+from ..tasks import operations
 from . import context
 
 router = fastapi.APIRouter()
@@ -25,22 +26,22 @@ def update_goal(
 ):
     """Update the long-term goal shared with all task runners."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
-    tasks.update_goal(tasks_file, update.get("goal", ""))
+    operations.update_goal(tasks_file, update.get("goal", ""))
     return {"status": "ok"}
 
 
 @router.post("/api/config")
 def update_config(
     request: fastapi.Request,
-    config: tasks.RoadmapConfig,
+    config: models.RoadmapConfig,
     project: str | None = None,
 ):
     """Replace the roadmap configuration and return the saved value."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
-    with tasks.lock_tasks(tasks_file):
-        data = tasks.load_tasks(tasks_file)
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
         data.config = config
-        tasks.save_tasks(tasks_file, data)
+        persistence.save_tasks(tasks_file, data)
     return data.config
 
 

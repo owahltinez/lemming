@@ -7,7 +7,8 @@ import typing
 
 import click
 
-from .. import paths, tasks
+from .. import models, paths, persistence
+from ..tasks import lifecycle, operations, queries
 from .main import cli
 
 
@@ -41,16 +42,16 @@ def _execution_time_rows(
 
 
 def _echo_task_summary(
-    task: tasks.Task, all_tasks: list[tasks.Task], brief: bool = False
+    task: models.Task, all_tasks: list[models.Task], brief: bool = False
 ) -> None:
     """Print one task row plus compact supersession lineage."""
     marker_by_status = {
-        tasks.TaskStatus.COMPLETED: ("[x]", "green"),
-        tasks.TaskStatus.IN_PROGRESS: ("[*]", "cyan"),
-        tasks.TaskStatus.CANCELLED: ("[-]", "red"),
-        tasks.TaskStatus.SUPERSEDED: ("[~]", "magenta"),
-        tasks.TaskStatus.FAILED: ("[!]", "red"),
-        tasks.TaskStatus.PENDING: ("[ ]", "yellow"),
+        models.TaskStatus.COMPLETED: ("[x]", "green"),
+        models.TaskStatus.IN_PROGRESS: ("[*]", "cyan"),
+        models.TaskStatus.CANCELLED: ("[-]", "red"),
+        models.TaskStatus.SUPERSEDED: ("[~]", "magenta"),
+        models.TaskStatus.FAILED: ("[!]", "red"),
+        models.TaskStatus.PENDING: ("[ ]", "yellow"),
     }
     marker, status_color = marker_by_status[task.status]
     click.secho(f"{marker} ", fg=status_color, nl=False)
@@ -59,7 +60,7 @@ def _echo_task_summary(
     summary = "" if brief else f" {task.description}"
     click.echo(f"({task.id}){parent_str}{summary}")
 
-    if task.status == tasks.TaskStatus.SUPERSEDED:
+    if task.status == models.TaskStatus.SUPERSEDED:
         if task.superseded_reason:
             click.echo(f"    Reason: {task.superseded_reason}")
         replacements = [item.id for item in all_tasks if item.parent == task.id]
@@ -136,7 +137,7 @@ def add(
         ctx.exit(1)
 
     try:
-        new_task = tasks.add_task(
+        new_task = operations.add_task(
             tasks_file,
             description,
             runner_name,
@@ -231,7 +232,7 @@ def edit(
     tasks_file = ctx.obj["TASKS_FILE"]
 
     try:
-        target_task = tasks.update_task(
+        target_task = operations.update_task(
             tasks_file,
             task_id,
             description=description,
@@ -292,7 +293,7 @@ def delete_task(
         ctx.exit(1)
 
     try:
-        removed = tasks.delete_tasks(
+        removed = operations.delete_tasks(
             tasks_file,
             task_id=task_id,
             all_tasks=delete_all,
@@ -330,14 +331,16 @@ def delete_task(
 def supersede(ctx: click.Context, task_id: str, reason: str):
     """Marks a task as superseded without deleting its execution record."""
     try:
-        target = tasks.supersede_task(ctx.obj["TASKS_FILE"], task_id, reason)
+        target = operations.supersede_task(
+            ctx.obj["TASKS_FILE"], task_id, reason
+        )
         click.echo(f"Task {target.id} marked as superseded: {reason.strip()}")
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
 
 
-def _task_payload(task: tasks.Task, brief: bool) -> dict:
+def _task_payload(task: models.Task, brief: bool) -> dict:
     """Serialises a task for machine consumption.
 
     Args:
@@ -371,7 +374,7 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
     """Displays the roadmap status or details for a specific task."""
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
-    project_data = tasks.get_project_data(tasks_file)
+    project_data = queries.get_project_data(tasks_file)
 
     # JSON is the whole output, so it is emitted before any human formatting.
     if as_json and not task_id:
@@ -403,10 +406,10 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
             return
 
         terminal_statuses = {
-            tasks.TaskStatus.COMPLETED,
-            tasks.TaskStatus.FAILED,
-            tasks.TaskStatus.CANCELLED,
-            tasks.TaskStatus.SUPERSEDED,
+            models.TaskStatus.COMPLETED,
+            models.TaskStatus.FAILED,
+            models.TaskStatus.CANCELLED,
+            models.TaskStatus.SUPERSEDED,
         }
         queue = [
             task
@@ -425,7 +428,7 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
                 task
                 for task in history
                 if task.status
-                in (tasks.TaskStatus.FAILED, tasks.TaskStatus.SUPERSEDED)
+                in (models.TaskStatus.FAILED, models.TaskStatus.SUPERSEDED)
             ]
         )
 
@@ -452,14 +455,14 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
         return
 
     try:
-        target = tasks.resolve_task(project_data.tasks, task_id)
-    except tasks.TaskNotFoundError:
+        target = queries.resolve_task(project_data.tasks, task_id)
+    except models.TaskNotFoundError:
         try:
-            retained_log = tasks.resolve_log_file(tasks_file, task_id)
-        except tasks.TaskNotFoundError:
+            retained_log = queries.resolve_log_file(tasks_file, task_id)
+        except models.TaskNotFoundError:
             click.echo(f"Error: Task {task_id} not found.")
             return
-        except tasks.AmbiguousTaskIdError as e:
+        except models.AmbiguousTaskIdError as e:
             click.echo(f"Error: {e}")
             return
 
@@ -469,7 +472,7 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
             f"{retained_log}"
         )
         return
-    except tasks.AmbiguousTaskIdError as e:
+    except models.AmbiguousTaskIdError as e:
         click.echo(f"Error: {e}")
         return
 
@@ -488,7 +491,7 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
     click.secho(f"Task ID:       {target.id}", bold=True)
     status_str = str(target.status)
     if (
-        target.status == tasks.TaskStatus.IN_PROGRESS
+        target.status == models.TaskStatus.IN_PROGRESS
         and target.requested_status
     ):
         status_str += f" ({target.requested_status} requested, hooks running)"
@@ -552,7 +555,10 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
                 f"{replacement.description}"
             )
     run_time = target.run_time
-    if target.status == tasks.TaskStatus.IN_PROGRESS and target.last_started_at:
+    if (
+        target.status == models.TaskStatus.IN_PROGRESS
+        and target.last_started_at
+    ):
         run_time += time.time() - target.last_started_at
 
     if run_time > 0:
@@ -589,26 +595,30 @@ def logs(ctx: click.Context, task_id: str | None, as_json: bool):
     """
     tasks_file = ctx.obj["TASKS_FILE"]
 
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
 
     target = None
     log_file = None
     if task_id:
         try:
-            target = tasks.resolve_task(data.tasks, task_id)
-        except tasks.TaskNotFoundError:
+            target = queries.resolve_task(data.tasks, task_id)
+        except models.TaskNotFoundError:
             try:
-                log_file = tasks.resolve_log_file(tasks_file, task_id)
-            except (tasks.TaskNotFoundError, tasks.AmbiguousTaskIdError) as e:
+                log_file = queries.resolve_log_file(tasks_file, task_id)
+            except (models.TaskNotFoundError, models.AmbiguousTaskIdError) as e:
                 click.echo(f"Error: {e}")
                 ctx.exit(1)
-        except tasks.AmbiguousTaskIdError as e:
+        except models.AmbiguousTaskIdError as e:
             click.echo(f"Error: {e}")
             ctx.exit(1)
     else:
         # Try to find an active task
         target = next(
-            (t for t in data.tasks if t.status == tasks.TaskStatus.IN_PROGRESS),
+            (
+                t
+                for t in data.tasks
+                if t.status == models.TaskStatus.IN_PROGRESS
+            ),
             None,
         )
         if not target:
@@ -618,10 +628,10 @@ def logs(ctx: click.Context, task_id: str | None, as_json: bool):
                 for task in data.tasks
                 if task.status
                 in (
-                    tasks.TaskStatus.COMPLETED,
-                    tasks.TaskStatus.FAILED,
-                    tasks.TaskStatus.CANCELLED,
-                    tasks.TaskStatus.SUPERSEDED,
+                    models.TaskStatus.COMPLETED,
+                    models.TaskStatus.FAILED,
+                    models.TaskStatus.CANCELLED,
+                    models.TaskStatus.SUPERSEDED,
                 )
             ]
             if finished:
@@ -684,15 +694,15 @@ def complete(ctx: click.Context, task_id: str, force: bool):
     tasks_file = ctx.obj["TASKS_FILE"]
 
     try:
-        data = tasks.load_tasks(tasks_file)
-        current_task = tasks.resolve_task(data.tasks, task_id)
-        task_is_active = tasks.is_task_active(current_task, time.time())
+        data = persistence.load_tasks(tasks_file)
+        current_task = queries.resolve_task(data.tasks, task_id)
+        task_is_active = lifecycle.is_task_active(current_task, time.time())
         if (
-            current_task.status == tasks.TaskStatus.IN_PROGRESS
+            current_task.status == models.TaskStatus.IN_PROGRESS
             and current_task.progress
             and not force
             and not task_is_active
-            and not tasks.is_loop_running(tasks_file)
+            and not lifecycle.is_loop_running(tasks_file)
         ):
             raise ValueError(
                 f"Task {current_task.id} is in progress, but no active runner "
@@ -700,14 +710,14 @@ def complete(ctx: click.Context, task_id: str, force: bool):
                 "running hooks, or reset it to retry."
             )
 
-        target_task = tasks.update_task(
+        target_task = operations.update_task(
             tasks_file,
             task_id,
-            status=tasks.TaskStatus.COMPLETED,
+            status=models.TaskStatus.COMPLETED,
             require_progress=True,
             force=force,
         )
-        if target_task.requested_status == tasks.TaskStatus.COMPLETED:
+        if target_task.requested_status == models.TaskStatus.COMPLETED:
             click.echo(
                 f"Task {target_task.id} completion requested; "
                 "finalization hooks are pending."
@@ -726,8 +736,8 @@ def uncomplete(ctx: click.Context, task_id: str):
     """Unmarks a completed task, moving it back to 'pending' status."""
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
-        target_task = tasks.update_task(
-            tasks_file, task_id, status=tasks.TaskStatus.PENDING
+        target_task = operations.update_task(
+            tasks_file, task_id, status=models.TaskStatus.PENDING
         )
         click.echo(f"Task {target_task.id} marked as pending.")
     except ValueError as e:
@@ -742,10 +752,10 @@ def fail(ctx: click.Context, task_id: str):
     """Marks a task as failed (requires recorded progress)."""
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
-        target_task = tasks.update_task(
+        target_task = operations.update_task(
             tasks_file,
             task_id,
-            status=tasks.TaskStatus.FAILED,
+            status=models.TaskStatus.FAILED,
             require_progress=True,
         )
         click.echo(f"Task {target_task.id} marked as failed.")
@@ -763,7 +773,7 @@ def reject(ctx: click.Context, task_id: str, reason: str):
     tasks_file = ctx.obj["TASKS_FILE"]
 
     try:
-        target_task = tasks.reject_task(tasks_file, task_id, reason)
+        target_task = lifecycle.reject_task(tasks_file, task_id, reason)
         click.echo(f"Task {target_task.id} completion rejected.")
     except ValueError as e:
         click.echo(f"Error: {e}")
@@ -776,7 +786,7 @@ def reject(ctx: click.Context, task_id: str, reason: str):
 def cancel(ctx: click.Context, task_id: str):
     """Cancels a task, stopping its runner if it is active."""
     tasks_file = ctx.obj["TASKS_FILE"]
-    if tasks.cancel_task(tasks_file, task_id):
+    if lifecycle.cancel_task(tasks_file, task_id):
         click.echo(f"Task {task_id} cancelled.")
     else:
         click.echo(f"Error: Task {task_id} not found or not in progress.")
@@ -790,7 +800,7 @@ def reset(ctx: click.Context, task_id: str):
     """Clears a task's attempts, progress, and logs."""
     tasks_file = ctx.obj["TASKS_FILE"]
     try:
-        target_task = tasks.reset_task(tasks_file, task_id)
+        target_task = lifecycle.reset_task(tasks_file, task_id)
         click.echo(
             f"Task {target_task.id} attempts, progress, and logs cleared."
         )

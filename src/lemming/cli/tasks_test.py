@@ -8,7 +8,9 @@ from unittest import mock
 
 import click.testing
 
-from lemming import cli, paths, tasks
+from lemming import models, paths, persistence
+from lemming.cli import main as cli
+from lemming.tasks import lifecycle, limits, operations
 
 
 class TestCLITasks(unittest.TestCase):
@@ -23,19 +25,19 @@ class TestCLITasks(unittest.TestCase):
         ]
 
         # Scaffold a valid file
-        data = tasks.Roadmap(
+        data = models.Roadmap(
             goal="Initial goal",
             tasks=[
-                tasks.Task(
+                models.Task(
                     id="12345678",
                     description="Initial Task",
-                    status=tasks.TaskStatus.PENDING,
+                    status=models.TaskStatus.PENDING,
                     attempts=0,
                     progress=[],
                 )
             ],
         )
-        tasks.save_tasks(self.test_tasks_file, data)
+        persistence.save_tasks(self.test_tasks_file, data)
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -47,7 +49,7 @@ class TestCLITasks(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Added task", result.output)
 
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         task_descs = [t.description for t in data.tasks]
         self.assertIn("New Task", task_descs)
 
@@ -55,14 +57,16 @@ class TestCLITasks(unittest.TestCase):
         result = self.cli_runner.invoke(
             cli.cli,
             self.base_args
-            + ["add", "x" * (tasks.MAX_TASK_DESCRIPTION_CHARS + 1)],
+            + ["add", "x" * (limits.MAX_TASK_DESCRIPTION_CHARS + 1)],
         )
 
         self.assertEqual(result.exit_code, 1)
         self.assertIn("2,001 characters (limit 2,000)", result.output)
         self.assertIn("Keep the description task-specific", result.output)
         self.assertIn("lemming brief", result.output)
-        self.assertEqual(len(tasks.load_tasks(self.test_tasks_file).tasks), 1)
+        self.assertEqual(
+            len(persistence.load_tasks(self.test_tasks_file).tasks), 1
+        )
 
     def test_edit_task_description(self):
         result = self.cli_runner.invoke(
@@ -73,7 +77,7 @@ class TestCLITasks(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Task 12345678 updated.", result.output)
 
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].description, "Updated Task")
 
     def test_delete_task(self):
@@ -81,7 +85,7 @@ class TestCLITasks(unittest.TestCase):
             cli.cli, self.base_args + ["add", "To be removed"]
         )
 
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         task_id = next(
             t.id for t in data.tasks if t.description == "To be removed"
         )
@@ -113,15 +117,15 @@ class TestCLITasks(unittest.TestCase):
             self.assertIn(f"Task {task_id} was removed", status_result.output)
             self.assertIn(str(log_file), status_result.output)
 
-        data = tasks.load_tasks(self.test_tasks_file)
+        data = persistence.load_tasks(self.test_tasks_file)
         task_descs = [t.description for t in data.tasks]
         self.assertNotIn("To be removed", task_descs)
 
     def test_started_task_must_be_superseded_or_force_deleted(self):
-        with tasks.lock_tasks(self.test_tasks_file):
-            data = tasks.load_tasks(self.test_tasks_file)
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
             data.tasks[0].attempts = 1
-            tasks.save_tasks(self.test_tasks_file, data)
+            persistence.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["delete", "12345678"]
@@ -131,7 +135,7 @@ class TestCLITasks(unittest.TestCase):
         self.assertIn("Supersede it", result.output)
 
     def test_supersede_command_preserves_task_and_shows_replacements(self):
-        child = tasks.add_task(
+        child = operations.add_task(
             self.test_tasks_file,
             "Smaller replacement",
             parent="12345678",
@@ -151,10 +155,10 @@ class TestCLITasks(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         task = next(
             item
-            for item in tasks.load_tasks(self.test_tasks_file).tasks
+            for item in persistence.load_tasks(self.test_tasks_file).tasks
             if item.id == "12345678"
         )
-        self.assertEqual(task.status, tasks.TaskStatus.SUPERSEDED)
+        self.assertEqual(task.status, models.TaskStatus.SUPERSEDED)
 
         status = self.cli_runner.invoke(
             cli.cli, self.base_args + ["status", "1234"]
@@ -171,12 +175,12 @@ class TestCLITasks(unittest.TestCase):
         )
 
     def test_status_overview_separates_queue_and_visible_history(self):
-        child = tasks.add_task(
+        child = operations.add_task(
             self.test_tasks_file,
             "Smaller replacement",
             parent="12345678",
         )
-        tasks.supersede_task(
+        operations.supersede_task(
             self.test_tasks_file,
             "12345678",
             "split after timeout",
@@ -215,8 +219,8 @@ class TestCLITasks(unittest.TestCase):
             self.assertIn("Loop Status: Running", result.output)
 
     def test_status_command_shows_execution_time_breakdown(self):
-        with tasks.lock_tasks(self.test_tasks_file):
-            data = tasks.load_tasks(self.test_tasks_file)
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
             data.tasks[0].run_time = 1422
             data.tasks[0].execution_times = {
                 "hook:testing": 216,
@@ -225,7 +229,7 @@ class TestCLITasks(unittest.TestCase):
                 "hook:ux": 12,
                 "hook:roadmap": 12,
             }
-            tasks.save_tasks(self.test_tasks_file, data)
+            persistence.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["status", "1234"]
@@ -259,17 +263,17 @@ class TestCLITasks(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
 
-        data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.COMPLETED)
 
     def test_active_task_completion_runs_hooks(self):
-        with tasks.lock_tasks(self.test_tasks_file):
-            data = tasks.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
             data.tasks[0].progress = ["Done"]
             data.tasks[0].pid = 1234
             data.tasks[0].last_heartbeat = time.time()
-            tasks.save_tasks(self.test_tasks_file, data)
+            persistence.save_tasks(self.test_tasks_file, data)
 
         with mock.patch(
             "lemming.tasks.lifecycle.is_pid_alive", return_value=True
@@ -280,20 +284,20 @@ class TestCLITasks(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         self.assertIn("completion requested", result.output)
-        data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.IN_PROGRESS)
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.IN_PROGRESS)
         self.assertEqual(
-            data.tasks[0].requested_status, tasks.TaskStatus.COMPLETED
+            data.tasks[0].requested_status, models.TaskStatus.COMPLETED
         )
 
     def test_stale_task_completion_requires_force(self):
-        with tasks.lock_tasks(self.test_tasks_file):
-            data = tasks.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
             data.tasks[0].progress = ["Done"]
             data.tasks[0].pid = 999999
             data.tasks[0].last_heartbeat = 0
-            tasks.save_tasks(self.test_tasks_file, data)
+            persistence.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["complete", "12345678"]
@@ -301,18 +305,18 @@ class TestCLITasks(unittest.TestCase):
 
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("Use --force", result.output)
-        data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.IN_PROGRESS)
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.IN_PROGRESS)
         self.assertIsNone(data.tasks[0].requested_status)
 
     def test_force_completes_stale_task(self):
-        with tasks.lock_tasks(self.test_tasks_file):
-            data = tasks.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
             data.tasks[0].progress = ["Done"]
             data.tasks[0].pid = 999999
             data.tasks[0].last_heartbeat = 0
-            tasks.save_tasks(self.test_tasks_file, data)
+            persistence.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["complete", "--force", "12345678"]
@@ -320,8 +324,8 @@ class TestCLITasks(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         self.assertIn("marked as completed", result.output)
-        data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.COMPLETED)
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.COMPLETED)
         self.assertIsNone(data.tasks[0].requested_status)
         self.assertIsNone(data.tasks[0].pid)
         self.assertIsNone(data.tasks[0].last_heartbeat)
@@ -340,8 +344,8 @@ class TestCLITasks(unittest.TestCase):
             cli.cli, self.base_args + ["uncomplete", "12345678"]
         )
         self.assertEqual(result.exit_code, 0)
-        data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.PENDING)
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.PENDING)
 
     def test_task_fail(self):
         self.cli_runner.invoke(
@@ -351,15 +355,15 @@ class TestCLITasks(unittest.TestCase):
             cli.cli, self.base_args + ["fail", "12345678"]
         )
         self.assertEqual(result.exit_code, 0)
-        data = tasks.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, tasks.TaskStatus.FAILED)
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.FAILED)
 
     def test_cancel_command(self):
         # We need a fake in-progress task for this
-        with tasks.lock_tasks(self.test_tasks_file):
-            data = tasks.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = tasks.TaskStatus.IN_PROGRESS
-            tasks.save_tasks(self.test_tasks_file, data)
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            persistence.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["cancel", "12345678"]
@@ -385,7 +389,7 @@ class TestCLITaskModel(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.test_tasks_file = pathlib.Path(self.test_dir) / "tasks_test.yml"
         self.base_args = ["--tasks-file", str(self.test_tasks_file)]
-        tasks.save_tasks(self.test_tasks_file, tasks.Roadmap(goal="g"))
+        persistence.save_tasks(self.test_tasks_file, models.Roadmap(goal="g"))
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -395,7 +399,7 @@ class TestCLITaskModel(unittest.TestCase):
             cli.cli, self.base_args + ["add", "do the thing", *extra]
         )
         self.assertEqual(result.exit_code, 0, result.output)
-        return tasks.load_tasks(self.test_tasks_file).tasks[0]
+        return persistence.load_tasks(self.test_tasks_file).tasks[0]
 
     def test_add_records_model(self):
         """Per-task model selection is a field, not a runner-string trick."""
@@ -412,7 +416,7 @@ class TestCLITaskModel(unittest.TestCase):
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
-        updated = tasks.load_tasks(self.test_tasks_file).tasks[0]
+        updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertEqual(updated.model, "new-model")
 
     def test_edit_empty_model_restores_project_default(self):
@@ -422,7 +426,7 @@ class TestCLITaskModel(unittest.TestCase):
             cli.cli, self.base_args + ["edit", task.id, "--model", ""]
         )
 
-        updated = tasks.load_tasks(self.test_tasks_file).tasks[0]
+        updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertIsNone(updated.model)
 
     def test_oneshot_round_trips_through_add_and_edit(self):
@@ -435,13 +439,13 @@ class TestCLITaskModel(unittest.TestCase):
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
-        updated = tasks.load_tasks(self.test_tasks_file).tasks[0]
+        updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertFalse(updated.oneshot)
 
     def test_status_shows_provenance(self):
         """After the fact, status answers which command produced the work."""
         task = self._add("--model", "fast-model")
-        tasks.record_resolved_command(
+        lifecycle.record_resolved_command(
             self.test_tasks_file, task.id, "agy --model fast-model"
         )
 

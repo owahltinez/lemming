@@ -10,7 +10,7 @@ import tempfile
 import time
 import unittest
 
-from lemming import models, persistence, shutdown, tasks
+from lemming import models, persistence, shutdown
 
 # Bounds for polling the loop's on-disk state; generous enough for a cold
 # interpreter start, short enough to keep the suite fast.
@@ -34,7 +34,7 @@ class TestShutdownIntegration(unittest.TestCase):
         self.fake_runner.write_text("#!/bin/bash\nsleep 300\n")
         self.fake_runner.chmod(0o755)
 
-        tasks.save_tasks(
+        persistence.save_tasks(
             self.tasks_file,
             models.Roadmap(
                 goal="Shutdown test",
@@ -77,7 +77,7 @@ class TestShutdownIntegration(unittest.TestCase):
         """Reads the runner PID the loop recorded for the task."""
         if not self.tasks_file.exists():
             return None
-        data = tasks.load_tasks(self.tasks_file)
+        data = persistence.load_tasks(self.tasks_file)
         return data.tasks[0].pid if data.tasks else None
 
     def _wait_for_runner(self) -> int:
@@ -138,7 +138,7 @@ class TestShutdownIntegration(unittest.TestCase):
         self._wait_until_dead(runner_pid, "Runner child")
         loop.wait(timeout=SHUTDOWN_TIMEOUT_SECONDS)
 
-        task = tasks.load_tasks(self.tasks_file).tasks[0]
+        task = persistence.load_tasks(self.tasks_file).tasks[0]
         self.assertEqual(task.status, models.TaskStatus.PENDING)
         self.assertIsNone(task.pid)
 
@@ -153,9 +153,9 @@ class TestShutdownIntegration(unittest.TestCase):
         """Draining finishes the task, then skips the rest of the queue."""
         # A runner that exits on its own, so the current task can complete.
         self.fake_runner.write_text("#!/bin/bash\nsleep 3\n")
-        data = tasks.load_tasks(self.tasks_file)
+        data = persistence.load_tasks(self.tasks_file)
         data.tasks.append(models.Task(id="task2", description="Second task"))
-        tasks.save_tasks(self.tasks_file, data)
+        persistence.save_tasks(self.tasks_file, data)
 
         loop = self._start_loop()
         self._wait_for_runner()
@@ -164,7 +164,7 @@ class TestShutdownIntegration(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         loop.wait(timeout=SHUTDOWN_TIMEOUT_SECONDS)
 
-        second = tasks.load_tasks(self.tasks_file).tasks[1]
+        second = persistence.load_tasks(self.tasks_file).tasks[1]
         self.assertEqual(second.id, "task2")
         self.assertEqual(second.status, models.TaskStatus.PENDING)
         self.assertEqual(second.attempts, 0)

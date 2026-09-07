@@ -3,17 +3,18 @@
 import fastapi
 import pydantic
 
-from .. import paths, tasks
+from .. import models, paths, persistence
+from ..tasks import lifecycle, operations, queries
 from . import context, loop
 
 router = fastapi.APIRouter()
 
 
-@router.get("/api/data", response_model=tasks.ProjectData)
+@router.get("/api/data", response_model=models.ProjectData)
 def get_data(request: fastapi.Request, project: str | None = None):
     """Get the full project data: goal, config, tasks, and status."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
-    data = tasks.get_project_data(tasks_file)
+    data = queries.get_project_data(tasks_file)
     data.cwd = str(context.resolve_project_dir(request.app.state, project))
     return data
 
@@ -35,7 +36,7 @@ def add_task(
     """Add a new task and start the orchestrator loop if needed."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     try:
-        new_task = tasks.add_task(
+        new_task = operations.add_task(
             tasks_file,
             task.description,
             task.runner,
@@ -53,13 +54,13 @@ def add_task(
     return new_task
 
 
-@router.get("/api/tasks/{task_id}", response_model=tasks.Task)
+@router.get("/api/tasks/{task_id}", response_model=models.Task)
 def get_task(
     request: fastapi.Request, task_id: str, project: str | None = None
 ):
     """Get a single task by ID (or unique ID prefix)."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
     if not target:
         raise fastapi.HTTPException(404, "Task not found")
@@ -76,7 +77,7 @@ def update_task(
     """Update a task's description, runner, position, status, or parent."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     status = update.get("status")
-    if status == tasks.TaskStatus.SUPERSEDED:
+    if status == models.TaskStatus.SUPERSEDED:
         raise fastapi.HTTPException(
             400,
             "Use the supersede endpoint so a reason is recorded.",
@@ -86,22 +87,22 @@ def update_task(
     # but not if we are just marking a finished task as pending (uncomplete).
     require_progress = False
     if status in (
-        tasks.TaskStatus.COMPLETED,
-        tasks.TaskStatus.FAILED,
-        tasks.TaskStatus.PENDING,
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.FAILED,
+        models.TaskStatus.PENDING,
     ):
-        data = tasks.load_tasks(tasks_file)
+        data = persistence.load_tasks(tasks_file)
         target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
         if target and target.status not in (
-            tasks.TaskStatus.COMPLETED,
-            tasks.TaskStatus.FAILED,
-            tasks.TaskStatus.CANCELLED,
-            tasks.TaskStatus.SUPERSEDED,
+            models.TaskStatus.COMPLETED,
+            models.TaskStatus.FAILED,
+            models.TaskStatus.CANCELLED,
+            models.TaskStatus.SUPERSEDED,
         ):
             require_progress = True
 
     try:
-        updated_task = tasks.update_task(
+        updated_task = operations.update_task(
             tasks_file,
             task_id,
             description=update.get("description"),
@@ -123,7 +124,7 @@ def delete_completed_tasks(
     request: fastapi.Request, project: str | None = None
 ):
     """Delete all completed tasks from the roadmap."""
-    tasks.delete_tasks(
+    operations.delete_tasks(
         context.resolve_tasks_file(request.app.state, project),
         completed_only=True,
     )
@@ -135,7 +136,7 @@ def delete_task(
     request: fastapi.Request, task_id: str, project: str | None = None
 ):
     """Delete a single task by ID."""
-    tasks.delete_tasks(
+    operations.delete_tasks(
         context.resolve_tasks_file(request.app.state, project),
         task_id=task_id,
         force=True,
@@ -158,7 +159,7 @@ def supersede_task(
 ):
     """Supersede a task while retaining its history."""
     try:
-        return tasks.supersede_task(
+        return operations.supersede_task(
             context.resolve_tasks_file(request.app.state, project),
             task_id,
             body.reason,
@@ -174,7 +175,7 @@ def cancel_task_endpoint(
     request: fastapi.Request, task_id: str, project: str | None = None
 ):
     """Cancel a running or pending task."""
-    if tasks.cancel_task(
+    if lifecycle.cancel_task(
         context.resolve_tasks_file(request.app.state, project), task_id
     ):
         return {"status": "ok"}
@@ -188,7 +189,7 @@ def clear_task_endpoint(
     """Reset a task to pending, clearing its attempts and progress."""
     try:
         tasks_file = context.resolve_tasks_file(request.app.state, project)
-        tasks.reset_task(tasks_file, task_id)
+        lifecycle.reset_task(tasks_file, task_id)
         return {"status": "ok"}
     except ValueError as e:
         raise fastapi.HTTPException(404, str(e))

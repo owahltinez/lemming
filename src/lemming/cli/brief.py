@@ -4,7 +4,8 @@ import typing
 
 import click
 
-from .. import paths, tasks
+from .. import models, paths, persistence
+from ..tasks import queries
 from .main import cli
 
 
@@ -38,10 +39,10 @@ def brief(
     """
     tasks_file = ctx.obj["TASKS_FILE"]
 
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     try:
-        target = tasks.resolve_task(data.tasks, task_id)
-    except (tasks.TaskNotFoundError, tasks.AmbiguousTaskIdError) as e:
+        target = queries.resolve_task(data.tasks, task_id)
+    except (models.TaskNotFoundError, models.AmbiguousTaskIdError) as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
 

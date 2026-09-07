@@ -8,8 +8,9 @@ import traceback
 
 import click
 
-from . import prompts, runner, shutdown, tasks
+from . import models, persistence, prompts, runner, shutdown
 from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
+from .tasks import lifecycle, limits, operations, progress, queries
 
 
 def _read_rejection(tasks_file: pathlib.Path, task_id: str) -> str | None:
@@ -22,7 +23,7 @@ def _read_rejection(tasks_file: pathlib.Path, task_id: str) -> str | None:
     Returns:
         The rejection reason, or None when the task is gone or accepted.
     """
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
     return task.rejection if task else None
 
@@ -37,7 +38,7 @@ def run_hooks(
     verbose: bool,
     hooks: list[str] | None = None,
     working_dir: pathlib.Path | None = None,
-    final_status: tasks.TaskStatus | None = None,
+    final_status: models.TaskStatus | None = None,
     time_limit: int = 0,
     model_name: str | None = None,
     scope: str | None = None,
@@ -67,7 +68,7 @@ def run_hooks(
         the runner failed to launch). Skipped hooks are absent.
     """
     exit_codes: dict[str, int] = {}
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
     if not task:
         return exit_codes
@@ -77,11 +78,11 @@ def run_hooks(
 
     # A oneshot task buys its latency back by skipping the post-task
     # review, but a failing one still gets failure-hook recovery below.
-    if task.oneshot and final_status == tasks.TaskStatus.COMPLETED:
+    if task.oneshot and final_status == models.TaskStatus.COMPLETED:
         active_hooks = []
 
     # On failure, only failure hooks (9x priority prefix) run
-    if final_status == tasks.TaskStatus.FAILED:
+    if final_status == models.TaskStatus.FAILED:
         active_hooks = [
             h
             for h in active_hooks
@@ -90,7 +91,7 @@ def run_hooks(
 
     if not active_hooks:
         if final_status:
-            tasks.update_task(
+            operations.update_task(
                 tasks_file, task_id, status=final_status, force=True
             )
         return exit_codes
@@ -98,7 +99,7 @@ def run_hooks(
     for hook_index, hook_name in enumerate(active_hooks):
         # Reload tasks every time to ensure each hook sees progress from
         # previous hooks
-        data = tasks.load_tasks(tasks_file)
+        data = persistence.load_tasks(tasks_file)
         task = next((t for t in data.tasks if t.id == task_id), None)
         if not task:
             if verbose:
@@ -109,7 +110,7 @@ def run_hooks(
         if (
             hook_index > 0
             and final_status is not None
-            and task.status != tasks.TaskStatus.IN_PROGRESS
+            and task.status != models.TaskStatus.IN_PROGRESS
         ):
             break
 
@@ -164,7 +165,7 @@ def run_hooks(
                     click.echo(
                         f"Hook '{hook_name}' exited with code {returncode}."
                     )
-        except tasks.CorruptedTasksError:
+        except persistence.CorruptedTasksError:
             # Not a hook failure: reporting it as one blames the wrong thing
             # and lets the loop carry on writing to an unreadable roadmap.
             raise
@@ -182,8 +183,8 @@ def run_hooks(
             # attribution prefix can still push it over; an oversized entry
             # would raise here and take the whole loop down.
             message = f"Hook '{hook_name}' rejected completion: {rejection}"
-            tasks.add_progress(
-                tasks_file, task_id, message[: tasks.MAX_PROGRESS_ENTRY_CHARS]
+            progress.add_progress(
+                tasks_file, task_id, message[: limits.MAX_PROGRESS_ENTRY_CHARS]
             )
             click.echo(message)
 
@@ -194,9 +195,9 @@ def run_hooks(
     # finalization so we don't overwrite the recovery.
     if final_status:
         try:
-            data = tasks.load_tasks(tasks_file)
+            data = persistence.load_tasks(tasks_file)
             current = next((t for t in data.tasks if t.id == task_id), None)
-            if current and current.status != tasks.TaskStatus.IN_PROGRESS:
+            if current and current.status != models.TaskStatus.IN_PROGRESS:
                 return exit_codes
 
             # If any hook run was killed or crashed (e.g. the model became
@@ -209,7 +210,7 @@ def run_hooks(
             # hook that ran to completion and refused the result.
             failed_hooks = [h for h, code in exit_codes.items() if code != 0]
             rejection = current.rejection if current else None
-            if final_status == tasks.TaskStatus.COMPLETED and (
+            if final_status == models.TaskStatus.COMPLETED and (
                 failed_hooks or rejection
             ):
                 reasons = []
@@ -221,22 +222,22 @@ def run_hooks(
                     # entries the next attempt is shown.
                     reasons.append("was rejected")
                 detail = "; ".join(reasons)
-                tasks.add_progress(
+                progress.add_progress(
                     tasks_file,
                     task_id,
                     f"Finalization {detail}; task reverted to pending.",
                 )
-                tasks.revert_task_to_pending(tasks_file, task_id)
+                lifecycle.revert_task_to_pending(tasks_file, task_id)
                 click.echo(
                     f"Task {task_id} finalization {detail}. "
                     "Reverting to pending."
                 )
                 return exit_codes
 
-            tasks.update_task(
+            operations.update_task(
                 tasks_file, task_id, status=final_status, force=True
             )
-        except tasks.TaskNotFoundError:
+        except models.TaskNotFoundError:
             # Task may have been deleted by the orchestrator (e.g. after
             # a failure it decided to take a different approach).  This
             # is expected and not an error worth a traceback.
@@ -245,7 +246,7 @@ def run_hooks(
                 "finalized — the orchestrator likely restructured "
                 "the plan."
             )
-        except tasks.CorruptedTasksError:
+        except persistence.CorruptedTasksError:
             # An unreadable roadmap is not a finalization failure to log and
             # move past: let it stop the loop while the file is still intact.
             raise
@@ -280,8 +281,8 @@ def _process_exhausted_retries(
     # Mark as in_progress so hooks can run and heartbeats work.
     # We use update_task to set requested_status=FAILED so it shows
     # as "Finalizing" in the UI.
-    tasks.mark_task_in_progress(tasks_file, task_id)
-    tasks.update_task(tasks_file, task_id, status=tasks.TaskStatus.FAILED)
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    operations.update_task(tasks_file, task_id, status=models.TaskStatus.FAILED)
 
     run_hooks(
         tasks_file,
@@ -293,18 +294,18 @@ def _process_exhausted_retries(
         verbose,
         hooks=active_hooks,
         working_dir=working_dir,
-        final_status=tasks.TaskStatus.FAILED,
+        final_status=models.TaskStatus.FAILED,
         time_limit=time_limit,
         model_name=model_name,
         scope=scope,
     )
 
     # Re-check: if a hook reset/edited/replaced the task, continue the loop
-    data = tasks.load_tasks(tasks_file)
+    data = persistence.load_tasks(tasks_file)
     healed_task = next((t for t in data.tasks if t.id == task_id), None)
     if (
         healed_task
-        and tasks.TaskStatus.FAILED
+        and models.TaskStatus.FAILED
         in (
             healed_task.status,
             healed_task.requested_status,
@@ -324,7 +325,7 @@ def _process_exhausted_retries(
 def _process_finalizing_task(
     tasks_file: pathlib.Path,
     task_id: str,
-    requested_status: tasks.TaskStatus,
+    requested_status: models.TaskStatus,
     runner_name: str,
     yolo: bool,
     runner_args: tuple,
@@ -395,11 +396,11 @@ def _handle_runner_exit(
     # This will mark the task as COMPLETED or PENDING based on whether
     # the agent called 'lemming complete'.
     if runner_failed and not retry_runner_failures:
-        post_task = tasks.finish_task_attempt(
+        post_task = lifecycle.finish_task_attempt(
             tasks_file, task_id, count_attempt=False
         )
     else:
-        post_task = tasks.finish_task_attempt(tasks_file, task_id)
+        post_task = lifecycle.finish_task_attempt(tasks_file, task_id)
 
     if not post_task:
         click.echo("Error: Task disappeared from roadmap during execution.")
@@ -430,18 +431,18 @@ def _handle_runner_exit(
         # apply the one it requested, so the outcome only becomes readable
         # here. Judging it from the pre-hook object treats every completed
         # task as a failure and replays its whole log.
-        refreshed = tasks.load_tasks(tasks_file)
+        refreshed = persistence.load_tasks(tasks_file)
         post_task = next(
             (t for t in refreshed.tasks if t.id == task_id), post_task
         )
         if (
             abort_failed_finalization
-            and requested_status == tasks.TaskStatus.COMPLETED
-            and post_task.status == tasks.TaskStatus.PENDING
+            and requested_status == models.TaskStatus.COMPLETED
+            and post_task.status == models.TaskStatus.PENDING
         ):
             return True
 
-    if post_task.status == tasks.TaskStatus.COMPLETED:
+    if post_task.status == models.TaskStatus.COMPLETED:
         if verbose:
             click.echo("Runner successfully reported task completion.")
         else:
@@ -454,7 +455,7 @@ def _handle_runner_exit(
                 click.echo(stderr, err=True)
 
         if returncode == -15:
-            if post_task.status == tasks.TaskStatus.CANCELLED:
+            if post_task.status == models.TaskStatus.CANCELLED:
                 if verbose:
                     click.echo("Task was cancelled. Continuing orchestrator.")
                 return False
@@ -472,7 +473,7 @@ def _handle_runner_exit(
             if reason:
                 click.echo(f"Runner reported: {reason}")
                 try:
-                    tasks.add_progress(
+                    progress.add_progress(
                         tasks_file, task_id, f"Runner failed: {reason}"
                     )
                 except Exception:
@@ -490,7 +491,7 @@ def _handle_runner_exit(
             click.echo(f"Runner exited unsuccessfully. Task left {outcome}.")
 
         will_retry = (
-            post_task.status == tasks.TaskStatus.PENDING
+            post_task.status == models.TaskStatus.PENDING
             and post_task.attempts < retries
             and post_task.requested_status is None
         )
@@ -564,7 +565,7 @@ def run_loop(
 
         # Reload configuration on each iteration to respond to changes
         # (e.g., from Web UI)
-        data = tasks.load_tasks(tasks_file)
+        data = persistence.load_tasks(tasks_file)
 
         retries = data.config.retries
         time_limit = data.config.time_limit
@@ -589,19 +590,22 @@ def run_loop(
                     for task in data.tasks
                     if task.id == one_task_id
                     and task.status
-                    in (tasks.TaskStatus.PENDING, tasks.TaskStatus.IN_PROGRESS)
+                    in (
+                        models.TaskStatus.PENDING,
+                        models.TaskStatus.IN_PROGRESS,
+                    )
                 ),
                 None,
             )
         else:
-            current_task = tasks.get_pending_task(data)
+            current_task = queries.get_pending_task(data)
 
         if not current_task:
             unfinished_tasks = [
                 task
                 for task in data.tasks
                 if task.status
-                in (tasks.TaskStatus.PENDING, tasks.TaskStatus.IN_PROGRESS)
+                in (models.TaskStatus.PENDING, models.TaskStatus.IN_PROGRESS)
             ]
             if unfinished_tasks:
                 now = time.time()
@@ -609,12 +613,12 @@ def run_loop(
                     (
                         task
                         for task in unfinished_tasks
-                        if tasks.is_task_active(task, now)
+                        if lifecycle.is_task_active(task, now)
                     ),
                     None,
                 )
                 pending_count = sum(
-                    task.status == tasks.TaskStatus.PENDING
+                    task.status == models.TaskStatus.PENDING
                     for task in unfinished_tasks
                 )
                 if active_task:
@@ -666,7 +670,9 @@ def run_loop(
         time.sleep(random.uniform(0.1, 0.5))
 
         # Try to claim the task
-        current_task = tasks.claim_task(tasks_file, task_id, pid=os.getpid())
+        current_task = lifecycle.claim_task(
+            tasks_file, task_id, pid=os.getpid()
+        )
         if not current_task:
             if verbose:
                 click.echo(
@@ -706,11 +712,11 @@ def run_loop(
                 scope=scope,
             )
             if once:
-                finalized = tasks.load_tasks(tasks_file)
+                finalized = persistence.load_tasks(tasks_file)
                 task = next(
                     (t for t in finalized.tasks if t.id == task_id), None
                 )
-                return bool(task and task.status == tasks.TaskStatus.COMPLETED)
+                return bool(task and task.status == models.TaskStatus.COMPLETED)
             continue
 
         prompt = prompts.prepare_prompt(
@@ -741,7 +747,7 @@ def run_loop(
 
         # Record what actually launched before it runs, so the provenance
         # survives a crash or an interrupted attempt.
-        tasks.record_resolved_command(
+        lifecycle.record_resolved_command(
             tasks_file, task_id, runner.describe_command(cmd, prompt)
         )
 
@@ -779,7 +785,7 @@ def run_loop(
                         "2. Create an executable wrapper script for "
                         f"'{selected_runner}' in your PATH."
                     )
-        except tasks.CorruptedTasksError:
+        except persistence.CorruptedTasksError:
             # Retrying cannot help an unreadable roadmap, and counting the
             # attempt would spend the task's retries on the wrong failure.
             raise
@@ -818,10 +824,10 @@ def run_loop(
             return False
 
         if once:
-            updated = tasks.load_tasks(tasks_file)
+            updated = persistence.load_tasks(tasks_file)
             task = next((t for t in updated.tasks if t.id == task_id), None)
-            if not task or task.status != tasks.TaskStatus.PENDING:
-                return bool(task and task.status == tasks.TaskStatus.COMPLETED)
+            if not task or task.status != models.TaskStatus.PENDING:
+                return bool(task and task.status == models.TaskStatus.COMPLETED)
             if task.attempts >= retries:
                 return False
 
