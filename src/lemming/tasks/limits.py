@@ -2,8 +2,6 @@
 
 import pathlib
 
-from .. import paths
-
 MAX_TASK_DESCRIPTION_CHARS = 2_000
 MAX_PROGRESS_ENTRY_CHARS = 280
 
@@ -27,20 +25,17 @@ def validate_task_description(
     )
 
 
-def validate_progress_entry(
-    tasks_file: pathlib.Path,
-    text: str,
-) -> None:
+def validate_progress_entry(text: str) -> None:
     """Reject an oversized progress entry with an actionable remedy."""
     actual = len(text)
     if actual <= MAX_PROGRESS_ENTRY_CHARS:
         return
 
-    evidence_dir = paths.get_project_dir(tasks_file)
     raise ValueError(
         f"Progress entry is {actual:,} characters "
         f"(limit {MAX_PROGRESS_ENTRY_CHARS:,}). "
-        "Record the finding in one line. Write detailed evidence or verbose "
-        f"command output to {evidence_dir} and reference it, or attach it to "
-        "a follow-up task with `lemming brief`."
+        "Record the finding in one line. Store detailed evidence or verbose "
+        "command output with `lemming artifact <id> <name> --file - "
+        "--note '<one line>'`, which records the pointer for you, or attach "
+        "it to a follow-up task with `lemming brief`."
     )

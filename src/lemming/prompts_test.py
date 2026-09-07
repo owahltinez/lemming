@@ -11,7 +11,7 @@ def test_load_prompt():
     assert "description" in prompt
     assert "{{max_task_description_chars}}" in prompt
     assert "{{max_progress_entry_chars}}" in prompt
-    assert "{{tasks_dir}}" in prompt
+    assert "{{artifacts_dir}}" in prompt
 
 
 def test_load_builtin_ux_prompt():
