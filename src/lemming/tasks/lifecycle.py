@@ -8,6 +8,7 @@ import signal
 import time
 
 from .. import models, paths, persistence
+from . import limits
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,9 @@ def _mark_task_in_progress(
                 and not is_task_active(task, now)
             ):
                 task.status = models.TaskStatus.IN_PROGRESS
+                # A new attempt must not inherit the previous one's
+                # rejection, which would block its completion too.
+                task.rejection = None
                 task.last_heartbeat = now
                 if task.started_at is None:
                     task.started_at = now
@@ -313,6 +317,7 @@ def revert_task_to_pending(
         update_run_time(task)
         task.status = models.TaskStatus.PENDING
         task.requested_status = None
+        task.rejection = None
         task.pid = None
         task.last_heartbeat = None
         task.active_execution_component = None
@@ -320,6 +325,56 @@ def revert_task_to_pending(
 
         persistence.save_tasks(tasks_file, data)
         return task
+
+
+def reject_task(
+    tasks_file: pathlib.Path, task_id: str, reason: str
+) -> models.Task:
+    """Records a finalization hook's objection to a requested completion.
+
+    The status is deliberately left alone so the remaining hooks still run
+    and see the objection; the orchestrator folds it into finalization by
+    reverting the task to pending once they are done.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: ID of the task to reject, or a prefix of one.
+        reason: Why the work is not acceptable as complete.
+
+    Returns:
+        The rejected Task.
+
+    Raises:
+        ValueError: If the reason is empty or oversized, the task is missing,
+            or the task is not finalizing toward completion.
+    """
+    reason = reason.strip()
+    if not reason:
+        raise ValueError("Rejection reason cannot be empty")
+
+    # The reason is replayed as a progress entry, so it lives under the same
+    # bound; exceeding it would fail later, halfway through finalization.
+    limits.validate_progress_entry(tasks_file, reason)
+
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        target = next((t for t in data.tasks if t.id.startswith(task_id)), None)
+        if not target:
+            raise ValueError(f"Task {task_id} not found")
+
+        # Only a completion that has not been applied yet can be blocked.
+        if (
+            target.status != models.TaskStatus.IN_PROGRESS
+            or target.requested_status != models.TaskStatus.COMPLETED
+        ):
+            raise ValueError(
+                f"Task {target.id} is not awaiting completion; only a task "
+                "finalizing as completed can be rejected."
+            )
+
+        target.rejection = reason
+        persistence.save_tasks(tasks_file, data)
+    return target
 
 
 def update_heartbeat(
@@ -479,6 +534,7 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
         target.pid = None
         target.last_heartbeat = None
         target.requested_status = None
+        target.rejection = None
 
         persistence.save_tasks(tasks_file, data)
 

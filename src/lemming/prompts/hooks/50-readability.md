@@ -61,11 +61,18 @@ keeps quality from drifting as tasks accumulate.
     rather than letting changes snowball.
 7.  **Report**: Record meaningful findings and applied fixes as progress using
     `lemming progress {{finished_task_id}} '<finding>'`.
-8.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify
+8.  **Reject**: If `lemming readability check` still fails on a file in scope
+    and you could not repair it, first establish that the task introduced the
+    failure: it must be attributable to the changes in scope, not to code
+    that was already failing before them. Only then reject the completion
+    with `lemming reject {{finished_task_id}} '<reason>'`, naming the file
+    and the check. A pre-existing failure, anything advisory, and anything
+    you already fixed are progress, never a rejection.
+9.  **No Orchestration**: Do NOT add new tasks to the roadmap. If you identify
     significant issues that require follow-up work (e.g. a refactor spanning
     unrelated files), record them as progress so the roadmap hook can decide
     whether to add a new task.
-9.  **Fast Exit**: If the automated checks pass and your review finds no drift,
+10. **Fast Exit**: If the automated checks pass and your review finds no drift,
     exit immediately.
 
 ## Commands
@@ -80,6 +87,8 @@ lemming readability guide <language> --section <ref>
 lemming readability guide <language> | grep -n "<pattern>"
 # Record progress
 lemming --tasks-file {{tasks_file_path}} progress {{finished_task_id}} '<finding>'
+# Block the completion over a check that still fails
+lemming --tasks-file {{tasks_file_path}} reject {{finished_task_id}} '<reason>'
 ```
 
 Limit your review ONLY to the scope above. Your goal is code quality and

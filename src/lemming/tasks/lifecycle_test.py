@@ -3,6 +3,8 @@ import signal
 import time
 from unittest.mock import patch
 
+import pytest
+
 from lemming import paths
 
 from .. import models, persistence
@@ -370,6 +372,32 @@ def test_cancel_task_escalates_sigterm_immune_process(tmp_path):
         ((54321, signal.SIGKILL),),
     ]
     assert status_at_first_signal[0] == models.TaskStatus.CANCELLED
+
+
+def test_reject_task_blocks_only_a_requested_completion(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = models.Task(
+        id="12345678",
+        description="Task 1",
+        status=models.TaskStatus.IN_PROGRESS,
+    )
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    # Without a requested completion there is nothing to reject.
+    with pytest.raises(ValueError, match="not awaiting completion"):
+        lifecycle.reject_task(tasks_file, "12345678", "suite fails")
+
+    task.requested_status = models.TaskStatus.COMPLETED
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    rejected = lifecycle.reject_task(tasks_file, "12345678", "suite fails")
+    assert rejected.rejection == "suite fails"
+    # The status is untouched so the remaining hooks still run.
+    assert rejected.status == models.TaskStatus.IN_PROGRESS
+
+    # A retry must not inherit the rejection.
+    reverted = lifecycle.revert_task_to_pending(tasks_file, "12345678")
+    assert reverted and reverted.rejection is None
 
 
 def test_reset_task(tmp_path):
