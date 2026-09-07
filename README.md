@@ -78,6 +78,11 @@ lemming run
 lemming run -- --model claude-3-5-sonnet
 ```
 
+The loop runs every task in one shared workspace, and the orchestrator never
+branches or commits on your behalf. Give the whole run its own branch or
+worktree first if you want to be able to throw it away — see
+[docs/WORKSPACE.md](docs/WORKSPACE.md).
+
 ---
 
 ## One-Off Tasks Without a Roadmap
@@ -157,6 +162,8 @@ working copy with the repository's existing VCS, passes it with
 For Git, stop when the source checkout has modified or untracked files instead
 of silently excluding them. Retain every isolated working copy until its changes
 have been recovered. The packaged skill includes a minimal Git example.
+
+For a roadmap loop, see [docs/WORKSPACE.md](docs/WORKSPACE.md).
 
 ### Teaching Your Agent to Use It
 

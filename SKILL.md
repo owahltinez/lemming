@@ -156,6 +156,10 @@ lemming add "Queue writes in IndexedDB while offline"
 lemming run                                  # runs until the queue drains
 ```
 
+The loop shares one workspace across all its tasks, so isolate the **whole run**
+— one branch or worktree created before `lemming run`, driven with
+`lemming -C <worktree> run` — never one per task.
+
 Check on it, and read what an agent actually did:
 
 ```sh
