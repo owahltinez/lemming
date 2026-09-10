@@ -62,6 +62,14 @@ def quiet_poll_log_config() -> dict:
     is_flag=True,
     help="Do not auto-inject default flags (like --yolo) based on runner name.",
 )
+@click.option(
+    "--max-tasks",
+    type=click.IntRange(min=1),
+    help=(
+        "Stop between tasks once this many have completed or failed, so a "
+        "caller can drive the roadmap one milestone at a time."
+    ),
+)
 @click.argument("runner_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run(
@@ -70,6 +78,7 @@ def run(
     yolo: bool,
     env: tuple,
     no_defaults: bool,
+    max_tasks: int | None,
     runner_args: tuple,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks."""
@@ -111,6 +120,7 @@ def run(
             no_defaults,
             runner_args,
             working_dir=working_dir,
+            max_tasks=max_tasks,
         )
     finally:
         persistence.release_loop_lock(tasks_file)

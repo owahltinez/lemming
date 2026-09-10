@@ -425,6 +425,10 @@ These come before the subcommand and apply to all of them.
   - `--yolo`: Run the runner in auto-approve mode (default: True).
   - `--env`: Set environment variables for the runner (e.g., `--env KEY=VALUE`).
   - `--no-defaults`: Skip default flag injection for known runners.
+  - `--max-tasks N`: Stop between tasks once `N` have completed or failed,
+    printing `Stopped after N tasks; M pending.` so a supervising agent can
+    review before launching the next batch. Attempts that leave a task pending
+    do not count.
   - `--`: Use `--` to pass any flag directly to the underlying runner. A
     per-task `--runner`/`--model` overrides anything passed here.
 - **`exec [<description>]`**: Run one task, or one set of reviews, outside any

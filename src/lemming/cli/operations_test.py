@@ -86,6 +86,25 @@ class TestCLIOperations(unittest.TestCase):
         self.assertEqual(result.exit_code, 1)
         self.assertIn("Another loop is already running", result.output)
 
+    def test_run_forwards_max_tasks(self):
+        with mock.patch.object(
+            operations, "run_loop", return_value=True
+        ) as run_loop:
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--max-tasks", "2"]
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(run_loop.call_args.kwargs["max_tasks"], 2)
+
+    def test_run_rejects_zero_max_tasks(self):
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["run", "--max-tasks", "0"]
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("not in the range", result.output)
+
     def test_serve_help(self):
         result = self.cli_runner.invoke(cli.cli, ["serve", "--help"])
         self.assertEqual(result.exit_code, 0)
