@@ -1053,6 +1053,86 @@ def test_run_hooks_reloads_tasks(mock_run, mock_prepare, hooks_env):
         assert mock_load.call_count == 5
 
 
+def _complete_current_task(tasks_file):
+    """Builds a runner stub that marks whichever task it runs as completed."""
+
+    def side_effect(cmd, tasks_file_arg, task_id, *args, **kwargs):
+        with persistence.lock_tasks(tasks_file):
+            data = persistence.load_tasks(tasks_file)
+            task = next(t for t in data.tasks if t.id == task_id)
+            task.status = models.TaskStatus.COMPLETED
+            task.completed_at = time.time()
+            persistence.save_tasks(tasks_file, data)
+        return (0, "output", "")
+
+    return side_effect
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_loop_max_tasks_stops_between_tasks(mock_run, setup_env, capsys):
+    """A milestone limit exits cleanly and leaves the queue intact."""
+    test_tasks_file, _ = setup_env
+    operations.add_task(test_tasks_file, "Task 2")
+    operations.add_task(test_tasks_file, "Task 3")
+    mock_run.side_effect = _complete_current_task(test_tasks_file)
+
+    completed = run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+        hooks=[],
+        max_tasks=2,
+    )
+
+    assert completed is True
+    statuses = [t.status for t in persistence.load_tasks(test_tasks_file).tasks]
+    assert statuses == [
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.PENDING,
+    ]
+    assert "Stopped after 2 tasks; 1 pending" in capsys.readouterr().out
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_loop_max_tasks_counts_only_settled_tasks(
+    mock_run, setup_env, capsys
+):
+    """An attempt that leaves the task pending does not consume the budget."""
+    test_tasks_file, _ = setup_env
+    operations.add_task(test_tasks_file, "Task 2")
+    attempts = []
+
+    def flaky_then_complete(cmd, tasks_file_arg, task_id, *args, **kwargs):
+        attempts.append(task_id)
+        if len(attempts) == 1:
+            return (0, "no completion reported", "")
+        return _complete_current_task(test_tasks_file)(
+            cmd, tasks_file_arg, task_id, *args, **kwargs
+        )
+
+    mock_run.side_effect = flaky_then_complete
+
+    completed = run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+        hooks=[],
+        max_tasks=1,
+    )
+
+    assert completed is True
+    assert attempts == ["task1", "task1"]
+    statuses = [t.status for t in persistence.load_tasks(test_tasks_file).tasks]
+    assert statuses == [models.TaskStatus.COMPLETED, models.TaskStatus.PENDING]
+
+
 @mock.patch("lemming.runner.run_with_heartbeat")
 def test_run_loop_records_resolved_command(mock_run, setup_env):
     """Provenance is persisted so the model behind a commit is recoverable."""

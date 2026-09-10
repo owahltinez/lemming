@@ -516,6 +516,31 @@ def _handle_runner_exit(
     return False
 
 
+_SETTLED_STATUSES = frozenset(
+    {
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.FAILED,
+        models.TaskStatus.CANCELLED,
+        models.TaskStatus.SUPERSEDED,
+    }
+)
+
+
+def _task_settled(tasks_file: pathlib.Path, task_id: str) -> bool:
+    """Reports whether a task has reached a terminal status."""
+    data = persistence.load_tasks(tasks_file)
+    task = next((t for t in data.tasks if t.id == task_id), None)
+    return task is not None and task.status in _SETTLED_STATUSES
+
+
+def _report_task_limit(tasks_file: pathlib.Path, settled: int) -> None:
+    """Prints the one line a caller needs after a bounded run stops."""
+    data = persistence.load_tasks(tasks_file)
+    pending = sum(t.status == models.TaskStatus.PENDING for t in data.tasks)
+    task_label = "task" if settled == 1 else "tasks"
+    click.echo(f"Stopped after {settled} {task_label}; {pending} pending.")
+
+
 def run_loop(
     tasks_file: pathlib.Path,
     verbose: bool,
@@ -527,6 +552,7 @@ def run_loop(
     hooks: list[str] | None = None,
     scope: str | None = None,
     once: bool = False,
+    max_tasks: int | None = None,
 ) -> bool:
     """Runs pending tasks, returning True only when the roadmap is complete.
 
@@ -546,16 +572,26 @@ def run_loop(
         once: Run only the first task, through its configured attempt budget.
             Exhaustion leaves it pending, and failed finalization stops rather
             than turning a review placeholder back into runnable work.
+        max_tasks: Stop between tasks once this many have reached a terminal
+            status, so a caller can run the roadmap one milestone at a time.
+            Attempts that leave a task pending do not count.
 
     Returns:
-        True only when the roadmap ran to completion.
+        True when the roadmap ran to completion or the task limit was reached.
     """
     one_task_id = None
     one_task_config = None
     one_task_runner = None
     one_task_model = None
+    settled_count = 0
     while True:
         returncode = 0
+
+        # A bounded run stops between tasks, after hooks have settled the last
+        # one, so the caller sees a consistent roadmap.
+        if max_tasks is not None and settled_count >= max_tasks:
+            _report_task_limit(tasks_file, settled_count)
+            return True
 
         # A drain request stops the loop between tasks, so the task that was
         # already running is never stranded mid-flight.
@@ -663,6 +699,7 @@ def run_loop(
             )
             if should_abort:
                 return False
+            settled_count += _task_settled(tasks_file, task_id)
             continue
 
         # Add a small random jitter to avoid race conditions between
@@ -717,6 +754,7 @@ def run_loop(
                     (t for t in finalized.tasks if t.id == task_id), None
                 )
                 return bool(task and task.status == models.TaskStatus.COMPLETED)
+            settled_count += _task_settled(tasks_file, task_id)
             continue
 
         prompt = prompts.prepare_prompt(
@@ -822,6 +860,7 @@ def run_loop(
         )
         if should_abort:
             return False
+        settled_count += _task_settled(tasks_file, task_id)
 
         if once:
             updated = persistence.load_tasks(tasks_file)
