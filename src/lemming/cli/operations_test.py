@@ -97,6 +97,34 @@ class TestCLIOperations(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(run_loop.call_args.kwargs["max_tasks"], 2)
 
+    def test_run_resolves_until_prefix(self):
+        persistence.save_tasks(
+            self.test_tasks_file,
+            models.Roadmap(
+                tasks=[models.Task(id="abcd1234", description="Milestone")]
+            ),
+        )
+
+        with mock.patch.object(
+            operations, "run_loop", return_value=True
+        ) as run_loop:
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--until", "abcd"]
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(run_loop.call_args.kwargs["until"], "abcd1234")
+
+    def test_run_rejects_unknown_until(self):
+        with mock.patch.object(operations, "run_loop") as run_loop:
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--until", "nope"]
+            )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Task nope not found", result.output)
+        run_loop.assert_not_called()
+
     def test_run_rejects_zero_max_tasks(self):
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["run", "--max-tasks", "0"]

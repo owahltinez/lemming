@@ -70,6 +70,15 @@ def quiet_poll_log_config() -> dict:
         "caller can drive the roadmap one milestone at a time."
     ),
 )
+@click.option(
+    "--until",
+    "until_id",
+    metavar="TASK_ID",
+    help=(
+        "Stop between tasks once this task, or every task that replaced it, "
+        "has completed or failed. Accepts an unambiguous ID prefix."
+    ),
+)
 @click.argument("runner_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run(
@@ -79,11 +88,22 @@ def run(
     env: tuple,
     no_defaults: bool,
     max_tasks: int | None,
+    until_id: str | None,
     runner_args: tuple,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks."""
     tasks_file = ctx.obj["TASKS_FILE"]
     verbose = ctx.obj["VERBOSE"]
+
+    # Resolve the milestone up front so a typo fails before any task runs.
+    until = None
+    if until_id:
+        try:
+            data = persistence.load_tasks(tasks_file)
+            until = queries.resolve_task(data.tasks, until_id).id
+        except (models.TaskNotFoundError, models.AmbiguousTaskIdError) as e:
+            click.echo(f"Error: {e}")
+            ctx.exit(1)
 
     # Determine the project's working directory
     working_dir = paths.get_working_dir(tasks_file)
@@ -121,6 +141,7 @@ def run(
             runner_args,
             working_dir=working_dir,
             max_tasks=max_tasks,
+            until=until,
         )
     finally:
         persistence.release_loop_lock(tasks_file)

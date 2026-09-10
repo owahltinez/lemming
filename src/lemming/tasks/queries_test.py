@@ -254,3 +254,39 @@ def test_get_pending_task_none_if_in_progress(tmp_path):
         )
         pending = queries.get_pending_task(data)
         assert pending is None
+
+
+def _task(task_id, status, parent=None):
+    return models.Task(
+        id=task_id, description=task_id, status=status, parent=parent
+    )
+
+
+def test_milestone_reached_follows_terminal_status():
+    tasks = [_task("a", models.TaskStatus.PENDING)]
+    assert queries.milestone_reached(tasks, "a") is False
+
+    tasks = [_task("a", models.TaskStatus.FAILED)]
+    assert queries.milestone_reached(tasks, "a") is True
+
+
+def test_milestone_reached_waits_for_replacements():
+    tasks = [
+        _task("a", models.TaskStatus.SUPERSEDED),
+        _task("b", models.TaskStatus.COMPLETED, parent="a"),
+        _task("c", models.TaskStatus.SUPERSEDED, parent="a"),
+        _task("d", models.TaskStatus.PENDING, parent="c"),
+    ]
+    assert queries.milestone_reached(tasks, "a") is False
+
+    tasks[3].status = models.TaskStatus.COMPLETED
+    assert queries.milestone_reached(tasks, "a") is True
+
+
+def test_milestone_reached_treats_dropped_task_as_reached():
+    tasks = [_task("a", models.TaskStatus.SUPERSEDED)]
+    assert queries.milestone_reached(tasks, "a") is True
+
+
+def test_milestone_reached_reports_missing_task():
+    assert queries.milestone_reached([], "a") is None
