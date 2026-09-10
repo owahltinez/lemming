@@ -155,7 +155,7 @@ lemming add "Register the service worker and cache the app shell"
 lemming add "Queue writes in IndexedDB while offline"
 lemming add "Bump the service worker cache version" --oneshot
 lemming run                                  # runs until the queue drains
-lemming run --max-tasks 3                    # or stops after three settle
+lemming run --until <task-id>                # or stops once that task settles
 ```
 
 The loop shares one workspace across all its tasks, so isolate the **whole run**
@@ -175,10 +175,14 @@ Never run the whole roadmap and poll it from one context. Every `status` call
 lands in your context window, and the run outlives it. Split the queue into
 milestones instead:
 
-1. Queue the tasks for one milestone, then `lemming run --max-tasks N`. It
-   blocks, and exits printing `Stopped after N tasks; M pending.` or
-   `All tasks completed!`. A non-zero exit means a task failed or the queue is
-   blocked; `lemming status --brief` shows which.
+1. Queue the whole roadmap, pick the task that ends the first milestone, and
+   run `lemming run --until <task-id>`. It blocks, runs anything the roadmap
+   hook inserts ahead of that task, follows the task through any split, and
+   exits printing `Reached milestone <id>; M pending.` or
+   `All tasks completed!`. A non-zero exit means a task failed, the queue is
+   blocked, or the milestone task was deleted; `lemming status --brief` shows
+   which. Add `--max-tasks N` as a budget cap when a runaway roadmap hook
+   would be expensive.
 2. Between milestones, judge direction: `lemming status --brief`, then
    `lemming status <id>` for the tasks that matter. Re-plan with `add`, `edit`,
    `supersede`, or `delete`, then run the next milestone.

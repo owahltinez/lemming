@@ -425,10 +425,14 @@ These come before the subcommand and apply to all of them.
   - `--yolo`: Run the runner in auto-approve mode (default: True).
   - `--env`: Set environment variables for the runner (e.g., `--env KEY=VALUE`).
   - `--no-defaults`: Skip default flag injection for known runners.
+  - `--until <task-id>`: Stop between tasks once that task has completed or
+    failed, printing `Reached milestone <id>; M pending.` so a supervising
+    agent can review before queueing the next milestone. Tasks inserted ahead
+    of it still run; if the roadmap hook supersedes it, the run continues until
+    every replacement has settled. Deleting it stops the run with exit 1.
   - `--max-tasks N`: Stop between tasks once `N` have completed or failed,
-    printing `Stopped after N tasks; M pending.` so a supervising agent can
-    review before launching the next batch. Attempts that leave a task pending
-    do not count.
+    printing `Stopped after N tasks; M pending.` Attempts that leave a task
+    pending do not count. Combine with `--until` as a budget cap.
   - `--`: Use `--` to pass any flag directly to the underlying runner. A
     per-task `--runner`/`--model` overrides anything passed here.
 - **`exec [<description>]`**: Run one task, or one set of reviews, outside any

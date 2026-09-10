@@ -187,3 +187,30 @@ def get_pending_task(data: models.Roadmap) -> models.Task | None:
 
     uncompleted.sort(key=sort_key)
     return uncompleted[0]
+
+
+def milestone_reached(tasks: list[models.Task], task_id: str) -> bool | None:
+    """Reports whether a task, or everything that replaced it, has settled.
+
+    A superseded task counts as reached only once every replacement recorded
+    against it has settled too, so a milestone survives the roadmap hook
+    splitting it into smaller tasks.
+
+    Args:
+        tasks: Every task in the roadmap.
+        task_id: Exact ID of the milestone task.
+
+    Returns:
+        True when reached, False while work remains, None if the task no
+        longer exists.
+    """
+    task = next((t for t in tasks if t.id == task_id), None)
+    if task is None:
+        return None
+    if task.status == models.TaskStatus.SUPERSEDED:
+        replacements = [t for t in tasks if t.parent == task_id]
+        return all(milestone_reached(tasks, t.id) for t in replacements)
+    return task.status not in (
+        models.TaskStatus.PENDING,
+        models.TaskStatus.IN_PROGRESS,
+    )

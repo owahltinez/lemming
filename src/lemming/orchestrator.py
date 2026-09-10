@@ -533,12 +533,35 @@ def _task_settled(tasks_file: pathlib.Path, task_id: str) -> bool:
     return task is not None and task.status in _SETTLED_STATUSES
 
 
-def _report_task_limit(tasks_file: pathlib.Path, settled: int) -> None:
+def _count_pending(data: models.Roadmap) -> int:
+    return sum(t.status == models.TaskStatus.PENDING for t in data.tasks)
+
+
+def _report_task_limit(data: models.Roadmap, settled: int) -> None:
     """Prints the one line a caller needs after a bounded run stops."""
-    data = persistence.load_tasks(tasks_file)
-    pending = sum(t.status == models.TaskStatus.PENDING for t in data.tasks)
     task_label = "task" if settled == 1 else "tasks"
-    click.echo(f"Stopped after {settled} {task_label}; {pending} pending.")
+    click.echo(
+        f"Stopped after {settled} {task_label}; {_count_pending(data)} pending."
+    )
+
+
+def _check_milestone(data: models.Roadmap, until: str) -> bool | None:
+    """Decides whether a milestone run should stop, reporting why.
+
+    Returns:
+        True to stop successfully, False to stop because the milestone task
+        vanished, None to keep running.
+    """
+    reached = queries.milestone_reached(data.tasks, until)
+    if reached is None:
+        click.echo(f"Milestone task {until} no longer exists; stopping.")
+        return False
+    if reached:
+        click.echo(
+            f"Reached milestone {until}; {_count_pending(data)} pending."
+        )
+        return True
+    return None
 
 
 def run_loop(
@@ -553,6 +576,7 @@ def run_loop(
     scope: str | None = None,
     once: bool = False,
     max_tasks: int | None = None,
+    until: str | None = None,
 ) -> bool:
     """Runs pending tasks, returning True only when the roadmap is complete.
 
@@ -575,9 +599,13 @@ def run_loop(
         max_tasks: Stop between tasks once this many have reached a terminal
             status, so a caller can run the roadmap one milestone at a time.
             Attempts that leave a task pending do not count.
+        until: Exact ID of a milestone task. Stop between tasks once it, or
+            every task that replaced it, has settled; stop unsuccessfully if
+            it is deleted.
 
     Returns:
-        True when the roadmap ran to completion or the task limit was reached.
+        True when the roadmap ran to completion, the task limit was reached,
+        or the milestone was reached.
     """
     one_task_id = None
     one_task_config = None
@@ -586,12 +614,6 @@ def run_loop(
     settled_count = 0
     while True:
         returncode = 0
-
-        # A bounded run stops between tasks, after hooks have settled the last
-        # one, so the caller sees a consistent roadmap.
-        if max_tasks is not None and settled_count >= max_tasks:
-            _report_task_limit(tasks_file, settled_count)
-            return True
 
         # A drain request stops the loop between tasks, so the task that was
         # already running is never stranded mid-flight.
@@ -602,6 +624,16 @@ def run_loop(
         # Reload configuration on each iteration to respond to changes
         # (e.g., from Web UI)
         data = persistence.load_tasks(tasks_file)
+
+        # Bounded runs stop between tasks, after hooks have settled the last
+        # one, so the caller sees a consistent roadmap.
+        if max_tasks is not None and settled_count >= max_tasks:
+            _report_task_limit(data, settled_count)
+            return True
+        if until is not None:
+            milestone = _check_milestone(data, until)
+            if milestone is not None:
+                return milestone
 
         retries = data.config.retries
         time_limit = data.config.time_limit

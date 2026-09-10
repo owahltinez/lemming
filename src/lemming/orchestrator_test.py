@@ -1134,6 +1134,71 @@ def test_run_loop_max_tasks_counts_only_settled_tasks(
 
 
 @mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_loop_until_stops_after_milestone_task(mock_run, setup_env, capsys):
+    """The loop runs inserted tasks and stops once the target settles."""
+    test_tasks_file, _ = setup_env
+    milestone = operations.add_task(test_tasks_file, "Milestone")
+    operations.add_task(test_tasks_file, "After milestone")
+    mock_run.side_effect = _complete_current_task(test_tasks_file)
+
+    completed = run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+        hooks=[],
+        until=milestone.id,
+    )
+
+    assert completed is True
+    statuses = [t.status for t in persistence.load_tasks(test_tasks_file).tasks]
+    assert statuses == [
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.PENDING,
+    ]
+    assert f"Reached milestone {milestone.id}; 1 pending" in (
+        capsys.readouterr().out
+    )
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_loop_until_stops_when_milestone_task_vanishes(
+    mock_run, setup_env, capsys
+):
+    """Deleting the target mid-run is reported instead of running the queue."""
+    test_tasks_file, _ = setup_env
+    milestone = operations.add_task(test_tasks_file, "Milestone")
+
+    def complete_and_delete(cmd, tasks_file_arg, task_id, *args, **kwargs):
+        operations.delete_tasks(test_tasks_file, milestone.id)
+        return _complete_current_task(test_tasks_file)(
+            cmd, tasks_file_arg, task_id, *args, **kwargs
+        )
+
+    mock_run.side_effect = complete_and_delete
+
+    completed = run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+        hooks=[],
+        until=milestone.id,
+    )
+
+    assert completed is False
+    assert mock_run.call_count == 1
+    assert f"Milestone task {milestone.id} no longer exists" in (
+        capsys.readouterr().out
+    )
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
 def test_run_loop_records_resolved_command(mock_run, setup_env):
     """Provenance is persisted so the model behind a commit is recoverable."""
     test_tasks_file, initial_data = setup_env
