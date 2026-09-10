@@ -106,7 +106,11 @@ def _echo_task_summary(
 @click.option(
     "--oneshot",
     is_flag=True,
-    help="Skip post-task orchestrator hooks when this task completes.",
+    help=(
+        "Skip post-task orchestrator hooks when this task completes. Use for "
+        "mechanical work (renames, typo fixes, version bumps, cleanups); each "
+        "hook is a full agent run."
+    ),
 )
 @click.pass_context
 def add(

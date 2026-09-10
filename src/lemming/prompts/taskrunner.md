@@ -41,6 +41,10 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
      Include the file paths, symbols, motivation, and acceptance criteria that
      task needs, but do not restate project-wide rules already present in the
      long-term goal.
+   - **Mechanical Tasks Are Oneshot:** Add cleanups, renames, typo fixes,
+     version bumps, and scratch-file removal with `add ... --oneshot`. Each
+     post-task hook is a full agent run, so a hooked mechanical task takes
+     several times longer than it should.
    - **Detailed Evidence:** Never paste verbose gate output, transcripts, or
      error traces into a description or progress entry. Store them out of band:
      `lemming --tasks-file {{tasks_file_path}} artifact {{task_id}} <name> --file - --note '<one line>'`

@@ -153,33 +153,81 @@ recorded progress, so the project survives context limits.
 lemming goal "Add offline support with a service worker and a sync queue"
 lemming add "Register the service worker and cache the app shell"
 lemming add "Queue writes in IndexedDB while offline"
+lemming add "Bump the service worker cache version" --oneshot
 lemming run                                  # runs until the queue drains
+lemming run --max-tasks 3                    # or stops after three settle
 ```
 
 The loop shares one workspace across all its tasks, so isolate the **whole run**
 — one branch or worktree created before `lemming run`, driven with
 `lemming -C <worktree> run` — never one per task.
 
-Check on it, and read what an agent actually did:
+**Mark mechanical tasks `--oneshot`.** After every other task, review hooks run
+and a roadmap hook may revise the queue; each hook is a full agent run, so a
+typo fix, rename, version bump, or cleanup without `--oneshot` takes several
+times longer than the work itself. Reserve hooked tasks for changes in
+behavior. `lemming hooks list` shows the hooks; `lemming hooks disable <name>`
+turns one off for the project.
+
+### Supervise in milestones
+
+Never run the whole roadmap and poll it from one context. Every `status` call
+lands in your context window, and the run outlives it. Split the queue into
+milestones instead:
+
+1. Queue the tasks for one milestone, then `lemming run --max-tasks N`. It
+   blocks, and exits printing `Stopped after N tasks; M pending.` or
+   `All tasks completed!`. A non-zero exit means a task failed or the queue is
+   blocked; `lemming status --brief` shows which.
+2. Between milestones, judge direction: `lemming status --brief`, then
+   `lemming status <id>` for the tasks that matter. Re-plan with `add`, `edit`,
+   `supersede`, or `delete`, then run the next milestone.
+3. Delegate each milestone to a subagent when one exists, so the polling and
+   the log reading stay out of your context. The subagent reports back in the
+   fixed shape below, nothing more.
+
+This is how a stronger model directs cheaper ones: `lemming config set runner`
+and `config set model` pick the worker; the supervising agent only reads
+status between milestones and decides what happens next.
+
+Checking on a running milestone is fine when a task might be stuck, but poll
+sparingly and read the smallest thing that answers the question:
 
 ```sh
-lemming status              # queue, attempts, and recorded progress
-lemming status <id>         # one task in detail, including its runner command
-lemming logs                # the active task's log, or logs <id> for one task
+lemming status --brief      # one row per task, no descriptions
+lemming status <id>         # Run Time against the time limit, progress entries
+lemming logs <id> | tail -n 30   # never the whole log
 ```
 
-Adjust it while it runs — new tasks are picked up automatically:
+A task is stuck when its run time approaches the limit with no new progress
+entries and the log tail shows the same step repeating. Otherwise leave it.
+
+Adjust the queue while it runs — new tasks are picked up automatically:
 
 ```sh
 lemming add "Add a retry backoff to the sync queue" --index 0  # jump the queue
 lemming stop --after-current-task                             # drain, then stop
 ```
 
-After each task, review hooks run automatically and a roadmap hook may revise
-the queue. `lemming hooks list` shows them; `lemming hooks disable <name>` turns
-one off for the project. Queue a mechanical task — a typo fix, a version bump, a
-rename — with `lemming add "..." --oneshot` to skip those hooks when it
-completes.
+### Report tersely
+
+Your own words fill context faster than any tool. Whether reporting to a user or
+to a parent agent:
+
+- Report one milestone in this shape and no other: outcome (`done`, `failed`,
+  `blocked`), task IDs that settled, files changed, one line of guidance for the
+  next milestone. Skip anything that can be re-read from `lemming status`.
+- Never paste `status`, `logs`, test output, or diffs into a message or a
+  progress entry; name the task ID or file and let the reader fetch it.
+- Progress entries are one line each. Evidence goes into
+  `lemming artifact <id> <name> --file -`, not the entry.
+
+### Do not nest
+
+Never call `lemming run` or `lemming exec` from inside a task runner or a hook.
+Each level spawns another full agent against the same quota, and the inner loop
+competes with the outer one for the same tasks file. A runner that needs more
+work done adds tasks with `lemming add`; the running loop picks them up.
 
 ## What to know before running any of it
 

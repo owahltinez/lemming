@@ -62,6 +62,12 @@ the plan up-to-date with minimal friction.
     Include the concrete files, symbols, motivation, and acceptance criteria the
     task needs, but do not repeat project-wide rules already present in the
     long-term goal.
+    **Mechanical tasks MUST be added with `--oneshot`**: cleanups, renames,
+    typo fixes, version bumps, deleting scratch files, applying formatter
+    output, and the follow-ups from directive 7. Every hook that runs after
+    such a task costs a full agent run, often longer than the task itself.
+    Reserve hooked tasks for work that changes behavior. Mark existing
+    mechanical tasks with `edit <id> --oneshot` when you notice them.
 9.  **No Code Changes**: Your only persistent changes may be to the roadmap via
     the `lemming` CLI. Do NOT edit source or configuration files. Reading the
     workspace and running existing build, test, and entry-point commands for
@@ -76,10 +82,10 @@ the plan up-to-date with minimal friction.
 ## Commands
 
 ```bash
-# Add new tasks
-lemming --tasks-file {{tasks_file_path}} add '<description>' [--index N]
+# Add new tasks (--oneshot for mechanical work, see directive 8)
+lemming --tasks-file {{tasks_file_path}} add '<description>' [--index N] [--oneshot]
 # Edit existing tasks
-lemming --tasks-file {{tasks_file_path}} edit <id> --description '<desc>'
+lemming --tasks-file {{tasks_file_path}} edit <id> --description '<desc>' [--oneshot]
 # Reset/Delete/Supersede/Status
 lemming --tasks-file {{tasks_file_path}} reset <id>
 lemming --tasks-file {{tasks_file_path}} delete <id>
