@@ -398,6 +398,54 @@ def extract_error_message(
     return None
 
 
+def extract_lost_writes(output: str) -> list[str]:
+    """Returns workspace files agy rejected creating and never wrote after.
+
+    Agy since 1.1.12 rejects a `write_to_file` carrying ArtifactMetadata for
+    a workspace path. The model usually retries without it, but sometimes
+    writes the file into agy's own artifact directory instead and still
+    reports success (google-antigravity/antigravity-cli#838).
+
+    Args:
+        output: Captured runner output, one JSON event per line.
+
+    Returns:
+        Rejected target paths with no later successful write, in order.
+    """
+    lost: dict[str, None] = {}
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("{") or "write_to_file" not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+
+        # Only agy's tool step updates carry the target and outcome.
+        update = event.get("step_update") if isinstance(event, dict) else None
+        if not isinstance(update, dict):
+            continue
+        if update.get("tool_name") != "write_to_file":
+            continue
+        info = update.get("tool_info")
+        if not isinstance(info, dict):
+            continue
+        params = info.get("parameters")
+        target = params.get("TargetFile") if isinstance(params, dict) else None
+        if not isinstance(target, str):
+            continue
+
+        # A later successful write to the same path recovers the rejection.
+        if update.get("state") == "DONE":
+            lost.pop(target, None)
+        elif update.get("state") == "ERROR" and "not a valid artifact path" in (
+            json.dumps(info.get("error"))
+        ):
+            lost[target] = None
+    return list(lost)
+
+
 def _final_message_text(event: dict) -> str | None:
     """Returns the agent's closing text from one event, or None.
 
