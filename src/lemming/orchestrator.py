@@ -392,6 +392,18 @@ def _handle_runner_exit(
         runner.RETURNCODE_TIMEOUT,
     )
 
+    # Record agy's silently lost file creations before hooks judge the task.
+    for path in runner.extract_lost_writes(stdout):
+        message = f"Runner failed to create {path}: agy rejected the write"
+        click.echo(message)
+        try:
+            progress.add_progress(
+                tasks_file, task_id, message[: limits.MAX_PROGRESS_ENTRY_CHARS]
+            )
+        except Exception:
+            # Recording the loss must never take down the loop.
+            pass
+
     # Post-execution validation and heartbeat cleanup
     # This will mark the task as COMPLETED or PENDING based on whether
     # the agent called 'lemming complete'.
