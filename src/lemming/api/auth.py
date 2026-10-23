@@ -23,6 +23,13 @@ def _token_matches(candidate: str | None, share_token: str) -> bool:
     return secrets.compare_digest(candidate.encode(), share_token.encode())
 
 
+def _with_security_headers(response: fastapi.Response) -> fastapi.Response:
+    """Attaches baseline security headers to an outgoing response."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
+
+
 async def share_token_middleware(request: fastapi.Request, call_next):
     """Require a share token for every request when one is configured.
 
@@ -40,18 +47,24 @@ async def share_token_middleware(request: fastapi.Request, call_next):
     """
     share_token = getattr(request.app.state, "share_token", None)
     if not share_token:
-        return await call_next(request)
+        return _with_security_headers(await call_next(request))
 
     token = request.query_params.get("token")
     if _token_matches(token, share_token):
         response = await call_next(request)
         response.set_cookie(
-            key="lemming_share_token", value=token, httponly=True
+            key="lemming_share_token",
+            value=token,
+            httponly=True,
+            samesite="strict",
+            secure=request.url.scheme == "https",
         )
-        return response
+        return _with_security_headers(response)
 
     cookie_token = request.cookies.get("lemming_share_token")
     if _token_matches(cookie_token, share_token):
-        return await call_next(request)
+        return _with_security_headers(await call_next(request))
 
-    return fastapi.Response("Unauthorized", status_code=401)
+    return _with_security_headers(
+        fastapi.Response("Unauthorized", status_code=401)
+    )

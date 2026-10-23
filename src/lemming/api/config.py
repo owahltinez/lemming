@@ -51,6 +51,18 @@ class RunRequest(pydantic.BaseModel):
     env: dict[str, str] | None = None
 
 
+_BLOCKED_ENV_VARS = frozenset(
+    {
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "PYTHONSTARTUP",
+        "PYTHONPATH",
+        "NODE_OPTIONS",
+    }
+)
+
+
 @router.post("/api/run")
 def run_loop(
     request: fastapi.Request,
@@ -58,6 +70,15 @@ def run_loop(
     project: str | None = None,
 ):
     """Start the orchestrator loop as a detached background process."""
+    if run_request.env:
+        blocked = sorted(
+            key for key in run_request.env if key.upper() in _BLOCKED_ENV_VARS
+        )
+        if blocked:
+            raise fastapi.HTTPException(
+                400, f"Forbidden environment variable(s): {', '.join(blocked)}"
+            )
+
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     project_dir = context.resolve_project_dir(request.app.state, project)
 

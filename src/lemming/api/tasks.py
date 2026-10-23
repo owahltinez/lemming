@@ -34,6 +34,17 @@ def add_task(
     request: fastapi.Request, task: AddTaskRequest, project: str | None = None
 ):
     """Add a new task and start the orchestrator loop if needed."""
+    if task.parent_tasks_file:
+        root = request.app.state.root.resolve()
+        lemming_home = paths.get_lemming_home().resolve()
+        candidate = (root / task.parent_tasks_file).resolve()
+        if not (
+            candidate.is_relative_to(root)
+            or candidate.is_relative_to(lemming_home)
+        ):
+            raise fastapi.HTTPException(
+                400, "parent_tasks_file must be inside the workspace"
+            )
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     try:
         new_task = operations.add_task(
@@ -200,9 +211,12 @@ def get_task_log(
     request: fastapi.Request, task_id: str, project: str | None = None
 ):
     """Get the runner log output for a task, or empty if none exists."""
-    log_file = paths.get_log_file(
-        context.resolve_tasks_file(request.app.state, project), task_id
-    )
-    if not log_file.exists():
+    tasks_file = context.resolve_tasks_file(request.app.state, project)
+    try:
+        paths._validate_task_id(task_id)
+        log_file = queries.resolve_log_file(tasks_file, task_id)
+    except models.TaskNotFoundError:
         return {"log": ""}
+    except (ValueError, models.AmbiguousTaskIdError) as e:
+        raise fastapi.HTTPException(400, str(e))
     return {"log": log_file.read_text(encoding="utf-8")}

@@ -1,6 +1,5 @@
 """Path resolution, .env loading, and git helpers for Lemming."""
 
-import functools
 import hashlib
 import logging
 import os
@@ -257,6 +256,18 @@ def get_working_dir(tasks_file: pathlib.Path) -> pathlib.Path:
     return tasks_file_abs.parent
 
 
+def _validate_task_id(task_id: str) -> None:
+    """Rejects empty or path-traversing task identifiers."""
+    if (
+        not task_id
+        or "/" in task_id
+        or "\\" in task_id
+        or ".." in task_id
+        or pathlib.Path(task_id).name != task_id
+    ):
+        raise ValueError(f"Invalid task ID: {task_id!r}")
+
+
 def get_log_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     """Returns the log file path for a specific task.
 
@@ -267,6 +278,7 @@ def get_log_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     Returns:
         A pathlib.Path to the log file for the given task.
     """
+    _validate_task_id(task_id)
     project_dir = get_project_dir(tasks_file)
     project_dir.mkdir(parents=True, exist_ok=True)
     return project_dir / f"{task_id}-runner.log"
@@ -286,6 +298,7 @@ def get_brief_file(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     Returns:
         A pathlib.Path to the brief file for the given task.
     """
+    _validate_task_id(task_id)
     project_dir = get_project_dir(tasks_file)
     project_dir.mkdir(parents=True, exist_ok=True)
     return project_dir / f"{task_id}-brief.md"
@@ -306,6 +319,7 @@ def get_artifacts_dir(tasks_file: pathlib.Path, task_id: str) -> pathlib.Path:
     Returns:
         A pathlib.Path to the artifacts directory, which may not exist yet.
     """
+    _validate_task_id(task_id)
     return get_project_dir(tasks_file) / f"{task_id}-artifacts"
 
 
@@ -341,20 +355,20 @@ def _truncate_name(name: str) -> str:
     return name[: MAX_ARTIFACT_NAME_CHARS - 1] + "…"
 
 
-@functools.cache
-def in_git_repo() -> bool:
-    """Check if the current directory is inside a git repository.
+def in_git_repo(cwd: pathlib.Path | None = None) -> bool:
+    """Check if a directory (or the current directory) is inside a git repo.
 
-    The result is cached after the first call; use
-    `in_git_repo.cache_clear()` to reset it.
+    Args:
+        cwd: Directory to check, defaulting to the current working directory.
 
     Returns:
         True if inside a git repository, False otherwise.
     """
+    target = cwd if cwd is not None else pathlib.Path.cwd()
     try:
         return (
             subprocess.run(
-                ["git", "rev-parse", "--git-dir"],
+                ["git", "-C", str(target), "rev-parse", "--git-dir"],
                 capture_output=True,
                 check=False,
             ).returncode
@@ -364,8 +378,11 @@ def in_git_repo() -> bool:
         return False
 
 
+in_git_repo.cache_clear = lambda: None  # type: ignore[attr-defined]
+
+
 def is_ignored(path: pathlib.Path) -> bool:
-    """Check if a given path is ignored by git.
+    """Check if a given path is sensitive or ignored by git.
 
     Args:
         path: The path to check for git-ignore status.
@@ -373,12 +390,19 @@ def is_ignored(path: pathlib.Path) -> bool:
     Returns:
         True if the path is ignored by git, False otherwise.
     """
-    if not in_git_repo():
+    if (
+        ".git" in path.parts
+        or path.name == ".env"
+        or path.name.startswith(".env.")
+    ):
+        return True
+    cwd = path if path.is_dir() else path.parent
+    if not in_git_repo(cwd):
         return False
     try:
         return (
             subprocess.run(
-                ["git", "check-ignore", "-q", str(path)],
+                ["git", "-C", str(cwd), "check-ignore", "-q", "--", str(path)],
                 capture_output=True,
                 check=False,
             ).returncode

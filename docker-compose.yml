@@ -2,7 +2,7 @@ services:
   lemming:
     build: .
     ports:
-      - '${LEMMING_PORT:-8999}:${LEMMING_PORT:-8999}'
+      - '127.0.0.1:${LEMMING_PORT:-8999}:${LEMMING_PORT:-8999}'
     command: ['--port', '${LEMMING_PORT:-8999}']
     volumes:
       - lemming-data:/data

@@ -18,11 +18,12 @@ lint-debt-repaid against clean-fast-exit.
 """
 
 import pathlib
+import shutil
 import subprocess
 import sys
 
 from .. import models
-from . import fixtures, metrics, scenarios
+from . import container, fixtures, metrics, scenarios
 
 _GOAL = (
     "Build a small calculator CLI in calc/ with add, subtract, and "
@@ -94,8 +95,28 @@ def _save_finished_task(workspace: pathlib.Path, progress: list[str]) -> None:
 
 def _check_tests_pass(workspace: pathlib.Path) -> scenarios.Check:
     """Checks that the fixture's unit tests still pass after the hook."""
+    if shutil.which("docker"):
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "--network=none",
+            "-v",
+            f"{workspace}:{container.WORKSPACE_MOUNT}:ro",
+            "-w",
+            container.WORKSPACE_MOUNT,
+            container.DEFAULT_IMAGE,
+            "python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-p",
+            "*_test.py",
+        ]
+    else:
+        cmd = [sys.executable, "-m", "unittest", "discover", "-p", "*_test.py"]
     result = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-p", "*_test.py"],
+        cmd,
         cwd=workspace,
         capture_output=True,
         text=True,

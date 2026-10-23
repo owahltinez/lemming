@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -28,7 +31,7 @@ jobs:
 
       # Before the Python tests: they invoke readability, which runs this.
       - name: Install Node.js dependencies
-        run: npm install
+        run: npm ci
 
       # Runs ruff and ruff format as before, and adds the type and prose
       # checks the separate steps never covered.

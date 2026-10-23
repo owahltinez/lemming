@@ -2,6 +2,7 @@ import pathlib
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 
 from lemming import models
 from lemming.evals import fixtures, readability, scenarios, suites
@@ -39,6 +40,15 @@ class ScenarioTestCase(unittest.TestCase):
     def setUp(self):
         self.workspace = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+        orig_which = shutil.which
+        patcher = unittest.mock.patch(
+            "lemming.evals.readability.shutil.which",
+            side_effect=lambda cmd: (
+                None if cmd == "docker" else orig_which(cmd)
+            ),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def build(self, name: str):
         self.scenario = _scenario(name)
@@ -369,6 +379,43 @@ class TestFixtureIntegrity(ScenarioTestCase):
                 scenario.build(workspace)
                 check = readability._check_tests_pass(workspace)
                 self.assertTrue(check.passed, check.detail)
+
+    def test_check_tests_pass_uses_docker_when_available(self):
+        completed = unittest.mock.Mock(returncode=0, stderr="")
+        with (
+            unittest.mock.patch(
+                "lemming.evals.readability.shutil.which",
+                return_value="/usr/bin/docker",
+            ),
+            unittest.mock.patch(
+                "lemming.evals.readability.subprocess.run",
+                return_value=completed,
+            ) as mock_run,
+        ):
+            check = readability._check_tests_pass(self.workspace)
+
+        self.assertTrue(check.passed)
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(
+            cmd,
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--network=none",
+                "-v",
+                f"{self.workspace}:/workspace:ro",
+                "-w",
+                "/workspace",
+                "lemming-evals",
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-p",
+                "*_test.py",
+            ],
+        )
 
 
 if __name__ == "__main__":

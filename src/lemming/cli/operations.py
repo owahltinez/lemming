@@ -278,6 +278,12 @@ def serve(
     api_main.app.state.verbose = ctx.obj["VERBOSE"]
     api_main.app.state.root = pathlib.Path.cwd().resolve()
 
+    is_remote_host = host not in ("127.0.0.1", "::1", "localhost")
+    token = os.environ.get("LEMMING_SHARE_TOKEN") or (
+        secrets.token_urlsafe(32) if (tunnel or is_remote_host) else None
+    )
+    api_main.app.state.share_token = token
+
     tunnel_proc = None
     if tunnel:
         click.echo(f"[ Lemming ] Starting local server on port {port}...")
@@ -295,9 +301,6 @@ def serve(
         except Exception as e:
             click.echo(f"[ Lemming ] Error starting tunnel: {e}", err=True)
             sys.exit(1)
-
-        token = secrets.token_urlsafe(32)
-        api_main.app.state.share_token = token
 
         click.echo("[ Lemming ] ")
         click.echo("[ Lemming ] ⚠️  SECURITY WARNING ")
@@ -317,6 +320,10 @@ def serve(
         # The token is required locally too, so echo a usable local link.
         click.echo(f"[ Lemming ] 🖥️  Local: http://{host}:{port}?token={token}")
         click.echo("")
+    elif token:
+        click.echo(
+            f"Launching Lemming UI at http://{host}:{port}?token={token}"
+        )
     else:
         click.echo(f"Launching Lemming UI at http://{host}:{port}")
 

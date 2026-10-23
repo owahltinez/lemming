@@ -20,9 +20,17 @@ def test_share_token_middleware():
         # Valid token via query
         response = client.get("/api/data?token=secret123")
         assert response.status_code == 200
-        assert "lemming_share_token=secret123" in response.headers.get(
-            "set-cookie", ""
+        set_cookie = response.headers.get("set-cookie", "")
+        assert "lemming_share_token=secret123" in set_cookie
+        assert "samesite=strict" in set_cookie.lower()
+        assert response.headers.get("x-content-type-options") == "nosniff"
+        assert response.headers.get("referrer-policy") == "no-referrer"
+
+        https_client = fastapi.testclient.TestClient(
+            main.app, base_url="https://testserver"
         )
+        https_resp = https_client.get("/api/data?token=secret123")
+        assert "secure" in https_resp.headers.get("set-cookie", "").lower()
 
         # Valid token via cookie
         client.cookies.set("lemming_share_token", "secret123")

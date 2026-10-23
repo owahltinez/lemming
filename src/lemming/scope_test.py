@@ -99,6 +99,14 @@ def test_an_unresolvable_range_is_reported(repo):
         scope.resolve_scope(("no-such-branch...HEAD",), repo)
 
 
+def test_a_leading_dash_range_is_rejected(repo, tmp_path):
+    """A range starting with '-' must not be passed as a flag to git diff."""
+    out_file = tmp_path / "pwn..HEAD"
+    with pytest.raises(scope.ScopeError):
+        scope.resolve_scope((f"--output={out_file}",), repo)
+    assert not out_file.exists()
+
+
 def test_a_path_that_does_not_exist_is_still_a_path(repo):
     """Requiring existence would reject globs the agent can expand."""
     assert scope.resolve_scope(("src/**/*.py",), repo) == ["src/**/*.py"]

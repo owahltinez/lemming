@@ -82,3 +82,18 @@ def test_run_loop_with_project_cwd(test_workspace, client):
         # Verify Popen was called with the correct cwd
         _, kwargs = mock_popen.call_args
         assert str(kwargs["cwd"]) == str(subproject_dir)
+
+
+def test_run_loop_blocks_dangerous_env_vars(client, test_tasks):
+    for var in (
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "PYTHONSTARTUP",
+        "PYTHONPATH",
+        "NODE_OPTIONS",
+    ):
+        with patch("subprocess.Popen") as mock_popen:
+            response = client.post("/api/run", json={"env": {var: "evil"}})
+            assert response.status_code == 400, var
+            mock_popen.assert_not_called()

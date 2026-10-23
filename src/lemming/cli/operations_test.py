@@ -9,6 +9,7 @@ from unittest import mock
 import click.testing
 
 from lemming import models, persistence
+from lemming.api import main as api_main
 from lemming.cli import main as cli
 from lemming.cli import operations
 
@@ -137,6 +138,22 @@ class TestCLIOperations(unittest.TestCase):
         result = self.cli_runner.invoke(cli.cli, ["serve", "--help"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Launches the local web dashboard", result.output)
+
+    def test_serve_non_loopback_enables_share_token(self):
+        original_token = getattr(api_main.app.state, "share_token", None)
+        try:
+            with mock.patch("uvicorn.run"):
+                result = self.cli_runner.invoke(
+                    cli.cli,
+                    self.base_args + ["serve", "--host", "0.0.0.0"],
+                )
+            self.assertEqual(result.exit_code, 0)
+            self.assertTrue(api_main.app.state.share_token)
+            self.assertIn(
+                f"?token={api_main.app.state.share_token}", result.output
+            )
+        finally:
+            api_main.app.state.share_token = original_token
 
 
 class TestQuietPollLogConfig(unittest.TestCase):

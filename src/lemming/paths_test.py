@@ -6,20 +6,20 @@ import subprocess
 import time
 from unittest import mock
 
+import pytest
+
 from lemming import paths
 
 
-def test_get_lemming_home_default():
+def test_get_lemming_home_default(monkeypatch):
     expected = pathlib.Path.home() / ".local" / "lemming"
-    if "LEMMING_HOME" in os.environ:
-        del os.environ["LEMMING_HOME"]
+    monkeypatch.delenv("LEMMING_HOME", raising=False)
     assert paths.get_lemming_home() == expected
 
 
-def test_get_lemming_home_override(tmp_path):
-    os.environ["LEMMING_HOME"] = str(tmp_path)
+def test_get_lemming_home_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path))
     assert paths.get_lemming_home() == tmp_path.resolve()
-    del os.environ["LEMMING_HOME"]
 
 
 def test_get_working_dir(tmp_path, monkeypatch):
@@ -82,6 +82,34 @@ def test_get_log_file(tmp_path):
     log_file = paths.get_log_file(tasks_file, "task123")
     assert log_file.name == "task123-runner.log"
     assert log_file.parent.exists()
+
+
+def test_get_log_and_brief_file_reject_path_traversal(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    for bad_id in ("../escape", "a/b", "..", ""):
+        with pytest.raises(ValueError):
+            paths.get_log_file(tasks_file, bad_id)
+        with pytest.raises(ValueError):
+            paths.get_brief_file(tasks_file, bad_id)
+        with pytest.raises(ValueError):
+            paths.get_artifacts_dir(tasks_file, bad_id)
+
+
+def test_is_ignored_blocks_git_and_dotenv_and_uses_target_cwd(tmp_path):
+    assert paths.is_ignored(tmp_path / ".git") is True
+    assert paths.is_ignored(tmp_path / ".git" / "config") is True
+    assert paths.is_ignored(tmp_path / ".env") is True
+    assert paths.is_ignored(tmp_path / ".env.local") is True
+
+    repo_dir = tmp_path / "subrepo"
+    repo_dir.mkdir()
+    subprocess.run(["git", "-C", str(repo_dir), "init", "-q"], check=True)
+    (repo_dir / ".gitignore").write_text("secret.txt\n", encoding="utf-8")
+    (repo_dir / "secret.txt").touch()
+    (repo_dir / "public.txt").touch()
+
+    assert paths.is_ignored(repo_dir / "secret.txt") is True
+    assert paths.is_ignored(repo_dir / "public.txt") is False
 
 
 def test_in_git_repo_and_is_ignored(tmp_path):

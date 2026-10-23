@@ -28,7 +28,7 @@ RUN uv sync --no-dev --group evals --frozen
 # the web assets. The browsers are not, and they are more than half the
 # image, so anything that will never drive one builds without them.
 ARG INSTALL_BROWSERS=true
-RUN npm install \
+RUN npm ci \
     && if [ "$INSTALL_BROWSERS" = "true" ]; then \
          npx playwright install --with-deps; \
        fi

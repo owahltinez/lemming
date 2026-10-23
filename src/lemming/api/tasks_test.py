@@ -511,3 +511,21 @@ def test_add_task_refuses_corrupted_tasks_file(client, test_tasks):
     assert response.status_code == 500
     assert str(test_tasks) in response.json()["detail"]
     assert test_tasks.read_text(encoding="utf-8") == corrupt
+
+
+def test_add_task_rejects_outside_parent_tasks_file(client, test_tasks):
+    for bad_path in ("/etc/passwd", "../../outside.yml"):
+        response = client.post(
+            "/api/tasks",
+            json={
+                "description": "Child task",
+                "parent": "task1",
+                "parent_tasks_file": bad_path,
+            },
+        )
+        assert response.status_code == 400, bad_path
+
+
+def test_get_task_log_rejects_traversal(client, test_tasks):
+    response = client.get("/api/tasks/..%2Fsecret/log")
+    assert response.status_code in (400, 404)

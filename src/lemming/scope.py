@@ -85,6 +85,10 @@ def _range_paths(spec: str, working_dir: pathlib.Path) -> list[str]:
     Raises:
         ScopeError: If git cannot read the range.
     """
+    if spec.startswith("-"):
+        raise ScopeError(
+            f"Could not resolve '{spec}' as a path or a revision range."
+        )
     result = _git(working_dir, "diff", "--name-only", spec)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip().splitlines()
