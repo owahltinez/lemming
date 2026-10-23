@@ -1,5 +1,6 @@
 """Path resolution, .env loading, and git helpers for Lemming."""
 
+import functools
 import hashlib
 import logging
 import os
@@ -355,6 +356,7 @@ def _truncate_name(name: str) -> str:
     return name[: MAX_ARTIFACT_NAME_CHARS - 1] + "…"
 
 
+@functools.cache
 def in_git_repo(cwd: pathlib.Path | None = None) -> bool:
     """Check if a directory (or the current directory) is inside a git repo.
 
@@ -376,9 +378,6 @@ def in_git_repo(cwd: pathlib.Path | None = None) -> bool:
         )
     except Exception:
         return False
-
-
-in_git_repo.cache_clear = lambda: None  # type: ignore[attr-defined]
 
 
 def is_ignored(path: pathlib.Path) -> bool:
