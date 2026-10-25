@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -185,7 +185,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.124.4" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "readability-cli", specifier = ">=0.10.4" },
+    { name = "readability-cli", specifier = ">=0.10.6" },
     { name = "uvicorn", specifier = ">=0.33.0" },
 ]
 
@@ -401,14 +401,14 @@ wheels = [
 
 [[package]]
 name = "readability-cli"
-version = "0.10.4"
+version = "0.10.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e0/58/18f1daca819b8fb2368a3e0ef58fca7429da26b20ab271729ca0d11d2b53/readability_cli-0.10.4.tar.gz", hash = "sha256:b11dfb7c9386b6cf1c6c027c733d47e084ee18c1d48e1b3ed8b937c111d2a242", size = 353086, upload-time = "2026-09-07T07:07:38.545Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/b2/6462d49deea98f29cc1eb512e9b4b894667366b194c53af6f2dade7b7977/readability_cli-0.10.6.tar.gz", hash = "sha256:73ce98fbee257e590fe35e810cc185ef25687183dc544ec276d2e6ecaec49daa", size = 357892, upload-time = "2026-10-25T20:39:22.634Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/60/c7335e9444a397077ea90b596b3fa5f8a05eedbcf343938f46537c1a4373/readability_cli-0.10.4-py3-none-any.whl", hash = "sha256:6fdbd271593b5896a119561ec597837d054f5d3d97f9a010d96e3dcc90583898", size = 327431, upload-time = "2026-09-07T07:07:37.169Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/ea/28c6f4ca2b08411db07565f9058bd0c824f1a04bd08124ceecec4ab1c5cb/readability_cli-0.10.6-py3-none-any.whl", hash = "sha256:527e25f3e4338112d7dac465d48a5992bc4a61a42117cb184ba7b581f86edbb0", size = 332277, upload-time = "2026-10-25T20:39:21.329Z" },
 ]
 
 [[package]]
