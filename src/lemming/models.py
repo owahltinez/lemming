@@ -55,6 +55,8 @@ class Task(pydantic.BaseModel):
     model: str | None = None
     # Atomic tasks (typo fix, version bump) skip post-task hooks on success.
     oneshot: bool = False
+    # Review hooks (below the 9x band) for this task; None uses the project's.
+    hooks: list[str] | None = None
     # Runner command of the most recent attempt, with the prompt elided. Set
     # when the runner starts so provenance survives the process.
     resolved_command: str | None = None
@@ -87,6 +89,8 @@ class RoadmapConfig(pydantic.BaseModel):
     runner: str = pydantic.Field(default_factory=detect_default_runner)
     model: str | None = None
     time_limit: int = 60
+    # Hooks enabled by default; reviews are opt-in, so only the 9x band.
+    hooks: list[str] = pydantic.Field(default_factory=lambda: ["roadmap"])
 
 
 class Roadmap(pydantic.BaseModel):

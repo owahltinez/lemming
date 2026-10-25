@@ -27,8 +27,8 @@ def config_list(ctx: click.Context):
     click.echo(f"  Retries:       {c.retries}")
     click.echo(f"  Time limit:    {format_duration(c.time_limit)}")
 
-    # Hooks are discovered from the filesystem, not stored in config
-    active_hooks = hooks.list_hooks(tasks_file)
+    # Enabled hooks that resolve to an unmasked file, in execution order
+    active_hooks = hooks.select_hooks(tasks_file, c.hooks, None)
     click.echo(
         "  Hooks:         "
         f"{', '.join(active_hooks) if active_hooks else '(none)'}"

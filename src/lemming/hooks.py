@@ -1,14 +1,15 @@
 """Discovery and management of orchestrator hook files.
 
-Hook execution lives in the orchestrator module; this module owns the
-filesystem layer: layered discovery, priorities, and mask operations.
+Hook execution lives in the orchestrator module; this module owns layered
+discovery, priorities, and which hooks are enabled for a project or task.
 """
 
 import dataclasses
 import pathlib
 import re
+import typing
 
-from . import paths
+from . import paths, persistence
 
 # Hook files follow a udev-style naming convention: "NN-name.md" where the
 # numeric prefix orders execution and the remainder is the hook's logical
@@ -16,6 +17,9 @@ from . import paths
 # FAILURE_HOOK_PRIORITY also run when a task fails.
 DEFAULT_HOOK_PRIORITY = 50
 FAILURE_HOOK_PRIORITY = 90
+
+# Requests every review rather than making the caller name each one.
+ALL_REVIEWS = "all"
 
 _HOOK_STEM_RE = re.compile(r"^(\d+)-(.+)$")
 
@@ -111,128 +115,139 @@ def get_hook_priority(name: str, tasks_file: pathlib.Path | None = None) -> int:
     return DEFAULT_HOOK_PRIORITY
 
 
-def disable_hooks(
-    names: list[str], tasks_file: pathlib.Path
-) -> dict[str, pathlib.Path | None]:
-    """Disables hooks for the project by writing empty mask files.
+def select_hooks(
+    tasks_file: pathlib.Path,
+    config_hooks: list[str],
+    task_hooks: list[str] | None,
+) -> list[str]:
+    """Returns the hooks active for a task, in execution order.
 
-    All names are validated before any file is written, so a bad name never
-    results in a partial application. The name check against resolved hooks
-    also guarantees that only known hook names reach the filesystem (no
-    caller-controlled paths).
+    The 9x band always comes from the project; a task's own list, when set,
+    replaces the project's reviews. Masked and unknown names are skipped.
 
     Args:
-        names: Logical names of the hooks to disable.
         tasks_file: Path to the tasks file identifying the project.
+        config_hooks: The project's enabled hooks.
+        task_hooks: The task's reviews, or None for the project's.
 
     Returns:
-        Mapping of each name to the mask file created, or None if the hook
-        was already disabled.
+        Active hook names sorted by (priority, name).
+    """
+    selected = []
+    for hook in resolve_hooks(tasks_file):
+        names = (
+            config_hooks
+            if task_hooks is None or hook.priority >= FAILURE_HOOK_PRIORITY
+            else task_hooks
+        )
+        if not hook.masked and hook.name in names:
+            selected.append(hook.name)
+    return selected
+
+
+def parse_reviews(
+    values: typing.Iterable[str], tasks_file: pathlib.Path | None = None
+) -> list[str]:
+    """Parses requested review hooks into names in execution order.
+
+    Args:
+        values: Requested reviews, each possibly comma-separated. The value
+            "all" stands for every review.
+        tasks_file: Optional project whose hooks to resolve; without it only
+            the built-in and global layers are considered.
+
+    Returns:
+        Review names ordered by hook priority.
 
     Raises:
-        ValueError: If any hook is unknown, or a non-empty project override
-            exists (masking it would clobber the override).
+        ValueError: If a name is unknown or in the orchestration band.
     """
-    resolved = {h.name: h for h in resolve_hooks(tasks_file)}
+    requested = [
+        name.strip()
+        for value in values
+        for name in value.split(",")
+        if name.strip()
+    ]
+    active = [h for h in resolve_hooks(tasks_file) if not h.masked]
+    reviews = [h.name for h in active if h.priority < FAILURE_HOOK_PRIORITY]
 
-    # Validate every name before applying any changes
-    for name in names:
-        hook = resolved.get(name)
-        if hook is None:
-            raise ValueError(f"Hook '{name}' not found.")
+    if ALL_REVIEWS in requested:
+        return reviews
 
-        # Never clobber a project override; the user must remove it first
-        if not hook.masked and hook.source == "local":
-            raise ValueError(
-                f"Hook '{name}' has a project override at {hook.path}; "
-                "delete or rename that file instead."
-            )
-
-    local_dir = get_local_hooks_dir(tasks_file)
-    results: dict[str, pathlib.Path | None] = {}
-    for name in names:
-        hook = resolved[name]
-        if hook.masked:
-            results[name] = None
+    for name in requested:
+        if name in reviews:
             continue
-
-        # Keep the hook's priority in the mask filename so listings still
-        # report the priority it would run at if re-enabled
-        local_dir.mkdir(parents=True, exist_ok=True)
-        mask = local_dir / f"{hook.priority}-{name}.md"
-        mask.write_text("", encoding="utf-8")
-        results[name] = mask
-
-    return results
+        if any(h.name == name for h in active):
+            raise ValueError(
+                f"'{name}' orchestrates the roadmap and cannot be selected "
+                "as a review."
+            )
+        raise ValueError(
+            f"Unknown review '{name}'. Available: {', '.join(reviews)}."
+        )
+    return [name for name in reviews if name in requested]
 
 
 def enable_hooks(names: list[str], tasks_file: pathlib.Path) -> dict[str, bool]:
-    """Re-enables hooks by removing their project mask files.
+    """Adds hooks to the project's enabled set.
 
-    All names are validated before any file is removed, so a bad name never
-    results in a partial application.
+    All names are validated before the config is written, so a bad name
+    never results in a partial application.
 
     Args:
         names: Logical names of the hooks to enable.
         tasks_file: Path to the tasks file identifying the project.
 
     Returns:
-        Mapping of each name to True if a mask was removed, or False if the
-        hook was already enabled.
+        Mapping of each name to True if it was added, or False if the hook
+        was already enabled.
 
     Raises:
-        ValueError: If any hook is unknown, is masked outside the project,
-            or a matching project file has content (an override, not a
-            mask).
+        ValueError: If any hook is unknown or masked.
     """
-    local_dir = get_local_hooks_dir(tasks_file)
     resolved = {h.name: h for h in resolve_hooks(tasks_file)}
-
-    # Validate every name and plan the removals before applying any changes
-    plan: dict[str, list[pathlib.Path]] = {}
     for name in names:
-        # Find project-layer files matching the hook's logical name
-        matches = []
-        if local_dir.exists():
-            matches = [
-                f
-                for f in local_dir.glob("*.md")
-                if parse_hook_stem(f.stem)[1] == name
-            ]
-
-        if not matches:
-            hook = resolved.get(name)
-            if hook is None:
-                raise ValueError(f"Hook '{name}' not found.")
-            if hook.masked:
-                raise ValueError(
-                    f"Hook '{name}' is masked outside the project at "
-                    f"{hook.path}; remove that file manually."
-                )
-            plan[name] = []
-            continue
-
-        # Only delete masks; a file with content is an override, not a
-        # mask, and unreadable files are treated as overrides to be safe
-        overrides = []
-        for f in matches:
-            try:
-                is_mask = not f.read_text(encoding="utf-8").strip()
-            except (OSError, UnicodeDecodeError):
-                is_mask = False
-            if not is_mask:
-                overrides.append(f)
-        if overrides:
+        hook = resolved.get(name)
+        if hook is None:
+            raise ValueError(f"Hook '{name}' not found.")
+        if hook.masked:
             raise ValueError(
-                f"Hook '{name}' has a project override at {overrides[0]}; "
-                "delete it manually if that is intended."
+                f"Hook '{name}' is masked by {hook.path}; remove that file "
+                "first."
             )
-        plan[name] = matches
 
-    results: dict[str, bool] = {}
-    for name, masks in plan.items():
-        for f in masks:
-            f.unlink()
-        results[name] = bool(masks)
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        results = {name: name not in data.config.hooks for name in names}
+        data.config.hooks += [name for name, added in results.items() if added]
+        persistence.save_tasks(tasks_file, data)
+    return results
 
+
+def disable_hooks(
+    names: list[str], tasks_file: pathlib.Path
+) -> dict[str, bool]:
+    """Removes hooks from the project's enabled set.
+
+    Args:
+        names: Logical names of the hooks to disable.
+        tasks_file: Path to the tasks file identifying the project.
+
+    Returns:
+        Mapping of each name to True if it was removed, or False if the hook
+        was already disabled.
+
+    Raises:
+        ValueError: If any name is neither enabled nor a known hook.
+    """
+    known = {h.name for h in resolve_hooks(tasks_file)}
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        for name in names:
+            if name not in data.config.hooks and name not in known:
+                raise ValueError(f"Hook '{name}' not found.")
+
+        results = {name: name in data.config.hooks for name in names}
+        data.config.hooks = [h for h in data.config.hooks if h not in names]
+        persistence.save_tasks(tasks_file, data)
     return results

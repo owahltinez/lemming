@@ -1,13 +1,13 @@
 import pytest
 
-from lemming import hooks, paths
+from lemming import hooks, paths, persistence
 
 
 def _project(tmp_path, monkeypatch):
     """Creates an isolated project and returns its tasks file."""
     monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
     tasks_file = tmp_path / "tasks.yml"
-    tasks_file.touch()
+    tasks_file.write_text("{}", encoding="utf-8")
     return tasks_file
 
 
@@ -95,112 +95,179 @@ def test_resolve_hooks_skips_dangling_symlinks(tmp_path, monkeypatch):
     assert not resolved["roadmap"].masked
 
 
-def test_disable_hooks_keeps_priority_in_mask(tmp_path, monkeypatch):
+def _custom_hook(tasks_file, filename):
+    """Writes a project hook file and returns its directory."""
+    local_hooks_dir = hooks.get_local_hooks_dir(tasks_file)
+    local_hooks_dir.mkdir(parents=True, exist_ok=True)
+    (local_hooks_dir / filename).write_text("prompt", encoding="utf-8")
+    return local_hooks_dir
+
+
+def test_select_hooks_defaults_to_project_config(tmp_path, monkeypatch):
     tasks_file = _project(tmp_path, monkeypatch)
 
-    results = hooks.disable_hooks(["roadmap"], tasks_file)
+    selected = hooks.select_hooks(tasks_file, ["ux", "roadmap"], None)
 
-    # The mask filename carries the hook's priority so listings still
-    # report the priority it would run at if re-enabled
-    mask = results["roadmap"]
-    assert mask is not None
-    assert mask.name == "90-roadmap.md"
-    assert mask.read_text(encoding="utf-8") == ""
-
-    resolved = {h.name: h for h in hooks.resolve_hooks(tasks_file)}
-    assert resolved["roadmap"].masked
-    assert resolved["roadmap"].priority == 90
+    assert selected == ["ux", "roadmap"]
 
 
-def test_disable_hooks_already_disabled(tmp_path, monkeypatch):
+def test_select_hooks_task_list_replaces_reviews(tmp_path, monkeypatch):
+    """A task picks its reviews but cannot drop the orchestration band."""
     tasks_file = _project(tmp_path, monkeypatch)
 
-    hooks.disable_hooks(["roadmap"], tasks_file)
-    results = hooks.disable_hooks(["roadmap"], tasks_file)
+    selected = hooks.select_hooks(
+        tasks_file, ["ux", "roadmap"], ["testing", "readability"]
+    )
 
-    assert results == {"roadmap": None}
+    assert selected == ["readability", "testing", "roadmap"]
 
 
-def test_disable_hooks_is_atomic(tmp_path, monkeypatch):
-    """A bad name anywhere in the list means no mask is written at all."""
+def test_select_hooks_task_cannot_add_orchestration(tmp_path, monkeypatch):
     tasks_file = _project(tmp_path, monkeypatch)
 
-    with pytest.raises(ValueError, match="not found"):
-        hooks.disable_hooks(["readability", "nope"], tasks_file)
-
-    assert "readability" in hooks.list_hooks(tasks_file)
-    assert not hooks.get_local_hooks_dir(tasks_file).exists()
+    assert hooks.select_hooks(tasks_file, [], ["roadmap"]) == []
 
 
-def test_disable_hooks_refuses_project_override(tmp_path, monkeypatch):
+def test_select_hooks_empty_task_list_keeps_orchestration(
+    tmp_path, monkeypatch
+):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    assert hooks.select_hooks(tasks_file, ["ux", "roadmap"], []) == ["roadmap"]
+
+
+def test_select_hooks_skips_masked_and_unknown(tmp_path, monkeypatch):
     tasks_file = _project(tmp_path, monkeypatch)
     local_hooks_dir = hooks.get_local_hooks_dir(tasks_file)
     local_hooks_dir.mkdir(parents=True)
-    override = local_hooks_dir / "roadmap.md"
-    override.write_text("custom prompt", encoding="utf-8")
+    (local_hooks_dir / "ux.md").write_text("", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="project override"):
-        hooks.disable_hooks(["roadmap"], tasks_file)
+    selected = hooks.select_hooks(tasks_file, ["ux", "gone", "roadmap"], None)
 
-    # The override must not be clobbered
-    assert override.read_text(encoding="utf-8") == "custom prompt"
+    assert selected == ["roadmap"]
 
 
-def test_enable_hooks_removes_all_matching_masks(tmp_path, monkeypatch):
-    """Both prefixed and unprefixed masks for a logical name are removed."""
+def test_select_hooks_applies_one_rule_to_custom_hooks(tmp_path, monkeypatch):
     tasks_file = _project(tmp_path, monkeypatch)
-    local_hooks_dir = hooks.get_local_hooks_dir(tasks_file)
-    local_hooks_dir.mkdir(parents=True)
-    (local_hooks_dir / "roadmap.md").write_text("", encoding="utf-8")
-    (local_hooks_dir / "90-roadmap.md").write_text("", encoding="utf-8")
+    _custom_hook(tasks_file, "95-deploy.md")
+    _custom_hook(tasks_file, "lint.md")
 
-    results = hooks.enable_hooks(["roadmap"], tasks_file)
-
-    assert results == {"roadmap": True}
-    assert list(local_hooks_dir.glob("*.md")) == []
-    assert "roadmap" in hooks.list_hooks(tasks_file)
+    assert hooks.select_hooks(tasks_file, ["roadmap"], ["lint"]) == [
+        "lint",
+        "roadmap",
+    ]
+    assert hooks.select_hooks(tasks_file, ["deploy"], ["deploy"]) == ["deploy"]
 
 
-def test_enable_hooks_already_enabled(tmp_path, monkeypatch):
+def test_parse_reviews_orders_by_priority(tmp_path, monkeypatch):
     tasks_file = _project(tmp_path, monkeypatch)
 
-    results = hooks.enable_hooks(["roadmap"], tasks_file)
+    assert hooks.parse_reviews(["ux, readability"], tasks_file) == [
+        "readability",
+        "ux",
+    ]
 
-    assert results == {"roadmap": False}
+
+def test_parse_reviews_all_excludes_orchestration(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+    _custom_hook(tasks_file, "lint.md")
+
+    reviews = hooks.parse_reviews(["all"], tasks_file)
+
+    assert "lint" in reviews
+    assert "roadmap" not in reviews
+
+
+def test_parse_reviews_empty_selects_none(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    assert hooks.parse_reviews([""], tasks_file) == []
+
+
+def test_parse_reviews_rejects_orchestration(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="orchestrates the roadmap"):
+        hooks.parse_reviews(["readability,roadmap"], tasks_file)
+
+
+def test_parse_reviews_rejects_unknown(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="Unknown review 'nope'"):
+        hooks.parse_reviews(["nope"], tasks_file)
+
+
+def _config_hooks(tasks_file):
+    return persistence.load_tasks(tasks_file).config.hooks
+
+
+def test_hooks_default_to_orchestration_only(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    assert _config_hooks(tasks_file) == ["roadmap"]
+
+
+def test_enable_hooks_adds_to_project_default(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    results = hooks.enable_hooks(["ux", "roadmap"], tasks_file)
+
+    assert results == {"ux": True, "roadmap": False}
+    assert sorted(_config_hooks(tasks_file)) == ["roadmap", "ux"]
 
 
 def test_enable_hooks_is_atomic(tmp_path, monkeypatch):
-    """A bad name anywhere in the list means no mask is removed at all."""
+    """A bad name anywhere in the list means nothing is enabled."""
     tasks_file = _project(tmp_path, monkeypatch)
-    hooks.disable_hooks(["roadmap"], tasks_file)
 
     with pytest.raises(ValueError, match="not found"):
-        hooks.enable_hooks(["roadmap", "nope"], tasks_file)
+        hooks.enable_hooks(["ux", "nope"], tasks_file)
 
-    assert "roadmap" not in hooks.list_hooks(tasks_file)
-
-
-def test_enable_hooks_refuses_project_override(tmp_path, monkeypatch):
-    tasks_file = _project(tmp_path, monkeypatch)
-    local_hooks_dir = hooks.get_local_hooks_dir(tasks_file)
-    local_hooks_dir.mkdir(parents=True)
-    override = local_hooks_dir / "roadmap.md"
-    override.write_text("custom prompt", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="project override"):
-        hooks.enable_hooks(["roadmap"], tasks_file)
-
-    assert override.exists()
+    assert _config_hooks(tasks_file) == ["roadmap"]
 
 
-def test_enable_hooks_masked_outside_project(tmp_path, monkeypatch):
+def test_enable_hooks_refuses_masked_hook(tmp_path, monkeypatch):
     tasks_file = _project(tmp_path, monkeypatch)
     global_hooks_dir = paths.get_global_hooks_dir()
     global_hooks_dir.mkdir(parents=True)
-    (global_hooks_dir / "roadmap.md").write_text("", encoding="utf-8")
+    (global_hooks_dir / "ux.md").write_text("", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="outside the project"):
-        hooks.enable_hooks(["roadmap"], tasks_file)
+    with pytest.raises(ValueError, match="masked"):
+        hooks.enable_hooks(["ux"], tasks_file)
+
+    assert _config_hooks(tasks_file) == ["roadmap"]
+
+
+def test_disable_hooks_removes_from_project_default(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    results = hooks.disable_hooks(["roadmap", "ux"], tasks_file)
+
+    assert results == {"roadmap": True, "ux": False}
+    assert _config_hooks(tasks_file) == []
+    # Disabling is a config change, never a mask file
+    assert not hooks.get_local_hooks_dir(tasks_file).exists()
+
+
+def test_disable_hooks_is_atomic(tmp_path, monkeypatch):
+    tasks_file = _project(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="not found"):
+        hooks.disable_hooks(["roadmap", "nope"], tasks_file)
+
+    assert _config_hooks(tasks_file) == ["roadmap"]
+
+
+def test_disable_hooks_accepts_stale_config_name(tmp_path, monkeypatch):
+    """A deleted custom hook must stay removable from the config."""
+    tasks_file = _project(tmp_path, monkeypatch)
+    data = persistence.load_tasks(tasks_file)
+    data.config.hooks = ["roadmap", "gone"]
+    persistence.save_tasks(tasks_file, data)
+
+    assert hooks.disable_hooks(["gone"], tasks_file) == {"gone": True}
+    assert _config_hooks(tasks_file) == ["roadmap"]
 
 
 def test_resolve_hooks_skips_undecodable_files(tmp_path, monkeypatch):
@@ -214,17 +281,3 @@ def test_resolve_hooks_skips_undecodable_files(tmp_path, monkeypatch):
 
     assert "notes" not in active
     assert "roadmap" in active
-
-
-def test_enable_hooks_refuses_undecodable_file(tmp_path, monkeypatch):
-    """A non-UTF8 project file is not a mask; never delete it."""
-    tasks_file = _project(tmp_path, monkeypatch)
-    local_hooks_dir = hooks.get_local_hooks_dir(tasks_file)
-    local_hooks_dir.mkdir(parents=True)
-    weird = local_hooks_dir / "roadmap.md"
-    weird.write_bytes(b"\xff\xfe\x00bad")
-
-    with pytest.raises(ValueError, match="project override"):
-        hooks.enable_hooks(["roadmap"], tasks_file)
-
-    assert weird.exists()

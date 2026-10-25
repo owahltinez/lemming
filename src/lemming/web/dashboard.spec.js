@@ -67,6 +67,7 @@ test.describe('Dashboard E2E', () => {
               source: 'built-in',
               masked: false,
               runs_on_failure: true,
+              enabled: true,
             },
           ],
         });

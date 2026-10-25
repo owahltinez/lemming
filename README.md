@@ -245,9 +245,9 @@ tasks may not fully achieve the stated goal. **Orchestrator Hooks** address this
 by running custom agents or scripts after each task execution to evaluate
 results and adapt the roadmap.
 
-Lemming runs every hook it discovers on the filesystem (including the built-in
-`roadmap` hook). Hooks are plain Markdown files, and udev-style filename
-conventions control their behavior:
+Lemming runs the hooks enabled for the project, which by default is only the
+built-in `roadmap` hook; review hooks are opt-in. Hooks are plain Markdown
+files, and udev-style filename conventions control their behavior:
 
 - **Ordering**: A numeric prefix sets the execution order (e.g. `10-lint.md`
   runs before `90-roadmap.md`); files without a prefix default to priority 50.
@@ -256,15 +256,15 @@ conventions control their behavior:
 - **Oneshot tasks**: A task added with `--oneshot` skips all hooks once it
   completes, so mechanical work (a typo fix, a version bump) does not pay for
   the full review lifecycle. Failure hooks still run if it fails.
-- **Disabling**: An empty file masks (disables) the hook of the same name from a
-  lower-precedence layer.
+- **Masking**: An empty file hides the hook of the same name from a
+  lower-precedence layer, even where it is enabled.
 
 ```bash
-# Disable a hook for this project (writes an empty .lemming/hooks/50-lint.md)
-lemming hooks disable lint
+# Run the testing review after every task in this project
+lemming hooks enable testing
 
-# Re-enable it (removes the mask file)
-lemming hooks enable lint
+# Or pick the reviews for one task, replacing the project's ('' for none)
+lemming add "Redesign the settings page" --hooks ux,testing
 ```
 
 ### Built-in Hooks ⚓️
@@ -309,10 +309,14 @@ See [docs/HOOKS.md](docs/HOOKS.md) for more details.
 Use the `config` and `hooks` commands to manage your project's execution loop:
 
 ```bash
-# List all hooks in execution order, with source and status
+# List all hooks in execution order, marking the ones enabled by default
 lemming hooks list
 
-# View current project configuration (includes the active hooks)
+# Enable or disable hooks for the project (stored in tasks.yml)
+lemming hooks enable readability
+lemming hooks disable readability
+
+# View current project configuration (includes the enabled hooks)
 lemming config list
 
 # Persist configuration to tasks.yml
@@ -360,9 +364,10 @@ These come before the subcommand and apply to all of them.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index`, `--runner`,
-  `--model`, and `--oneshot`.
-- **`edit <id>`**: Modify a task's description, runner, model, position, or
-  oneshot flag (`--oneshot/--no-oneshot`).
+  `--model`, `--oneshot`, and `--hooks` (the task's reviews, comma-separated;
+  inherited from `--parent` when omitted).
+- **`edit <id>`**: Modify a task's description, runner, model, position,
+  oneshot flag (`--oneshot/--no-oneshot`), or reviews (`--hooks`).
 - **`brief <id> [text]`**: View or set a task's long-form brief. Unlike the
   description it has no length cap, and it is appended to the runner prompt
   automatically — the right home for measured timings, exact failing selectors,
@@ -390,12 +395,9 @@ These come before the subcommand and apply to all of them.
   - `set <key> <value>`: Update a setting. `set model default` clears a pinned
     model without touching the runner.
 - **`hooks`**: Manage orchestrator hooks.
-  - `list`: View available and active hooks.
-  - `install`: Install built-in hooks to the global directory.
-  - `enable <name>...`: Activate one or more hooks.
-  - `disable <name>...`: Deactivate one or more hooks.
-  - `set <name>...`: Set the exact list of active hooks.
-  - `reset`: Restore default hooks (run all available).
+  - `list`: View available hooks and the ones enabled for the project.
+  - `enable <name>...`: Run one or more hooks after every task.
+  - `disable <name>...`: Stop running one or more hooks by default.
 - **`readability`**: Code quality tool for style guide adherence, wrapping the
   [readability](https://github.com/owahltinez/readability) package. Ruff and
   Pyrefly run with bundled Google-style defaults unless the target project

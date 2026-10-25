@@ -5,7 +5,7 @@ import pathlib
 import fastapi
 import pydantic
 
-from .. import hooks
+from .. import hooks, persistence
 from . import context
 
 router = fastapi.APIRouter()
@@ -13,12 +13,14 @@ router = fastapi.APIRouter()
 
 def _hook_payload(tasks_file: pathlib.Path) -> list[dict]:
     """Serializes resolved hooks for API responses."""
+    enabled = persistence.load_tasks(tasks_file).config.hooks
     return [
         {
             "name": h.name,
             "priority": h.priority,
             "source": h.source,
             "masked": h.masked,
+            "enabled": not h.masked and h.name in enabled,
             "runs_on_failure": h.priority >= hooks.FAILURE_HOOK_PRIORITY,
         }
         for h in hooks.resolve_hooks(tasks_file)
@@ -45,7 +47,7 @@ def toggle_hook(
     toggle: HookToggle,
     project: str | None = None,
 ):
-    """Enable or disable a hook by removing or creating its project mask."""
+    """Add or remove a hook from those enabled for the project."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     try:
         if toggle.enabled:

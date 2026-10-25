@@ -61,6 +61,7 @@ test.describe('Favicon Status Synchronization', () => {
             source: 'built-in',
             masked: false,
             runs_on_failure: true,
+            enabled: true,
           },
         ],
       });

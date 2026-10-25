@@ -36,11 +36,14 @@ def update_config(
     config: models.RoadmapConfig,
     project: str | None = None,
 ):
-    """Replace the roadmap configuration and return the saved value."""
+    """Update the posted roadmap configuration fields and return the result."""
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
-        data.config = config
+        # Omitted fields keep their value; the dashboard posts a subset
+        data.config = data.config.model_copy(
+            update=config.model_dump(exclude_unset=True)
+        )
         persistence.save_tasks(tasks_file, data)
     return data.config
 

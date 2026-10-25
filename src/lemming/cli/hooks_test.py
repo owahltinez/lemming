@@ -6,7 +6,7 @@ import unittest.mock
 
 import click.testing
 
-from lemming import hooks, models, persistence
+from lemming import models, persistence
 from lemming.cli import main as cli
 
 
@@ -56,68 +56,46 @@ class TestCLIHooks(unittest.TestCase):
         self.assertIn("built-in", result.output)
         self.assertIn("runs on failure", result.output)
 
-    def test_hooks_list_shows_disabled(self):
+    def _config_hooks(self):
+        return persistence.load_tasks(self.test_tasks_file).config.hooks
+
+    def test_hooks_list_shows_project_defaults(self):
+        result = self._invoke("list")
+
+        lines = {
+            line.split()[1]: line for line in result.output.splitlines()[1:]
+        }
+        self.assertIn("enabled", lines["roadmap"])
+        self.assertNotIn("enabled", lines["readability"])
+
+    def test_hooks_list_shows_masked(self):
         self.local_hooks_dir.mkdir(parents=True)
         (self.local_hooks_dir / "roadmap.md").write_text("", encoding="utf-8")
 
         result = self._invoke("list")
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("disabled", result.output)
+        self.assertIn("masked", result.output)
 
-    def test_hooks_disable_creates_mask(self):
-        result = self._invoke("disable", "roadmap")
-        self.assertEqual(result.exit_code, 0)
+    def test_hooks_enable_and_disable_edit_project_default(self):
+        result = self._invoke("enable", "ux")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(sorted(self._config_hooks()), ["roadmap", "ux"])
 
-        # The mask filename keeps the hook's priority (roadmap is 90)
-        mask = self.local_hooks_dir / "90-roadmap.md"
-        self.assertTrue(mask.exists())
-        self.assertEqual(mask.read_text(encoding="utf-8"), "")
-        self.assertNotIn("roadmap", hooks.list_hooks(self.test_tasks_file))
-
-    def test_hooks_disable_unknown_hook(self):
-        result = self._invoke("disable", "does-not-exist")
-        self.assertEqual(result.exit_code, 1)
-        self.assertIn("not found", result.output)
-
-    def test_hooks_disable_is_atomic(self):
-        """A bad name anywhere in the list disables nothing."""
-        result = self._invoke("disable", "readability", "does-not-exist")
-        self.assertEqual(result.exit_code, 1)
-        self.assertIn("readability", hooks.list_hooks(self.test_tasks_file))
-
-    def test_hooks_disable_refuses_project_override(self):
-        self.local_hooks_dir.mkdir(parents=True)
-        override = self.local_hooks_dir / "roadmap.md"
-        override.write_text("custom prompt", encoding="utf-8")
-
-        result = self._invoke("disable", "roadmap")
-        self.assertEqual(result.exit_code, 1)
-        # The override must not be clobbered
-        self.assertEqual(override.read_text(encoding="utf-8"), "custom prompt")
-
-    def test_hooks_enable_removes_mask(self):
-        self.local_hooks_dir.mkdir(parents=True)
-        mask = self.local_hooks_dir / "roadmap.md"
-        mask.write_text("", encoding="utf-8")
-
-        result = self._invoke("enable", "roadmap")
-        self.assertEqual(result.exit_code, 0)
-        self.assertFalse(mask.exists())
-        self.assertIn("roadmap", hooks.list_hooks(self.test_tasks_file))
+        result = self._invoke("disable", "roadmap", "ux")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self._config_hooks(), [])
+        self.assertFalse(self.local_hooks_dir.exists())
 
     def test_hooks_enable_already_enabled(self):
         result = self._invoke("enable", "roadmap")
         self.assertEqual(result.exit_code, 0)
         self.assertIn("already enabled", result.output)
 
-    def test_hooks_enable_refuses_project_override(self):
-        self.local_hooks_dir.mkdir(parents=True)
-        override = self.local_hooks_dir / "roadmap.md"
-        override.write_text("custom prompt", encoding="utf-8")
-
-        result = self._invoke("enable", "roadmap")
+    def test_hooks_disable_unknown_hook(self):
+        result = self._invoke("disable", "does-not-exist")
         self.assertEqual(result.exit_code, 1)
-        self.assertTrue(override.exists())
+        self.assertIn("not found", result.output)
+        self.assertEqual(self._config_hooks(), ["roadmap"])
 
 
 if __name__ == "__main__":
