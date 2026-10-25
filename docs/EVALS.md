@@ -153,6 +153,9 @@ running a constant policy in either direction should score 50% across the pair.
 `false-reuse-restraint` exists for exactly this reason: it is the inverse of
 `consolidate-or-report-live-duplication`, with two functions that share a shape
 but not a concept, and folding them together is the failure.
+`finding-is-not-a-task` is the roadmap suite's inverse of
+`follow-up-without-code-changes`: the finished task logs optional polish ideas
+rather than a bug, and scheduling them is the failure.
 
 The `task` suite carries the same idea into the code an agent writes rather than
 reviews. `minimal-change-restraint` hands it one well-specified function to add

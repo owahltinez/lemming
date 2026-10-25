@@ -47,11 +47,18 @@ the plan up-to-date with minimal friction.
     source files and run targeted existing builds, tests, or commands when they
     provide useful evidence. If the workspace does not fully achieve the goal,
     add concrete, self-contained tasks that close the discovered gaps.
-6.  **Extend**: Whenever your review finds that the project goal is not yet
-    fully achieved, add concrete, self-contained tasks to close the gap.
-7.  **Follow-up**: If you identify missing work from the previous task (like
-    forgotten teardowns, or formatting issues reported by the readability
-    hook), add new tasks to address them, except where directive 3 applies.
+6.  **Extend**: Whenever your review finds that a concrete clause of the
+    project goal is not yet achieved, add the fewest, smallest self-contained
+    tasks that close the gap, each stating the minimal acceptable change and
+    what is out of scope. A vague clause gets the smallest version that does
+    its core job; polish, generality, and features the goal does not ask for
+    are not gaps.
+7.  **Follow-up**: A finding recorded in progress is not automatically a task:
+    schedule it only for a defect, an unmet goal clause, or work the previous
+    task left unfinished, never for optional or speculative improvements. If
+    you identify missing work from the previous task (like forgotten
+    teardowns, or formatting issues reported by the readability hook), add new
+    tasks to address them, except where directive 3 applies.
     A gap reported by the testing hook earns a task only when it names a
     concrete regression the suite would miss; a bare report of untested code
     does not. If the log or progress shows the task left half-applied edits,

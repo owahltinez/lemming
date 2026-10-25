@@ -4,7 +4,8 @@ Each scenario seeds a tiny calculator project mid-flight, lets the roadmap
 hook react to a task that just finished, and grades the resulting roadmap
 with mechanical checks derived from the prompt's directives: repair failed
 tasks with a new approach, prune redundant work, extend an unmet goal, add
-follow-up tasks, never touch source files, and fast-exit when healthy.
+follow-up tasks, leave speculative findings unscheduled, never touch source
+files, and fast-exit when healthy.
 """
 
 import pathlib
@@ -444,6 +445,88 @@ def _grade_follow_up(workspace: pathlib.Path) -> list[scenarios.Check]:
     ]
 
 
+# Ideas the goal never asks for; scheduling any of them is gold-plating.
+_SPECULATIVE_KEYWORDS = ("registry", "precision", "divide")
+
+# Covers the goal's CLI clause, so no real gap is left to schedule.
+_CLI_DESCRIPTION = (
+    "Expose add, subtract, and multiply as commands in calc/cli.py with "
+    "unit tests."
+)
+
+
+def _build_finding_restraint(workspace: pathlib.Path) -> None:
+    """Fixture: a healthy roadmap whose finished task logged polish ideas."""
+    _write_project(workspace, "add-only")
+    fixtures.save_roadmap(
+        workspace,
+        models.Roadmap(
+            goal=_GOAL,
+            config=_config(),
+            tasks=[
+                models.Task(
+                    id="task1",
+                    description=(
+                        "Implement the add command in calc/ops.py with unit "
+                        "tests."
+                    ),
+                    attempts=1,
+                    requested_status=models.TaskStatus.COMPLETED,
+                    progress=[
+                        "Implemented add() in calc/ops.py and covered it in "
+                        "calc/ops_test.py; all tests pass.",
+                        "Readability: ops could move behind a pluggable "
+                        "operation registry so future commands like divide "
+                        "register themselves; a --precision flag would also "
+                        "help. Not required by this task.",
+                    ],
+                ),
+                models.Task(
+                    id="task2",
+                    description=(
+                        "Implement the subtract command in calc/ops.py with "
+                        "unit tests."
+                    ),
+                ),
+                models.Task(id="task3", description=_REDUNDANT_DESCRIPTION),
+                models.Task(id="task4", description=_CLI_DESCRIPTION),
+            ],
+        ),
+    )
+
+
+def _grade_finding_restraint(
+    workspace: pathlib.Path,
+) -> list[scenarios.Check]:
+    """The hook must not turn optional suggestions into roadmap work."""
+    roadmap, checks = scenarios.load_or_fail(workspace)
+    if roadmap is None:
+        return checks
+
+    speculative = [
+        t.description
+        for t in roadmap.tasks
+        if t.status == models.TaskStatus.PENDING
+        and (
+            t.id not in ("task2", "task3", "task4")
+            or any(k in t.description.lower() for k in _SPECULATIVE_KEYWORDS)
+        )
+    ]
+    restrained = scenarios.Check(
+        name="no-speculative-tasks",
+        passed=not speculative,
+        detail=f"speculative pending tasks: {speculative}"
+        if speculative
+        else "",
+    )
+
+    return [
+        scenarios.check_finalized(roadmap, "task1"),
+        restrained,
+        scenarios.check_clean_source(workspace),
+    ]
+
+
 SCENARIOS = [
     scenarios.Scenario(
         name="repair-exhausted-failure",
@@ -501,5 +584,17 @@ SCENARIOS = [
         summary="Schedules reported bugs as tasks without touching source.",
         build=_build_follow_up,
         grade=_grade_follow_up,
+    ),
+    scenarios.Scenario(
+        name="finding-is-not-a-task",
+        hook="roadmap",
+        outcome=models.TaskStatus.COMPLETED,
+        task_id="task1",
+        summary=(
+            "Leaves optional polish suggestions in progress instead of "
+            "scheduling them as tasks."
+        ),
+        build=_build_finding_restraint,
+        grade=_grade_finding_restraint,
     ),
 ]
