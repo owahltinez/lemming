@@ -1,5 +1,6 @@
 """Runner command construction and subprocess execution with heartbeats."""
 
+import contextlib
 import json
 import logging
 import os
@@ -11,7 +12,7 @@ import threading
 import time
 from typing import Callable
 
-from . import paths, persistence
+from . import models, paths, persistence
 from .tasks import lifecycle, progress
 
 logger = logging.getLogger(__name__)
@@ -606,6 +607,15 @@ def _runner_environment(
     return env
 
 
+def _is_cancelled(tasks_file: pathlib.Path, task_id: str) -> bool:
+    """Returns whether the task was explicitly cancelled."""
+    data = persistence.load_tasks(tasks_file)
+    return any(
+        t.id == task_id and t.status == models.TaskStatus.CANCELLED
+        for t in data.tasks
+    )
+
+
 def run_with_heartbeat(
     cmd: list[str],
     tasks_file: pathlib.Path,
@@ -722,8 +732,12 @@ def run_with_heartbeat(
             nonlocal timed_out
             while process.poll() is None:
                 try:
-                    if not lifecycle.update_heartbeat(tasks_file, task_id):
-                        # Task was cancelled or finished.
+                    # A hook may supersede, reset, or delete the task it
+                    # reviews; only a cancel stops it.
+                    if not lifecycle.update_heartbeat(tasks_file, task_id) and (
+                        component == "runner"
+                        or _is_cancelled(tasks_file, task_id)
+                    ):
                         _kill_process_tree(process)
                         return
 
@@ -732,12 +746,14 @@ def run_with_heartbeat(
                         elapsed = time.monotonic() - start_time
                         if elapsed >= time_limit * 60:
                             timed_out = True
-                            progress.add_progress(
-                                tasks_file,
-                                task_id,
-                                f"Task killed: time limit of {time_limit}"
-                                " minutes reached.",
-                            )
+                            # A hook may have deleted the task by now
+                            with contextlib.suppress(models.TaskNotFoundError):
+                                progress.add_progress(
+                                    tasks_file,
+                                    task_id,
+                                    f"Task killed: time limit of {time_limit}"
+                                    " minutes reached.",
+                                )
                             _kill_process_tree(process)
                             return
                 except persistence.CorruptedTasksError:

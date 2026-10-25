@@ -2,8 +2,11 @@ import pathlib
 import signal
 import subprocess
 import sys
+import threading
 import time
 import unittest.mock
+
+import pytest
 
 from lemming import models, paths, persistence, runner
 from lemming.tasks import lifecycle
@@ -611,6 +614,49 @@ def test_run_with_heartbeat_kills_runner_if_task_was_cancelled(tmp_path):
 
     assert returncode == -signal.SIGTERM
     assert time.monotonic() - started < 10
+
+
+@pytest.mark.parametrize(
+    ("header", "status", "killed"),
+    [
+        ("Hook: roadmap", models.TaskStatus.SUPERSEDED, False),
+        ("Hook: roadmap", models.TaskStatus.PENDING, False),
+        ("Hook: roadmap", models.TaskStatus.CANCELLED, True),
+        (None, models.TaskStatus.SUPERSEDED, True),
+    ],
+)
+def test_run_with_heartbeat_status_change_mid_run(
+    tmp_path, monkeypatch, header, status, killed
+):
+    """Hooks survive their own supersede or reset; only a cancel stops them."""
+    monkeypatch.setattr(persistence, "STALE_THRESHOLD", 1)
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t",
+                    description="t",
+                    status=models.TaskStatus.IN_PROGRESS,
+                )
+            ]
+        ),
+    )
+
+    def change_status():
+        time.sleep(0.5)
+        with persistence.lock_tasks(tasks_file):
+            data = persistence.load_tasks(tasks_file)
+            data.tasks[0].status = status
+            persistence.save_tasks(tasks_file, data)
+
+    threading.Thread(target=change_status).start()
+    returncode, _, _ = runner.run_with_heartbeat(
+        ["sleep", "2"], tasks_file, "t", verbose=False, header=header
+    )
+
+    assert returncode == (-signal.SIGTERM if killed else 0)
 
 
 def test_returncode_timeout_constant():
