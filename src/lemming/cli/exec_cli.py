@@ -146,7 +146,7 @@ def _resolve_reviews(values: tuple[str, ...]) -> list[str]:
 
     Args:
         values: Requested reviews, each possibly comma-separated. The value
-            "all" stands for every review.
+            "*" stands for every review.
 
     Returns:
         Review names ordered by hook priority.
@@ -196,7 +196,7 @@ def _task_status(
     multiple=True,
     help=(
         "Reviews to run after the task, comma-separated or repeated. "
-        "Use 'all' for every review. With no description, only the "
+        "Use '*' for every review. With no description, only the "
         "reviews run. Reviews may edit the working directory."
     ),
 )
@@ -262,7 +262,7 @@ def exec_command(
       lemming exec "Fix the flaky test in runner_test.py" --runner codex
       lemming exec --review readability
       lemming exec --review testing --scope main...HEAD
-      lemming exec "Add pagination" --review all
+      lemming exec "Add pagination" --review '*'
     """
     verbose = ctx.obj["VERBOSE"]
     reviews = _resolve_reviews(review_values)

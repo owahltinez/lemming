@@ -124,8 +124,8 @@ reviews run — against work that already exists.
 ```sh
 lemming exec --review readability            # uncommitted work
 lemming exec --review testing --scope main...HEAD
-lemming exec --review all --scope src/api/
-lemming exec "Add pagination" --review all   # do the work, then gate it
+lemming exec --review '*' --scope src/api/
+lemming exec "Add pagination" --review '*'   # do the work, then gate it
 
 # Someone else's branch, in a worktree so your own tree is untouched
 git worktree add /tmp/pr-123 && (cd /tmp/pr-123 && gh pr checkout 123)

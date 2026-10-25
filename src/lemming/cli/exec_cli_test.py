@@ -526,7 +526,7 @@ def test_review_refuses_the_orchestration_hook(repo):
 
 
 def test_review_all_excludes_the_orchestration_band(repo):
-    """--review all must not require naming every review by hand."""
+    """--review '*' must not require naming every review by hand."""
     (repo / "committed.py").write_text("x = 2\n")
     headers = []
 
@@ -535,7 +535,7 @@ def test_review_all_excludes_the_orchestration_band(repo):
         return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
-        CliRunner().invoke(main.cli, ["exec", "--review", "all"])
+        CliRunner().invoke(main.cli, ["exec", "--review", "*"])
 
     assert "Hook: roadmap" not in headers
     assert "Hook: readability" in headers

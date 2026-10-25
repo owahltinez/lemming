@@ -124,7 +124,7 @@ def _parse_task_hooks(
     "--hooks",
     "hooks_value",
     help=(
-        "Reviews to run after this task, comma-separated ('all' for every "
+        "Reviews to run after this task, comma-separated ('*' for every "
         "review, '' for none). Defaults to the parent task's, else the "
         "project's enabled hooks."
     ),
@@ -218,7 +218,7 @@ def add(
     "--hooks",
     "hooks_value",
     help=(
-        "New reviews to run after this task, comma-separated ('all' for "
+        "New reviews to run after this task, comma-separated ('*' for "
         "every review, '' for none)."
     ),
 )

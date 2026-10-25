@@ -19,7 +19,7 @@ DEFAULT_HOOK_PRIORITY = 50
 FAILURE_HOOK_PRIORITY = 90
 
 # Requests every review rather than making the caller name each one.
-ALL_REVIEWS = "all"
+ALL_REVIEWS = "*"
 
 _HOOK_STEM_RE = re.compile(r"^(\d+)-(.+)$")
 
@@ -152,7 +152,7 @@ def parse_reviews(
 
     Args:
         values: Requested reviews, each possibly comma-separated. The value
-            "all" stands for every review.
+            "*" stands for every review.
         tasks_file: Optional project whose hooks to resolve; without it only
             the built-in and global layers are considered.
 

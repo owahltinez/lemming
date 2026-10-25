@@ -194,7 +194,7 @@ A task can pick its own reviews, which replace the project's for that task:
 ```bash
 lemming add "Redesign the settings page" --hooks ux,testing
 lemming edit <id> --hooks ''     # no reviews for this task
-lemming edit <id> --hooks all    # every review available now
+lemming edit <id> --hooks '*'    # every review available now
 ```
 
 `--hooks` accepts only reviews (priority below 90). Hooks at 90 and above, such

@@ -172,7 +172,7 @@ def test_parse_reviews_all_excludes_orchestration(tmp_path, monkeypatch):
     tasks_file = _project(tmp_path, monkeypatch)
     _custom_hook(tasks_file, "lint.md")
 
-    reviews = hooks.parse_reviews(["all"], tasks_file)
+    reviews = hooks.parse_reviews(["*"], tasks_file)
 
     assert "lint" in reviews
     assert "roadmap" not in reviews

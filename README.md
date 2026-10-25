@@ -119,7 +119,7 @@ lemming exec --review readability
 lemming -C ../review-worktree exec --review testing --scope main...HEAD
 
 # Do the work, then gate it
-lemming exec "Add pagination to the tasks API" --review all
+lemming exec "Add pagination to the tasks API" --review '*'
 ```
 
 `--scope` takes paths, which pass through untouched, or a git revision range,
