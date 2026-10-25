@@ -183,7 +183,7 @@ def test_synchronous_hooks_execution_timing(setup_env):
             side_effect=mocked_finish_task_attempt,
         ),
         mock.patch(
-            "lemming.orchestrator.list_hooks", return_value=["test_hook"]
+            "lemming.orchestrator.select_hooks", return_value=["test_hook"]
         ),
         mock.patch(
             "lemming.prompts.prepare_hook_prompt", return_value="Dummy hook"
@@ -636,10 +636,8 @@ def hooks_env(tmp_path, monkeypatch):
 
 
 @mock.patch("lemming.runner.run_with_heartbeat")
-@mock.patch("lemming.orchestrator.list_hooks")
 @mock.patch("lemming.prompts.prepare_hook_prompt")
-def test_run_hooks_success(mock_prepare, mock_list, mock_run, hooks_env):
-    mock_list.return_value = ["roadmap"]
+def test_run_hooks_success(mock_prepare, mock_run, hooks_env):
     mock_prepare.return_value = "Hook Prompt"
     mock_run.return_value = (0, "stdout", "")
     working_dir = hooks_env.parent / "project with spaces"
@@ -666,6 +664,42 @@ def test_run_hooks_success(mock_prepare, mock_list, mock_run, hooks_env):
     assert cmd[cmd.index("--add-dir") + 1] == str(working_dir)
     data = persistence.load_tasks(hooks_env)
     assert data.tasks[0].status == models.TaskStatus.COMPLETED
+
+
+@pytest.mark.parametrize(
+    ("config_hooks", "task_hooks", "expected"),
+    [
+        (["roadmap"], None, ["roadmap"]),
+        (["ux", "roadmap"], None, ["ux", "roadmap"]),
+        (["ux", "roadmap"], ["testing"], ["testing", "roadmap"]),
+        (["ux", "roadmap"], [], ["roadmap"]),
+        ([], ["testing"], ["testing"]),
+    ],
+)
+@mock.patch("lemming.runner.run_with_heartbeat")
+@mock.patch("lemming.prompts.prepare_hook_prompt")
+def test_run_hooks_selects_hooks_per_task(
+    mock_prepare, mock_run, hooks_env, config_hooks, task_hooks, expected
+):
+    """Reviews are opt-in per project or task; the 9x band is project-wide."""
+    mock_prepare.return_value = "Hook Prompt"
+    mock_run.return_value = (0, "stdout", "")
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = config_hooks
+    data.tasks[0].hooks = task_hooks
+    persistence.save_tasks(hooks_env, data)
+
+    exit_codes = run_hooks(
+        hooks_env,
+        "12345678",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+    )
+
+    assert list(exit_codes) == expected
 
 
 @mock.patch("lemming.runner.run_with_heartbeat")
@@ -844,6 +878,9 @@ def test_run_hooks_failure_runs_custom_failure_hooks(
     local_hooks_dir.mkdir(parents=True)
     (local_hooks_dir / "95-notify.md").write_text("n", encoding="utf-8")
     (local_hooks_dir / "20-lint.md").write_text("l", encoding="utf-8")
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = ["roadmap", "notify", "lint"]
+    persistence.save_tasks(hooks_env, data)
 
     operations.update_task(
         hooks_env, "12345678", status=models.TaskStatus.IN_PROGRESS

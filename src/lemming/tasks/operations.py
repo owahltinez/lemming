@@ -53,6 +53,7 @@ def add_task(
     parent: str | None = None,
     parent_tasks_file: str | None = None,
     oneshot: bool = False,
+    hooks: list[str] | None = None,
 ) -> models.Task:
     """Adds a new task to the roadmap.
 
@@ -65,6 +66,8 @@ def add_task(
         parent: Optional parent task ID.
         parent_tasks_file: Optional parent tasks file path.
         oneshot: If True, skip post-task hooks when the task completes.
+        hooks: Reviews to run after this task; None inherits the parent's,
+            if any, or uses the project's.
 
     Returns:
         The newly created Task.
@@ -90,6 +93,11 @@ def add_task(
             if not parent_tasks_file:
                 parent_tasks_file = os.environ.get("LEMMING_PARENT_TASKS_FILE")
 
+        # A split task keeps the review choice made for the one it replaces
+        if hooks is None and parent:
+            parent_task = next((t for t in data.tasks if t.id == parent), None)
+            hooks = parent_task.hooks if parent_task else None
+
         new_task = models.Task(
             id=task_id,
             description=description,
@@ -98,6 +106,7 @@ def add_task(
             parent=parent,
             parent_tasks_file=parent_tasks_file,
             oneshot=oneshot,
+            hooks=hooks,
         )
 
         data.tasks = _insert_at_queue_index(data.tasks, new_task, index)
@@ -263,6 +272,7 @@ def update_task(
     parent: str | None = None,
     parent_tasks_file: str | None = None,
     oneshot: bool | None = None,
+    hooks: list[str] | None = None,
     force: bool = False,
 ) -> models.Task:
     """Updates an existing task.
@@ -280,6 +290,7 @@ def update_task(
         parent: New parent task ID.
         parent_tasks_file: New parent tasks file path.
         oneshot: New oneshot flag; None leaves it unchanged.
+        hooks: New reviews to run after the task; None leaves them unchanged.
         force: If True, force status transition even if task is in progress.
 
     Returns:
@@ -315,6 +326,8 @@ def update_task(
             target.model = model or None
         if oneshot is not None:
             target.oneshot = oneshot
+        if hooks is not None:
+            target.hooks = hooks
         if parent is not None:
             if parent == "":
                 target.parent = None

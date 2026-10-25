@@ -521,11 +521,11 @@
         Storage.set('hide_completed', $.hideCompleted);
       };
       $.toggleHook = async (hook) => {
-        // Enabling removes the project mask file; disabling creates it
+        // Adds or removes the hook from those enabled for the project
         const response = await fetch(apiUrl('/api/hooks'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: hook.name, enabled: hook.masked }),
+          body: JSON.stringify({ name: hook.name, enabled: !hook.enabled }),
         });
         if (response.ok) {
           $.availableHooks = await response.json();

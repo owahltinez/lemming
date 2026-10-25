@@ -17,14 +17,10 @@ import typing
 
 import click
 
-from .. import models, paths, persistence, runner, scope, shutdown
-from ..hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
+from .. import hooks, models, paths, persistence, runner, scope, shutdown
 from ..orchestrator import run_loop
 from ..tasks import lifecycle, limits, operations
 from .main import cli
-
-# Requests every review rather than making the caller name each one.
-ALL_REVIEWS = "all"
 
 # Ceiling on how much of the runner log is scanned for the closing message.
 # The message is at the end, and a log carrying every tool call can be
@@ -158,38 +154,13 @@ def _resolve_reviews(values: tuple[str, ...]) -> list[str]:
     Raises:
         click.UsageError: If a name is unknown or orchestrates the queue.
     """
-    requested = [
-        name.strip()
-        for value in values
-        for name in value.split(",")
-        if name.strip()
-    ]
-    available = list_hooks()
-
     # The 9x band orchestrates the queue: it revises the roadmap. Here the
     # roadmap holds one task and is deleted afterwards, so a hook that adds
     # tasks to it would set unbounded work running from a one-shot.
-    reviews = [
-        name
-        for name in available
-        if get_hook_priority(name) < FAILURE_HOOK_PRIORITY
-    ]
-
-    if ALL_REVIEWS in requested:
-        return reviews
-
-    for name in requested:
-        if name in reviews:
-            continue
-        if name in available:
-            raise click.UsageError(
-                f"'{name}' orchestrates the roadmap and cannot run as a "
-                "review. Use 'lemming run' for roadmap revision."
-            )
-        raise click.UsageError(
-            f"Unknown review '{name}'. Available: {', '.join(reviews)}."
-        )
-    return [name for name in reviews if name in requested]
+    try:
+        return hooks.parse_reviews(values)
+    except ValueError as e:
+        raise click.UsageError(str(e)) from e
 
 
 def _task_status(

@@ -213,6 +213,7 @@ test.describe('Screenshot Generation', () => {
                 source: 'built-in',
                 masked: false,
                 runs_on_failure: false,
+                enabled: false,
               },
               {
                 name: 'testing',
@@ -220,6 +221,7 @@ test.describe('Screenshot Generation', () => {
                 source: 'built-in',
                 masked: false,
                 runs_on_failure: false,
+                enabled: false,
               },
               {
                 name: 'roadmap',
@@ -227,6 +229,7 @@ test.describe('Screenshot Generation', () => {
                 source: 'built-in',
                 masked: false,
                 runs_on_failure: true,
+                enabled: true,
               },
             ],
           });

@@ -36,16 +36,19 @@ conventions control their behavior:
   failure hooks, so recovery is never skipped. Note that `roadmap` is skipped
   too: if a oneshot task is the last one in the queue, the run ends without a
   goal audit, so nothing is queued to carry the goal further.
-- **Masking**: An empty file disables the hook of the same name from a
-  lower-precedence layer (see below). For example, an empty
-  `.lemming/hooks/readability.md` disables the built-in `readability` hook for
-  that project.
+- **Masking**: An empty file hides the hook of the same name from a
+  lower-precedence layer (see below), even where a project or task enables it.
+  For example, an empty `.lemming/hooks/readability.md` hides the built-in
+  `readability` hook from that project.
 - **Overriding**: A non-empty file replaces the hook of the same name from a
   lower-precedence layer. The winning filename also determines the priority, so
   keep the `9x-` prefix when overriding a failure hook (e.g. `90-roadmap.md`),
   or use a different prefix to deliberately reorder it.
 
 ## Built-in Hooks
+
+Only `roadmap` runs by default; the review hooks are opt-in per project or task
+(see [Enabling and Disabling](#enabling-and-disabling)).
 
 ### `roadmap` (Default)
 
@@ -175,25 +178,32 @@ are issues, add a new task to fix them.
 
 ### Enabling and Disabling
 
-Lemming runs every hook it discovers that is not masked. There is no hook
-configuration in `tasks.yml`; the filesystem is the single source of truth.
-
-The `hooks` command group provides shortcuts for managing project masks:
+Each project lists the hooks it runs in `tasks.yml` under `config.hooks`, which
+defaults to `[roadmap]`: review hooks are opt-in. Manage the list with:
 
 ```bash
-# Disable a hook for this project (writes an empty .lemming/hooks/50-lint.md)
-lemming hooks disable lint
-
-# Re-enable it (removes the mask file)
+# Run the lint review after every task in this project
 lemming hooks enable lint
+
+# Stop running it by default
+lemming hooks disable lint
 ```
 
-These commands validate the hook names before changing anything and refuse to
-touch files with content (a non-empty file is an override, not a mask). An empty
-file created by hand works just as well; the commands additionally keep the
-hook's priority in the mask filename so listings stay accurate.
+A task can pick its own reviews, which replace the project's for that task:
 
-Hooks are re-discovered on every task execution, so changes are picked up
+```bash
+lemming add "Redesign the settings page" --hooks ux,testing
+lemming edit <id> --hooks ''     # no reviews for this task
+lemming edit <id> --hooks all    # every review available now
+```
+
+`--hooks` accepts only reviews (priority below 90). Hooks at 90 and above, such
+as `roadmap`, orchestrate the queue and always follow the project's list. A task
+added with `--parent` and no `--hooks` inherits its parent's choice, so a split
+keeps it. The same rules apply to built-in, global, and project hooks, and a
+masked or missing hook never runs whatever the lists say.
+
+The selection is re-read every time hooks run, so changes are picked up
 dynamically by a running orchestrator loop.
 
 ### Available Variables
@@ -227,7 +237,7 @@ audit" describes the kind of review, not its extent.
 ### Listing Hooks
 
 You can see all hooks in execution order, with their priority, source layer, and
-status (disabled, runs on failure) using the CLI:
+status (enabled for the project, masked, runs on failure) using the CLI:
 
 ```bash
 lemming hooks list

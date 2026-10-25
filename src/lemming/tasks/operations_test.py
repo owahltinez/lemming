@@ -29,6 +29,33 @@ def test_add_task_captures_parent_project(tmp_path):
     assert task2.parent_tasks_file is None
 
 
+def test_add_task_inherits_parent_hooks(tmp_path):
+    """A roadmap split must not silently drop a per-task hook choice."""
+    tasks_file = tmp_path / "tasks.yml"
+    parent = operations.add_task(tasks_file, "parent", hooks=["testing"])
+
+    child = operations.add_task(tasks_file, "child", parent=parent.id)
+    explicit = operations.add_task(
+        tasks_file, "explicit", parent=parent.id, hooks=[]
+    )
+    orphan = operations.add_task(tasks_file, "orphan", parent="elsewhere")
+
+    assert child.hooks == ["testing"]
+    assert explicit.hooks == []
+    assert orphan.hooks is None
+
+
+def test_update_task_hooks(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = operations.add_task(tasks_file, "task", hooks=["ux"])
+
+    unchanged = operations.update_task(tasks_file, task.id, description="x")
+    assert unchanged.hooks == ["ux"]
+
+    cleared = operations.update_task(tasks_file, task.id, hooks=[])
+    assert cleared.hooks == []
+
+
 def test_add_task(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     # Scaffold tasks file

@@ -9,7 +9,7 @@ import traceback
 import click
 
 from . import models, persistence, prompts, runner, shutdown
-from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, list_hooks
+from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, select_hooks
 from .tasks import lifecycle, limits, operations, progress, queries
 
 
@@ -53,9 +53,10 @@ def run_hooks(
         runner_args: Extra arguments forwarded to the runner CLI.
         no_defaults: Whether to skip the runner's default arguments.
         verbose: Whether to echo prompts and hook diagnostics.
-        hooks: Explicit list of hooks to run. If None, discovers the active
-            hooks from the filesystem (see hooks.resolve_hooks). A oneshot
-            task runs none of them on success.
+        hooks: Explicit list of hooks to run. If None, runs the project's
+            enabled hooks, with the task's own reviews replacing the
+            project's (see hooks.select_hooks). A oneshot task runs none of
+            them on success.
         working_dir: Working directory for the hook runner processes.
         final_status: If provided, mark the task with this status after hooks.
         time_limit: Time limit in minutes for each hook run (0 disables it).
@@ -73,8 +74,12 @@ def run_hooks(
     if not task:
         return exit_codes
 
-    # Use provided hooks or discover the active set from the filesystem
-    active_hooks = hooks if hooks is not None else list_hooks(tasks_file)
+    # Use provided hooks or the project's and task's selection
+    active_hooks = (
+        hooks
+        if hooks is not None
+        else select_hooks(tasks_file, data.config.hooks, task.hooks)
+    )
 
     # A oneshot task buys its latency back by skipping the post-task
     # review, but a failing one still gets failure-hook recovery below.
@@ -266,7 +271,7 @@ def _process_exhausted_retries(
     runner_args: tuple,
     no_defaults: bool,
     verbose: bool,
-    active_hooks: list[str],
+    active_hooks: list[str] | None,
     working_dir: pathlib.Path | None,
     time_limit: int,
     model_name: str | None = None,
@@ -331,7 +336,7 @@ def _process_finalizing_task(
     runner_args: tuple,
     no_defaults: bool,
     verbose: bool,
-    active_hooks: list[str],
+    active_hooks: list[str] | None,
     working_dir: pathlib.Path | None,
     time_limit: int,
     model_name: str | None = None,
@@ -374,7 +379,7 @@ def _handle_runner_exit(
     runner_args: tuple,
     no_defaults: bool,
     verbose: bool,
-    active_hooks: list[str],
+    active_hooks: list[str] | None,
     working_dir: pathlib.Path | None,
     time_limit: int,
     model_name: str | None = None,
@@ -600,10 +605,10 @@ def run_loop(
         no_defaults: Whether to skip the runner's default arguments.
         runner_args: Extra arguments forwarded to the runner CLI.
         working_dir: Working directory for the runner processes.
-        hooks: Explicit hooks to run after each task, bypassing filesystem
-            discovery. An empty list runs none. Defaults to discovering the
-            active set on every iteration, so a running loop picks up
-            changes.
+        hooks: Explicit hooks to run after each task, bypassing the project
+            and task selection. An empty list runs none. Defaults to
+            selecting the active set whenever hooks run, so a running loop
+            picks up changes.
         scope: What the hooks should look at, passed through to each.
         once: Run only the first task, through its configured attempt budget.
             Exhaustion leaves it pending, and failed finalization stops rather
@@ -661,7 +666,6 @@ def run_loop(
                 )
             else:
                 retries, time_limit, runner_name, model_name = one_task_config
-        active_hooks = list_hooks(tasks_file) if hooks is None else hooks
 
         if once and one_task_id:
             current_task = next(
@@ -736,7 +740,7 @@ def run_loop(
                 runner_args=runner_args,
                 no_defaults=no_defaults,
                 verbose=verbose,
-                active_hooks=active_hooks,
+                active_hooks=hooks,
                 working_dir=working_dir,
                 time_limit=time_limit,
                 scope=scope,
@@ -787,7 +791,7 @@ def run_loop(
                 runner_args=runner_args,
                 no_defaults=no_defaults,
                 verbose=verbose,
-                active_hooks=active_hooks,
+                active_hooks=hooks,
                 working_dir=working_dir,
                 time_limit=time_limit,
                 scope=scope,
@@ -895,7 +899,7 @@ def run_loop(
             runner_args=runner_args,
             no_defaults=no_defaults,
             verbose=verbose,
-            active_hooks=active_hooks,
+            active_hooks=hooks,
             working_dir=working_dir,
             time_limit=time_limit,
             scope=scope,

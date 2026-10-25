@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from lemming import persistence
 from lemming.api import main
 
 
@@ -15,6 +16,25 @@ def test_run_loop(client, test_tasks):
         assert "--runner" not in args
         assert "--retries" not in args
         assert "--hook" not in args
+
+
+def test_update_config_keeps_omitted_fields(client, test_tasks):
+    """The dashboard posts a partial config; it must not reset the rest."""
+    data = persistence.load_tasks(test_tasks)
+    data.config.hooks = ["ux", "roadmap"]
+    data.config.model = "fast-model"
+    persistence.save_tasks(test_tasks, data)
+
+    response = client.post(
+        "/api/config", json={"runner": "codex", "retries": 5, "time_limit": 0}
+    )
+
+    assert response.status_code == 200
+    config = persistence.load_tasks(test_tasks).config
+    assert config.runner == "codex"
+    assert config.retries == 5
+    assert config.hooks == ["ux", "roadmap"]
+    assert config.model == "fast-model"
 
 
 def test_get_runners(client):

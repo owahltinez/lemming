@@ -2,12 +2,13 @@
 
 import json
 import math
+import pathlib
 import time
 import typing
 
 import click
 
-from .. import models, paths, persistence
+from .. import hooks, models, paths, persistence
 from ..tasks import lifecycle, operations, queries
 from .main import cli
 
@@ -68,6 +69,13 @@ def _echo_task_summary(
             click.echo(f"    Replaced by: {', '.join(replacements)}")
 
 
+def _parse_task_hooks(
+    value: str | None, tasks_file: pathlib.Path
+) -> list[str] | None:
+    """Parses a --hooks value, leaving the field unchanged when omitted."""
+    return None if value is None else hooks.parse_reviews([value], tasks_file)
+
+
 @cli.command(short_help="[description] Add a new task to the queue")
 @click.argument("description", required=False)
 @click.option(
@@ -112,6 +120,15 @@ def _echo_task_summary(
         "hook is a full agent run."
     ),
 )
+@click.option(
+    "--hooks",
+    "hooks_value",
+    help=(
+        "Reviews to run after this task, comma-separated ('all' for every "
+        "review, '' for none). Defaults to the parent task's, else the "
+        "project's enabled hooks."
+    ),
+)
 @click.pass_context
 def add(
     ctx: click.Context,
@@ -123,6 +140,7 @@ def add(
     parent: str | None,
     parent_tasks_file: str | None,
     oneshot: bool,
+    hooks_value: str | None,
 ):
     """Adds a new task to the roadmap queue."""
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -150,6 +168,7 @@ def add(
             parent=parent,
             parent_tasks_file=parent_tasks_file,
             oneshot=oneshot,
+            hooks=_parse_task_hooks(hooks_value, tasks_file),
         )
     except ValueError as e:
         click.echo(f"Error: {e}")
@@ -195,6 +214,14 @@ def add(
     default=None,
     help="Skip (or resume running) post-task hooks once this task completes.",
 )
+@click.option(
+    "--hooks",
+    "hooks_value",
+    help=(
+        "New reviews to run after this task, comma-separated ('all' for "
+        "every review, '' for none)."
+    ),
+)
 @click.pass_context
 def edit(
     ctx: click.Context,
@@ -207,6 +234,7 @@ def edit(
     parent: str | None,
     parent_tasks_file: str | None,
     oneshot: bool | None,
+    hooks_value: str | None,
 ):
     """Edits a task's description, runner, model, position, parent or flags."""
     if file:
@@ -225,10 +253,11 @@ def edit(
         and parent is None
         and parent_tasks_file is None
         and oneshot is None
+        and hooks_value is None
     ):
         click.echo(
             "Error: At least one of --description, --runner, --model,"
-            " --index, --parent, --parent-tasks-file, or --oneshot"
+            " --index, --parent, --parent-tasks-file, --oneshot, or --hooks"
             " must be provided."
         )
         ctx.exit(1)
@@ -246,6 +275,7 @@ def edit(
             parent=parent,
             parent_tasks_file=parent_tasks_file,
             oneshot=oneshot,
+            hooks=_parse_task_hooks(hooks_value, tasks_file),
         )
         click.echo(f"Task {target_task.id} updated.")
     except ValueError as e:
@@ -516,6 +546,8 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
         click.echo(f"Custom Model:  {target.model}")
     if target.oneshot:
         click.echo("Oneshot:       post-task hooks skipped on completion")
+    if target.hooks is not None:
+        click.echo(f"Reviews:       {', '.join(target.hooks) or '(none)'}")
     # The resolved command is the only record of which runner and model
     # actually produced the work.
     if target.resolved_command:

@@ -442,6 +442,35 @@ class TestCLITaskModel(unittest.TestCase):
         updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertFalse(updated.oneshot)
 
+    def test_hooks_round_trip_through_add_and_edit(self):
+        task = self._add("--hooks", "ux,readability")
+        self.assertEqual(task.hooks, ["readability", "ux"])
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["edit", task.id, "--hooks", ""]
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertEqual(updated.hooks, [])
+
+    def test_add_without_hooks_uses_project_default(self):
+        self.assertIsNone(self._add().hooks)
+
+    def test_hooks_rejects_unknown_and_orchestration_names(self):
+        for value, message in (
+            ("nope", "Unknown review 'nope'"),
+            ("roadmap", "orchestrates the roadmap"),
+        ):
+            for args in (
+                ["add", "task", "--hooks", value],
+                ["edit", "12345678", "--hooks", value],
+            ):
+                result = self.cli_runner.invoke(cli.cli, self.base_args + args)
+                self.assertEqual(result.exit_code, 1, result.output)
+                self.assertIn(message, result.output)
+        self.assertEqual(persistence.load_tasks(self.test_tasks_file).tasks, [])
+
     def test_status_shows_provenance(self):
         """After the fact, status answers which command produced the work."""
         task = self._add("--model", "fast-model")

@@ -162,12 +162,12 @@ The loop shares one workspace across all its tasks, so isolate the **whole run**
 — one branch or worktree created before `lemming run`, driven with
 `lemming -C <worktree> run` — never one per task.
 
-**Mark mechanical tasks `--oneshot`.** After every other task, review hooks run
-and a roadmap hook may revise the queue; each hook is a full agent run, so a
-typo fix, rename, version bump, or cleanup without `--oneshot` takes several
-times longer than the work itself. Reserve hooked tasks for changes in
-behavior. `lemming hooks list` shows the hooks; `lemming hooks disable <name>`
-turns one off for the project.
+**Mark mechanical tasks `--oneshot`.** After every other task, a roadmap hook
+may revise the queue and any enabled reviews run; each hook is a full agent
+run, so a typo fix, rename, version bump, or cleanup without `--oneshot` takes
+several times longer than the work itself. Reviews are opt-in: pick them for
+one task with `lemming add ... --hooks testing,ux`, or for every task with
+`lemming hooks enable <name>`. `lemming hooks list` shows which are enabled.
 
 ### Supervise in milestones
 
