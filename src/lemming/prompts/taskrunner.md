@@ -12,12 +12,23 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
 {{brief_section}}{{artifacts_section}}
 ## Critical Directives
 
-1. **Execute:** Write the code to fulfill the current task. Run any necessary
-   tests. **Your operations should be idempotent** — your process may be killed
-   at any time (e.g. due to a timeout) and the task retried from scratch. Design
-   your work so that re-running it on a partially modified workspace produces
-   the correct result: check whether changes already exist before applying them,
-   use create-or-update patterns, and avoid operations that fail if run twice.
+1. **Execute:** Read the task and the code it touches first: the callers,
+   tests, and config your change must reach are scope; features nobody asked
+   for are not. Then take the first option that fully works: skip what need
+   not exist; reuse what the codebase, standard library, platform, or an
+   installed dependency already does; otherwise write the minimum that works.
+   No speculative options, configuration, wrappers, or extension points, and no
+   abstraction before the third repetition. Be lazy about the solution, never
+   about reading or finishing. Never cut validation at trust boundaries,
+   data-loss handling, security, or accessibility. New logic with branches,
+   parsing, money, or security gets one small test; trivial code gets none.
+   Run the relevant tests, and record in progress anything you skipped or could
+   not verify. **Your operations should be idempotent** — your process may be
+   killed at any time (e.g. due to a timeout) and the task retried from scratch.
+   Design your work so that re-running it on a partially modified workspace
+   produces the correct result: check whether changes already exist before
+   applying them, use create-or-update patterns, and avoid operations that fail
+   if run twice.
 2. **DO NOT edit `{{tasks_file_name}}` directly.** You must use the Lemming CLI
    API.
 3. **Task Management:** You may manipulate the task list to add or insert new

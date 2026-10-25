@@ -35,7 +35,7 @@ class TestSuiteRegistry(ScenarioTestCase):
     def test_all_suites_includes_roadmap(self):
         registry = suites.all_suites()
         self.assertIn("roadmap", registry)
-        self.assertEqual(len(registry["roadmap"]), 6)
+        self.assertEqual(len(registry["roadmap"]), 7)
 
     def test_scenario_names_are_unique(self):
         names = [s.name for s in roadmap.SCENARIOS]
@@ -278,6 +278,40 @@ class TestFollowUpScenario(ScenarioTestCase):
         checks = self.scenario.grade(self.workspace)
         self.assertEqual(self.check_names(checks), {"follow-up-targets-bug"})
         self.assertTrue(scenarios.passed(checks))
+
+
+class TestFindingRestraintScenario(ScenarioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.scenario = _scenario("finding-is-not-a-task")
+        self.scenario.build(self.workspace)
+        self.tasks_file = fixtures.tasks_file(self.workspace)
+
+    def test_fast_exit_passes(self):
+        _finalize(self.workspace)
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertEqual(self.check_names(checks), set())
+
+    def test_scheduling_suggestion_fails(self):
+        _finalize(self.workspace)
+        operations.add_task(
+            self.tasks_file, "Add an operation registry to calc/ops.py."
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn("no-speculative-tasks", self.check_names(checks))
+
+    def test_folding_suggestion_into_pending_task_fails(self):
+        _finalize(self.workspace)
+        operations.update_task(
+            self.tasks_file,
+            "task2",
+            description="Implement subtract with a --precision flag.",
+        )
+
+        checks = self.scenario.grade(self.workspace)
+        self.assertIn("no-speculative-tasks", self.check_names(checks))
 
 
 if __name__ == "__main__":

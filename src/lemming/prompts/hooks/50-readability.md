@@ -22,10 +22,15 @@ keeps quality from drifting as tasks accumulate.
 1.  **Automate**: Immediately run `lemming readability check <path> --fix` for
     every file in scope. This handles standard formatting (ruff, biome,
     prettier) and type checking (pyrefly).
-2.  **Challenge the Shape**: Before polishing the implementation, ask whether
-    the same behavior could use fewer concepts, files, branches, dependencies,
-    or abstractions. Prefer removing indirection over adding another layer.
-    In particular, look for:
+2.  **Challenge the Shape**: Before asking whether code is well written, ask
+    whether it needs to exist, then whether existing code, the standard
+    library, or the platform already does it, then whether the same behavior
+    could use fewer concepts, files, branches, or dependencies. Then cut:
+    prefer deleting code over polishing it, and removing indirection over
+    adding another layer. In particular, look for:
+    - **Dead weight**: dead code, unused options, speculative features, config
+      nobody sets, abstractions with one implementation, wrappers that only
+      forward, and tests or files that guard no behavior that can break.
     - **Duplication and drift**: parallel implementations of the same behavior
       or knowledge with only small variations. Reuse or consolidate an existing
       implementation and parameterize genuine differences so there is one
@@ -34,7 +39,9 @@ keeps quality from drifting as tasks accumulate.
       concepts. Do not force one-off similarities into a premature abstraction
       just to satisfy DRY.
     Make only local, behavior-preserving simplifications within the files
-    in scope. Record broader redesigns as progress.
+    in scope, keeping the validation and error handling of any code you move
+    or merge. Record broader redesigns, and removals that would change a
+    public interface, as progress.
 3.  **Review**: Read the files in scope and look for quality drift that
     automated tools cannot catch:
     - **Excess complexity**: deep nesting, sprawling functions, needless
@@ -59,7 +66,8 @@ keeps quality from drifting as tasks accumulate.
     `lemming readability check <path>`. If verification fails and the fix is not
     trivially repaired, revert your edits and record the finding as progress
     rather than letting changes snowball.
-7.  **Report**: Record meaningful findings and applied fixes as progress using
+7.  **Report**: Record applied fixes, and findings that name a concrete case
+    (no case, no finding), as progress using
     `lemming progress {{finished_task_id}} '<finding>'`.
 8.  **Reject**: If `lemming readability check` still fails on a file in scope
     and you could not repair it, first establish that the task introduced the
