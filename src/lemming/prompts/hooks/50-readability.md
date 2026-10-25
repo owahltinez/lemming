@@ -52,9 +52,9 @@ keeps quality from drifting as tasks accumulate.
       surrounding codebase, or comments that no longer match the code.
 4.  **Consult**: Cite the relevant style guide rule in your findings rather
     than relying on memory. A guide can exceed 100 KB, so never print one
-    whole: list its sections with `--outline`, then read the one you need
-    with `--section`. For wording no heading names, pipe the guide to a
-    search instead of printing it. Where a guide and the project's own
+    whole: print its outline, then read the one section you need by heading
+    or index. For wording no heading names, pipe `--full` to a search instead
+    of printing it. Where a guide and the project's own
     configuration disagree, the configuration wins and `check` already
     enforces it: do not change code or configuration to match the guide
     against it, and do not report a configured choice as a finding.
@@ -88,11 +88,11 @@ keeps quality from drifting as tasks accumulate.
 ```bash
 # Fix formatting/linting
 lemming readability check <path> --fix
-# List a style guide's sections, then read just one
-lemming readability guide <language> --outline --depth 2
-lemming readability guide <language> --section <ref>
+# Print a style guide's outline, then read just one section
+lemming readability guide <language>
+lemming readability guide <language> '<heading or index>'
 # Find wording that no heading names, without printing the guide
-lemming readability guide <language> | grep -n "<pattern>"
+lemming readability guide <language> --full | grep -n "<pattern>"
 # Record progress
 lemming --tasks-file {{tasks_file_path}} progress {{finished_task_id}} '<finding>'
 # Block the completion over a check that still fails
