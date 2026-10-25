@@ -41,8 +41,9 @@ They are a manual gate for prompt changes, not part of the unit test suite.
 # List available suites and scenarios
 uv run python -m lemming.evals list
 
-# Run a suite (roadmap, readability, or task): scenarios x 3 trials
+# Run a suite (roadmap, simplify, readability, or task): scenarios x 3 trials
 uv run python -m lemming.evals run --suite roadmap
+uv run python -m lemming.evals run --suite simplify
 uv run python -m lemming.evals run --suite readability
 uv run python -m lemming.evals run --suite task
 

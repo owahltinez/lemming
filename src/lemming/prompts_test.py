@@ -23,13 +23,13 @@ def test_load_builtin_ux_prompt():
     assert "{{finished_task_id}}" in prompt
 
 
-def test_load_builtin_readability_prompt_includes_simplification():
-    prompt = prompts.load_prompt("readability")
+def test_load_builtin_simplify_prompt_includes_simplification():
+    prompt = prompts.load_prompt("simplify")
 
     assert "Challenge the Shape" in prompt
     assert "Duplication and drift" in prompt
     assert "source of truth" in prompt
-    assert "False reuse" in prompt
+    assert "False Reuse" in prompt
 
 
 def test_prepare_prompt(tmp_path, monkeypatch):

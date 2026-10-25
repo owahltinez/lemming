@@ -54,13 +54,21 @@ of the finished task and decides if the remaining roadmap needs to be adjusted
 (e.g., adding a missing prerequisite, skipping obsolete tasks, or breaking down
 a broad task).
 
+### `simplify`
+
+A simplification hook that deletes code the changed behavior does not need:
+dead code, needless indirection, speculative options, premature abstractions,
+and duplicated implementations, while leaving look-alike code that represents
+different concepts alone. Its edits are local and behavior-preserving, verified
+by the relevant tests, and it records broader redesigns as task progress. It
+runs before `readability`, so lint and formatting apply to its edits.
+
 ### `readability`
 
-A code quality and simplification hook that challenges unnecessary complexity,
-indirection, and duplicated implementations before reviewing changes for
-adherence to the Google Style Guide and general readability using the bundled
-`lemming readability` tool. It intentionally applies automated and targeted
-fixes in the working directory and records broader findings as task progress.
+Reviews changes for adherence to the Google Style Guide and general readability
+using the bundled `lemming readability` tool. It intentionally applies automated
+and targeted style fixes in the working directory and records broader findings
+as task progress.
 
 ### `testing`
 
@@ -124,6 +132,7 @@ shipping:
 
 ```bash
 uv run python -m lemming.evals run --suite roadmap
+uv run python -m lemming.evals run --suite simplify
 uv run python -m lemming.evals run --suite readability
 ```
 

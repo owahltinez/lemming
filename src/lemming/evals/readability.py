@@ -2,10 +2,9 @@
 
 Each scenario seeds the calculator project just after a task finished, lets
 the readability hook review the changed files, and grades the aftermath
-against the prompt's contract: fast-exit on clean code, act on quality
-drift in the changed files (fix it or record a finding), never touch files
-outside the finished task's scope, keep the tests green, and never add
-roadmap tasks.
+against the prompt's contract: fast-exit on clean code, clear lint findings
+in the changed files, never touch files outside the finished task's scope,
+keep the tests green, and never add roadmap tasks.
 
 Scenarios come in action/restraint pairs on purpose. A comparison of two
 agent CLIs showed one arm consistently under-acting and the other
@@ -13,8 +12,10 @@ consistently over-acting, so a suite made only of "did the agent act"
 cases would hand the win to whichever arm edits more, and a suite made
 only of "did the agent hold back" cases would do the reverse. Every
 scenario added here should have a counterpart pulling the other way:
-consolidate-or-report-live-duplication against false-reuse-restraint,
 lint-debt-repaid against clean-fast-exit.
+
+The calculator harness here is shared with the simplify suite, which owns
+the shape scenarios: dead code, duplication, and false reuse.
 """
 
 import pathlib
@@ -30,24 +31,17 @@ _GOAL = (
     "multiply commands, each covered by unit tests."
 )
 
-# The visible suite's assertions, copied in only at grading time.
-_FALSE_REUSE_HIDDEN_TESTS = {
-    "calc/limits_hidden_test.py": fixtures.load_project(
-        "readability/false-reuse"
-    )["calc/limits_test.py"]
-}
-
 _FINISHED_DESCRIPTION = (
     "Implement the subtract command in calc/ops.py with unit tests."
 )
 
-_BASE_PROGRESS = [
+BASE_PROGRESS = [
     "Modified calc/ops.py and calc/ops_test.py to add subtract() with "
     "tests; all tests pass. No other files were touched."
 ]
 
 
-def _write_project(workspace: pathlib.Path, change: str) -> None:
+def write_project(workspace: pathlib.Path, change: str) -> None:
     """Seeds the calculator fixture with a finished task's changes on top.
 
     The changes land in a second commit so the trial starts with the
@@ -60,16 +54,16 @@ def _write_project(workspace: pathlib.Path, change: str) -> None:
     Args:
         workspace: Directory to seed.
         change: Fixture project holding the finished task's version of the
-            files it touched, e.g. "lint-debt".
+            files it touched, e.g. "readability/lint-debt".
     """
     fixtures.init_repo(
         workspace,
         fixtures.load_project("readability/base"),
-        changes=fixtures.load_project(f"readability/{change}"),
+        changes=fixtures.load_project(change),
     )
 
 
-def _save_finished_task(workspace: pathlib.Path, progress: list[str]) -> None:
+def save_finished_task(workspace: pathlib.Path, progress: list[str]) -> None:
     """Saves a roadmap whose only task just finished successfully."""
     fixtures.save_roadmap(
         workspace,
@@ -160,8 +154,8 @@ def _check_out_of_scope_untouched(
     )
 
 
-def _common_checks(workspace: pathlib.Path) -> list[scenarios.Check]:
-    """Grades the contract every readability scenario shares."""
+def common_checks(workspace: pathlib.Path) -> list[scenarios.Check]:
+    """Grades the contract every calculator scenario shares."""
     roadmap, checks = scenarios.load_or_fail(workspace)
     if roadmap is None:
         return checks
@@ -176,161 +170,23 @@ def _common_checks(workspace: pathlib.Path) -> list[scenarios.Check]:
 def _build_fast_exit(workspace: pathlib.Path) -> None:
     """Fixture: the changed files are clean, idiomatic, and tested."""
     # Fully annotated, so the hook has nothing left to correctly improve.
-    _write_project(workspace, "clean")
-    _save_finished_task(workspace, list(_BASE_PROGRESS))
+    write_project(workspace, "readability/clean")
+    save_finished_task(workspace, list(BASE_PROGRESS))
 
 
 def _grade_fast_exit(workspace: pathlib.Path) -> list[scenarios.Check]:
     """The hook must leave clean changed files untouched."""
     return [
-        *_common_checks(workspace),
+        *common_checks(workspace),
         scenarios.check_clean_source(workspace),
     ]
-
-
-def _build_dead_code(workspace: pathlib.Path) -> None:
-    """Fixture: the changed file contains a dead duplicate function."""
-    # Cleanly formatted, so only a genuine review catches the duplicate.
-    _write_project(workspace, "dead-code")
-    _save_finished_task(workspace, list(_BASE_PROGRESS))
-
-
-def _grade_dead_code(workspace: pathlib.Path) -> list[scenarios.Check]:
-    """The hook must remove the dead code or record it as a finding."""
-    checks = _common_checks(workspace)
-
-    roadmap, load_failures = scenarios.load_or_fail(workspace)
-    if roadmap is None:
-        return load_failures
-
-    # Pass if the dead symbol was removed or a finding named it.
-    fixed = "_add_legacy" not in (workspace / "calc" / "ops.py").read_text()
-    task = next(t for t in roadmap.tasks if t.id == "task1")
-    new_entries = task.progress[len(_BASE_PROGRESS) :]
-    reported = any("_add_legacy" in entry for entry in new_entries)
-    acted = scenarios.Check(
-        name="acted-on-drift",
-        passed=fixed or reported,
-        detail="dead code kept and no finding recorded"
-        if not (fixed or reported)
-        else "",
-    )
-
-    # Behavior must be preserved: the real function stays.
-    interface = scenarios.Check(
-        name="interface-preserved",
-        passed="def add(" in (workspace / "calc" / "ops.py").read_text(),
-        detail="public function add() disappeared",
-    )
-
-    return [*checks, acted, interface]
-
-
-def _build_duplicated_behavior(workspace: pathlib.Path) -> None:
-    """Fixture: two live functions duplicate receipt preparation."""
-    _write_project(workspace, "duplicated-behavior")
-    _save_finished_task(
-        workspace,
-        [
-            "Modified calc/ops.py and calc/ops_test.py to add receipt-ready "
-            "addition and subtraction; all tests pass.",
-        ],
-    )
-
-
-def _grade_duplicated_behavior(
-    workspace: pathlib.Path,
-) -> list[scenarios.Check]:
-    """The hook must consolidate or report live near-duplicate behavior."""
-    checks = _common_checks(workspace)
-
-    roadmap, load_failures = scenarios.load_or_fail(workspace)
-    if roadmap is None:
-        return load_failures
-
-    source = (workspace / "calc" / "ops.py").read_text()
-    repeated_validation = source.count("math.isfinite(total)") > 1
-    repeated_rounding = source.count("round(total, 2)") > 1
-    consolidated = not repeated_validation and not repeated_rounding
-
-    task = next(t for t in roadmap.tasks if t.id == "task1")
-    new_entries = task.progress[1:]
-    reported = any(
-        "duplicat" in entry.lower()
-        and ("add_for_receipt" in entry or "subtract_for_receipt" in entry)
-        for entry in new_entries
-    )
-    acted = scenarios.Check(
-        name="acted-on-live-duplication",
-        passed=consolidated or reported,
-        detail=(
-            "live receipt logic stayed duplicated and no finding was recorded"
-        )
-        if not (consolidated or reported)
-        else "",
-    )
-
-    interface = scenarios.Check(
-        name="receipt-interface-preserved",
-        passed=(
-            "def add_for_receipt(" in source
-            and "def subtract_for_receipt(" in source
-        ),
-        detail="a public receipt operation disappeared",
-    )
-
-    return [*checks, acted, interface]
-
-
-def _build_false_reuse(workspace: pathlib.Path) -> None:
-    """Fixture: two same-shaped clamps that mean unrelated things."""
-    _write_project(workspace, "false-reuse")
-    _save_finished_task(
-        workspace,
-        [
-            "Added calc/limits.py with clamp_percentage() for display and "
-            "clamp_retries() for the backoff loop, plus tests for both.",
-        ],
-    )
-
-
-def _grade_false_reuse(workspace: pathlib.Path) -> list[scenarios.Check]:
-    """The hook must not merge two look-alike clamps into one helper.
-
-    The inverse of consolidate-or-report-live-duplication: an agent with a
-    blanket "always refactor" policy fails here and passes there, so only
-    judgement scores well on both.
-    """
-    checks = _common_checks(workspace)
-    source = (workspace / "calc" / "limits.py").read_text()
-
-    # Fail only if a helper appeared or one clamp now calls the other.
-    clamps = ["clamp_percentage", "clamp_retries"]
-    functions = metrics.top_level_functions(source)
-    calls = set().union(*(metrics.called_names(source, c) for c in clamps))
-    coupled = bool(calls & set(clamps))
-    independent = scenarios.Check(
-        name="clamps-stayed-independent",
-        passed=functions == clamps and not coupled,
-        detail=f"limits.py defines {functions}, coupled={coupled}",
-    )
-
-    # The visible suite is the agent's to edit; this hidden copy is not.
-    hidden = metrics.run_hidden_tests(workspace, _FALSE_REUSE_HIDDEN_TESTS)
-    preserved = scenarios.Check(
-        name="clamp-behavior-preserved",
-        passed=hidden.passed,
-        detail=hidden.detail,
-    )
-
-    return [*checks, independent, preserved]
 
 
 def _build_lint_debt(workspace: pathlib.Path) -> None:
     """Fixture: the changed file carries findings ruff reports on sight."""
     # Four ruff findings; --fix clears three, the docstring needs writing.
-    _write_project(workspace, "lint-debt")
-    _save_finished_task(
+    write_project(workspace, "readability/lint-debt")
+    save_finished_task(
         workspace,
         [
             "Modified calc/ops.py and calc/ops_test.py to add subtract() "
@@ -342,12 +198,12 @@ def _build_lint_debt(workspace: pathlib.Path) -> None:
 def _grade_lint_debt(workspace: pathlib.Path) -> list[scenarios.Check]:
     """The hook must leave the changed files free of ruff findings.
 
-    Unlike the dead-code and duplication scenarios there is no "record a
-    finding" alternative: directive 1 tells the hook to run
+    Unlike the simplify suite's dead-code and duplication scenarios there
+    is no "record a finding" alternative: directive 1 tells the hook to run
     `readability check --fix` on every file in scope, and these findings are
     exactly what that command reports.
     """
-    checks = _common_checks(workspace)
+    checks = common_checks(workspace)
 
     outstanding = metrics.unresolved_findings(
         workspace, fixtures.changed_paths(workspace)
@@ -374,25 +230,6 @@ def _grade_lint_debt(workspace: pathlib.Path) -> list[scenarios.Check]:
     return [*checks, cleared, interface]
 
 
-def _build_no_orchestration(workspace: pathlib.Path) -> None:
-    """Fixture: progress dangles a refactor spanning unrelated files."""
-    _write_project(workspace, "clean")
-    progress = [
-        *_BASE_PROGRESS,
-        "Noticed calc/legacy.py duplicates formatting logic that belongs "
-        "in calc/ops.py; a refactor would span both files and needs its "
-        "own task.",
-    ]
-    _save_finished_task(workspace, progress)
-
-
-def _grade_no_orchestration(
-    workspace: pathlib.Path,
-) -> list[scenarios.Check]:
-    """The hook must not schedule the refactor itself."""
-    return _common_checks(workspace)
-
-
 SCENARIOS = [
     scenarios.Scenario(
         name="clean-fast-exit",
@@ -407,38 +244,6 @@ SCENARIOS = [
         grade=_grade_fast_exit,
     ),
     scenarios.Scenario(
-        name="fix-or-report-dead-code",
-        hook="readability",
-        outcome=models.TaskStatus.COMPLETED,
-        task_id="task1",
-        summary="Removes dead code in changed files or records a finding.",
-        build=_build_dead_code,
-        grade=_grade_dead_code,
-    ),
-    scenarios.Scenario(
-        name="consolidate-or-report-live-duplication",
-        hook="readability",
-        outcome=models.TaskStatus.COMPLETED,
-        task_id="task1",
-        summary=(
-            "Consolidates near-duplicate live behavior or records a finding."
-        ),
-        build=_build_duplicated_behavior,
-        grade=_grade_duplicated_behavior,
-    ),
-    scenarios.Scenario(
-        name="false-reuse-restraint",
-        hook="readability",
-        outcome=models.TaskStatus.COMPLETED,
-        task_id="task1",
-        summary=(
-            "Leaves two same-shaped but unrelated clamps as separate "
-            "definitions instead of forcing them behind one helper."
-        ),
-        build=_build_false_reuse,
-        grade=_grade_false_reuse,
-    ),
-    scenarios.Scenario(
         name="lint-debt-repaid",
         hook="readability",
         outcome=models.TaskStatus.COMPLETED,
@@ -446,14 +251,5 @@ SCENARIOS = [
         summary="Clears every ruff finding in the files the task changed.",
         build=_build_lint_debt,
         grade=_grade_lint_debt,
-    ),
-    scenarios.Scenario(
-        name="no-orchestration",
-        hook="readability",
-        outcome=models.TaskStatus.COMPLETED,
-        task_id="task1",
-        summary="Never adds roadmap tasks, even for tempting refactors.",
-        build=_build_no_orchestration,
-        grade=_grade_no_orchestration,
     ),
 ]

@@ -275,12 +275,16 @@ Lemming comes with several built-in hooks to help manage your project:
   analyzes the results of the finished task and decides if the remaining roadmap
   needs to be adjusted (e.g., adding a missing prerequisite, skipping obsolete
   tasks, or breaking down a broad task).
-- **`readability`**: A code quality and simplification hook that challenges
-  unnecessary complexity and duplicate implementations, then reviews changes for
-  adherence to the Google Style Guide and general readability using the
+- **`simplify`**: Deletes code the changed behavior does not need: dead code,
+  needless indirection, speculative options, premature abstractions, and
+  duplicated implementations. Its edits are local, behavior-preserving, and
+  verified by tests; broader redesigns are recorded as task progress. It runs
+  before `readability`.
+- **`readability`**: Reviews changes for adherence to the Google Style Guide and
+  general readability using the
   [readability](https://github.com/owahltinez/readability) tool (exposed as
-  `lemming readability`). It intentionally applies automated and targeted fixes
-  in the working directory and records broader findings as task progress.
+  `lemming readability`). It intentionally applies automated and targeted style
+  fixes in the working directory and records broader findings as task progress.
 - **`testing`**: Verifies that changed behavior has focused test coverage and
   that the relevant tests pass. It may repair small, targeted problems in
   production code or tests and may add, merge, or remove tests.

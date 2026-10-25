@@ -20,7 +20,7 @@ MAX_LISTED_ARTIFACTS = 20
 MAX_DETAILED_PROGRESS_ENTRY_CHARS = 4_000
 _LOG_SCAN_MULTIPLIER = 4
 _OMISSION_MARKER_RESERVE = 160
-_REVIEW_HOOKS = frozenset({"readability", "testing", "ux"})
+_REVIEW_HOOKS = frozenset({"simplify", "readability", "testing", "ux"})
 
 
 @dataclasses.dataclass(frozen=True)
