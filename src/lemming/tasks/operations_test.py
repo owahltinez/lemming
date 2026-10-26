@@ -55,6 +55,9 @@ def test_update_task_hooks(tmp_path):
     cleared = operations.update_task(tasks_file, task.id, hooks=[])
     assert cleared.hooks == []
 
+    reset = operations.update_task(tasks_file, task.id, project_hooks=True)
+    assert reset.hooks is None
+
 
 def test_add_task(tmp_path):
     tasks_file = tmp_path / "tasks.yml"

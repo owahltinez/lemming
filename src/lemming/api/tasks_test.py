@@ -53,6 +53,53 @@ def test_add_task_with_runner(client, test_tasks):
     assert response.json()["runner"] == "claude"
 
 
+def test_add_task_with_hooks(client, test_tasks):
+    response = client.post(
+        "/api/tasks",
+        json={"description": "Reviewed", "hooks": ["ux", "readability"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["hooks"] == ["readability", "ux"]
+
+
+def test_add_task_rejects_invalid_hooks(client, test_tasks):
+    for hooks, message in (
+        (["nope"], "Unknown review 'nope'"),
+        (["roadmap"], "orchestrates the roadmap"),
+    ):
+        response = client.post(
+            "/api/tasks", json={"description": "Bad", "hooks": hooks}
+        )
+        assert response.status_code == 400
+        assert message in response.json()["detail"]
+    assert len(persistence.load_tasks(test_tasks).tasks) == 3
+
+
+def test_update_task_hooks_and_reset(client, test_tasks):
+    url = "/api/tasks/task2/update"
+
+    response = client.post(url, json={"hooks": []})
+    assert response.status_code == 200
+    assert response.json()["hooks"] == []
+
+    response = client.post(url, json={"description": "Still custom"})
+    assert response.json()["hooks"] == []
+
+    response = client.post(url, json={"hooks": None})
+    assert response.status_code == 200
+    assert response.json()["hooks"] is None
+
+
+def test_update_task_rejects_invalid_hooks(client, test_tasks):
+    for hooks in (["nope"], ["roadmap"], "ux", [1]):
+        response = client.post("/api/tasks/task2/update", json={"hooks": hooks})
+        assert response.status_code == 400, hooks
+    task2 = next(
+        t for t in persistence.load_tasks(test_tasks).tasks if t.id == "task2"
+    )
+    assert task2.hooks is None
+
+
 def test_delete_completed_tasks(client, test_tasks):
     response = client.post("/api/tasks/delete-completed")
     assert response.status_code == 200

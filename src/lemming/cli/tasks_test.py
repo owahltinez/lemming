@@ -454,6 +454,30 @@ class TestCLITaskModel(unittest.TestCase):
         updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertEqual(updated.hooks, [])
 
+    def test_edit_project_hooks_restores_project_default(self):
+        task = self._add("--hooks", "ux")
+
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["edit", task.id, "--project-hooks"]
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertIsNone(updated.hooks)
+
+    def test_edit_rejects_hooks_with_project_hooks(self):
+        task = self._add("--hooks", "ux")
+
+        result = self.cli_runner.invoke(
+            cli.cli,
+            self.base_args
+            + ["edit", task.id, "--hooks", "", "--project-hooks"],
+        )
+
+        self.assertEqual(result.exit_code, 1, result.output)
+        updated = persistence.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertEqual(updated.hooks, ["ux"])
+
     def test_add_without_hooks_uses_project_default(self):
         self.assertIsNone(self._add().hooks)
 

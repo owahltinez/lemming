@@ -57,6 +57,9 @@
       $.loopRunning = false;
       $.editingTask = null;
       $.editFormData = { description: '', parent: '' };
+      // A task's reviews: the project's unless custom; dirty once changed
+      $.newTaskReviews = { custom: false, hooks: [], dirty: false };
+      $.editReviews = { custom: false, hooks: [], dirty: false };
 
       // --- Favicon Status ---
       $.faviconState = 'idle';
@@ -123,6 +126,9 @@
       );
       $.supersededCount = $.$computed(
         ($) => $.tasks.filter((t) => t.status === 'superseded').length,
+      );
+      $.reviewHooks = $.$computed(($) =>
+        $.availableHooks.filter((h) => !h.masked && !h.runs_on_failure),
       );
       $.historyCount = $.$computed(
         ($) => $.tasks.filter((t) => $.isHistoryTask(t)).length,
@@ -537,6 +543,20 @@
         }
       };
 
+      $.setCustomReviews = (reviews, custom) => {
+        reviews.custom = custom;
+        reviews.hooks = $.reviewHooks
+          .filter((h) => h.enabled)
+          .map((h) => h.name);
+        reviews.dirty = true;
+      };
+      $.toggleReview = (reviews, name) => {
+        reviews.hooks = reviews.hooks.includes(name)
+          ? reviews.hooks.filter((h) => h !== name)
+          : [...reviews.hooks, name];
+        reviews.dirty = true;
+      };
+
       let envSaveTimeout;
       $.saveEnvOverrides = () => {
         clearTimeout(envSaveTimeout);
@@ -566,14 +586,22 @@
 
       $.addTask = async () => {
         if (!$.newTask.trim()) return;
+        const { custom, hooks } = $.newTaskReviews;
         const res = await fetch(apiUrl('/api/tasks'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: $.newTask }),
+          body: JSON.stringify({
+            description: $.newTask,
+            hooks: custom ? hooks : undefined,
+          }),
         });
         if (res.ok) {
           $.newTask = '';
+          $.newTaskReviews = { custom: false, hooks: [], dirty: false };
           await $.fetchData();
+        } else {
+          const error = await res.json().catch(() => ({}));
+          $.addToast(error.detail || 'Failed to add task', 'error');
         }
       };
 
@@ -673,6 +701,11 @@
           description: task.description || '',
           parent: task.parent || '',
         };
+        $.editReviews = {
+          custom: task.hooks != null,
+          hooks: [...(task.hooks || [])],
+          dirty: false,
+        };
         const modal = document.getElementById('edit-modal');
         if (modal) modal.showModal();
       };
@@ -691,6 +724,10 @@
           description: $.editFormData.description.trim() || task.description,
           parent: $.editFormData.parent.trim() || null,
         };
+        // Untouched reviews are left alone; null restores the project's
+        if ($.editReviews.dirty) {
+          update.hooks = $.editReviews.custom ? $.editReviews.hooks : null;
+        }
 
         const res = await fetch(apiUrl(`/api/tasks/${task.id}/update`), {
           method: 'POST',
@@ -700,6 +737,9 @@
         if (res.ok) {
           $.addToast('Task updated', 'success');
           await $.fetchData();
+        } else {
+          const error = await res.json().catch(() => ({}));
+          $.addToast(error.detail || 'Failed to update task', 'error');
         }
 
         $.closeEditModal();

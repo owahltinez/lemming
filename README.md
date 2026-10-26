@@ -206,8 +206,8 @@ lemming serve --tunnel cloudflare
   folders directly from the UI.
 - **Browse Files**: Quickly open your workspace in a separate window to inspect
   files and directory structure alongside the roadmap.
-- **Interactive Controls**: Add tasks, edit the goal, and manage the execution
-  loop from your browser.
+- **Interactive Controls**: Add tasks and pick their reviews, edit the goal, and
+  manage the execution loop from your browser.
 
 ---
 
@@ -367,7 +367,8 @@ These come before the subcommand and apply to all of them.
   `--model`, `--oneshot`, and `--hooks` (the task's reviews, comma-separated;
   inherited from `--parent` when omitted).
 - **`edit <id>`**: Modify a task's description, runner, model, position,
-  oneshot flag (`--oneshot/--no-oneshot`), or reviews (`--hooks`).
+  oneshot flag (`--oneshot/--no-oneshot`), or reviews (`--hooks`;
+  `--project-hooks` restores the project's).
 - **`brief <id> [text]`**: View or set a task's long-form brief. Unlike the
   description it has no length cap, and it is appended to the runner prompt
   automatically — the right home for measured timings, exact failing selectors,

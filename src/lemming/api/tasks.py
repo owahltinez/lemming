@@ -3,7 +3,7 @@
 import fastapi
 import pydantic
 
-from .. import models, paths, persistence
+from .. import hooks, models, paths, persistence
 from ..tasks import lifecycle, operations, queries
 from . import context, loop
 
@@ -27,6 +27,11 @@ class AddTaskRequest(pydantic.BaseModel):
     index: int = -1
     parent: str | None = None
     parent_tasks_file: str | None = None
+    hooks: list[str] | None = None
+
+
+# Validates an update's hooks against the field they are stored in.
+_TASK_HOOKS = pydantic.TypeAdapter(models.Task.model_fields["hooks"].annotation)
 
 
 @router.post("/api/tasks")
@@ -54,6 +59,9 @@ def add_task(
             index=task.index,
             parent=task.parent,
             parent_tasks_file=task.parent_tasks_file,
+            hooks=None
+            if task.hooks is None
+            else hooks.parse_reviews(task.hooks, tasks_file),
         )
     except ValueError as e:
         raise fastapi.HTTPException(400, str(e))
@@ -85,7 +93,10 @@ def update_task(
     update: dict,
     project: str | None = None,
 ):
-    """Update a task's description, runner, position, status, or parent."""
+    """Update a task's description, runner, position, status, parent or hooks.
+
+    An explicit null for hooks restores the project's reviews.
+    """
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     status = update.get("status")
     if status == models.TaskStatus.SUPERSEDED:
@@ -113,6 +124,9 @@ def update_task(
             require_progress = True
 
     try:
+        task_hooks = _TASK_HOOKS.validate_python(update.get("hooks"))
+        if task_hooks is not None:
+            task_hooks = hooks.parse_reviews(task_hooks, tasks_file)
         updated_task = operations.update_task(
             tasks_file,
             task_id,
@@ -122,6 +136,8 @@ def update_task(
             status=status,
             require_progress=require_progress,
             parent=update.get("parent"),
+            hooks=task_hooks,
+            project_hooks="hooks" in update and task_hooks is None,
         )
         return updated_task
     except ValueError as e:

@@ -21,6 +21,9 @@ const createInitialState = (overrides = {}) => {
     envOverrides: [],
     runners: [],
     availableHooks: [],
+    reviewHooks: [],
+    newTaskReviews: { custom: false, hooks: [], dirty: false },
+    editReviews: { custom: false, hooks: [], dirty: false },
     config: {
       retries: 3,
       runner: 'agy',

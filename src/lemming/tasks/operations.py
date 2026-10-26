@@ -273,6 +273,7 @@ def update_task(
     parent_tasks_file: str | None = None,
     oneshot: bool | None = None,
     hooks: list[str] | None = None,
+    project_hooks: bool = False,
     force: bool = False,
 ) -> models.Task:
     """Updates an existing task.
@@ -291,6 +292,7 @@ def update_task(
         parent_tasks_file: New parent tasks file path.
         oneshot: New oneshot flag; None leaves it unchanged.
         hooks: New reviews to run after the task; None leaves them unchanged.
+        project_hooks: If True, the task goes back to the project's reviews.
         force: If True, force status transition even if task is in progress.
 
     Returns:
@@ -326,7 +328,9 @@ def update_task(
             target.model = model or None
         if oneshot is not None:
             target.oneshot = oneshot
-        if hooks is not None:
+        if project_hooks:
+            target.hooks = None
+        elif hooks is not None:
             target.hooks = hooks
         if parent is not None:
             if parent == "":

@@ -222,6 +222,11 @@ def add(
         "every review, '' for none)."
     ),
 )
+@click.option(
+    "--project-hooks",
+    is_flag=True,
+    help="Restore the project's reviews for this task.",
+)
 @click.pass_context
 def edit(
     ctx: click.Context,
@@ -235,8 +240,13 @@ def edit(
     parent_tasks_file: str | None,
     oneshot: bool | None,
     hooks_value: str | None,
+    project_hooks: bool,
 ):
     """Edits a task's description, runner, model, position, parent or flags."""
+    if project_hooks and hooks_value is not None:
+        click.echo("Error: Cannot provide both --hooks and --project-hooks.")
+        ctx.exit(1)
+
     if file:
         if description:
             click.echo("Error: Cannot provide both description and --file.")
@@ -254,11 +264,12 @@ def edit(
         and parent_tasks_file is None
         and oneshot is None
         and hooks_value is None
+        and not project_hooks
     ):
         click.echo(
             "Error: At least one of --description, --runner, --model,"
-            " --index, --parent, --parent-tasks-file, --oneshot, or --hooks"
-            " must be provided."
+            " --index, --parent, --parent-tasks-file, --oneshot, --hooks,"
+            " or --project-hooks must be provided."
         )
         ctx.exit(1)
 
@@ -276,6 +287,7 @@ def edit(
             parent_tasks_file=parent_tasks_file,
             oneshot=oneshot,
             hooks=_parse_task_hooks(hooks_value, tasks_file),
+            project_hooks=project_hooks,
         )
         click.echo(f"Task {target_task.id} updated.")
     except ValueError as e:
