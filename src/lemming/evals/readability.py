@@ -23,7 +23,7 @@ import subprocess
 import sys
 
 from .. import models
-from . import container, fixtures, metrics, scenarios
+from . import container, fixtures, harness, metrics, scenarios
 
 _GOAL = (
     "Build a small calculator CLI in calc/ with add, subtract, and "
@@ -95,26 +95,22 @@ def _save_finished_task(workspace: pathlib.Path, progress: list[str]) -> None:
 
 def _check_tests_pass(workspace: pathlib.Path) -> scenarios.Check:
     """Checks that the fixture's unit tests still pass after the hook."""
-    if shutil.which("docker"):
-        cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "--network=none",
-            "-v",
-            f"{workspace}:{container.WORKSPACE_MOUNT}:ro",
-            "-w",
-            container.WORKSPACE_MOUNT,
-            container.DEFAULT_IMAGE,
-            "python3",
-            "-m",
-            "unittest",
-            "discover",
-            "-p",
-            "*_test.py",
-        ]
+    unittest_args = ["-m", "unittest", "discover", "-p", "*_test.py"]
+    config = harness.TRIAL_CONFIG.get()
+    if shutil.which(config.docker):
+        # Offline, so uv must not sync the dev group the image lacks.
+        cmd = container.uv_command(
+            ["--no-sync", "python", *unittest_args],
+            [
+                "--network=none",
+                "--volume",
+                f"{workspace}:{container.WORKSPACE_MOUNT}:ro",
+            ],
+            image=config.image,
+            docker=config.docker,
+        )
     else:
-        cmd = [sys.executable, "-m", "unittest", "discover", "-p", "*_test.py"]
+        cmd = [sys.executable, *unittest_args]
     result = subprocess.run(
         cmd,
         cwd=workspace,

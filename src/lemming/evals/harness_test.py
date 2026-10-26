@@ -71,6 +71,27 @@ class TestRunSuite(HarnessTestCase):
 
         self.assertEqual([r.passed for r in results], [True, True])
 
+    def test_graders_see_the_run_config(self):
+        # Graders that run workspace code must use the run's own image.
+        scenario = scenarios.Scenario(
+            name="config-demo",
+            summary="Reports the image it is graded with.",
+            build=lambda workspace: workspace.mkdir(parents=True),
+            grade=lambda workspace: [
+                scenarios.Check(
+                    name=harness.TRIAL_CONFIG.get().image, passed=True
+                )
+            ],
+        )
+        config = dataclasses.replace(self.config, image="custom-image")
+
+        results = harness.run_suite(
+            [scenario], self.run_dir, config, lambda *args: None
+        )
+
+        names = {check.name for r in results for check in r.checks}
+        self.assertEqual(names, {"custom-image"})
+
     def test_infrastructure_errors_are_captured(self):
         def broken_runner(scenario, workspace, lemming_home, config):
             raise RuntimeError("docker daemon unreachable")

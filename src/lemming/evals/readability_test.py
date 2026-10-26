@@ -5,7 +5,7 @@ import unittest
 import unittest.mock
 
 from lemming import models
-from lemming.evals import fixtures, readability, scenarios, suites
+from lemming.evals import fixtures, harness, readability, scenarios, suites
 from lemming.tasks import operations, progress
 
 
@@ -380,12 +380,15 @@ class TestFixtureIntegrity(ScenarioTestCase):
                 check = readability._check_tests_pass(workspace)
                 self.assertTrue(check.passed, check.detail)
 
-    def test_check_tests_pass_uses_docker_when_available(self):
+    def test_check_tests_pass_runs_offline_in_the_run_image(self):
         completed = unittest.mock.Mock(returncode=0, stderr="")
+        config = harness.HarnessConfig(image="custom-image", docker="podman")
+        token = harness.TRIAL_CONFIG.set(config)
+        self.addCleanup(harness.TRIAL_CONFIG.reset, token)
         with (
             unittest.mock.patch(
                 "lemming.evals.readability.shutil.which",
-                return_value="/usr/bin/docker",
+                return_value="/usr/bin/podman",
             ),
             unittest.mock.patch(
                 "lemming.evals.readability.subprocess.run",
@@ -396,19 +399,19 @@ class TestFixtureIntegrity(ScenarioTestCase):
 
         self.assertTrue(check.passed)
         cmd = mock_run.call_args[0][0]
+        self.assertEqual(cmd[0], "podman")
+        self.assertIn("--network=none", cmd)
+        self.assertIn(f"{self.workspace}:/workspace:ro", cmd)
+        self.assertEqual(cmd[cmd.index("--entrypoint") + 1], "uv")
+        # The image ships no dev dependencies, and offline uv cannot sync.
         self.assertEqual(
-            cmd,
+            cmd[cmd.index("custom-image") + 1 :],
             [
-                "docker",
                 "run",
-                "--rm",
-                "--network=none",
-                "-v",
-                f"{self.workspace}:/workspace:ro",
-                "-w",
-                "/workspace",
-                "lemming-evals",
-                "python3",
+                "--project",
+                "/opt/lemming",
+                "--no-sync",
+                "python",
                 "-m",
                 "unittest",
                 "discover",
