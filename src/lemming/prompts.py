@@ -39,7 +39,8 @@ class _RoadmapContextPolicy:
 _RUNNER_ROADMAP_POLICY = _RoadmapContextPolicy(
     total_chars=64_000,
     goal_chars=8_000,
-    active_description_chars=1_000,
+    # Every agent turn resends this; upcoming tasks only need to be recognized
+    active_description_chars=300,
     terminal_description_chars=200,
     progress_entries=3,
     progress_entry_chars=1_000,

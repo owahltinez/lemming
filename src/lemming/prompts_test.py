@@ -247,6 +247,24 @@ def test_format_roadmap_has_global_budget_and_prioritizes_active_tasks():
     assert "current task; details below" in roadmap
 
 
+def test_runner_roadmap_summarizes_upcoming_tasks():
+    data = models.Roadmap(
+        tasks=[
+            models.Task(id=str(index), description=f"task {index} " + "d" * 700)
+            for index in range(50)
+        ],
+    )
+
+    roadmap = prompts._format_roadmap(
+        data,
+        current_task_id="0",
+        policy=prompts._RUNNER_ROADMAP_POLICY,
+    )
+
+    assert "task 49" in roadmap
+    assert len(roadmap) < 20_000
+
+
 def test_review_hook_roadmap_uses_smaller_context_budget():
     data = models.Roadmap(
         goal="g" * 10_000,
