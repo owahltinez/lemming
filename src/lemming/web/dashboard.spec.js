@@ -453,6 +453,109 @@ test.describe('Dashboard E2E', () => {
     ).not.toBeVisible();
   });
 
+  test('picks task reviews when adding and editing', async ({ page }) => {
+    const hook = (name, priority, extra = {}) => ({
+      name,
+      priority,
+      source: 'built-in',
+      masked: false,
+      runs_on_failure: priority >= 90,
+      enabled: false,
+      ...extra,
+    });
+    await page.route('**/api/hooks', (route) =>
+      route.fulfill({
+        json: [
+          hook('readability', 50, { enabled: true }),
+          hook('testing', 60),
+          hook('ux', 70, { masked: true }),
+          hook('roadmap', 90, { enabled: true }),
+        ],
+      }),
+    );
+    const task = {
+      id: 'abc123',
+      description: 'Pending task',
+      status: 'pending',
+      attempts: 0,
+      progress: [],
+      hooks: ['testing'],
+    };
+    await page.route('**/api/data', (route) =>
+      route.fulfill({
+        json: {
+          cwd: '/mock/cwd',
+          loop_running: false,
+          goal: '',
+          tasks: [task],
+        },
+      }),
+    );
+    const bodies = [];
+    await page.route('**/api/tasks**', (route) => {
+      bodies.push(route.request().postDataJSON());
+      return route.fulfill({ json: task });
+    });
+
+    await gotoAndAwaitMancha(page);
+
+    await page.getByRole('button', { name: 'Show details' }).click();
+    await expect(page.getByText('Reviews:')).toBeVisible();
+
+    const addForm = page.getByRole('form', { name: 'Add new task' });
+    await addForm.getByLabel('New task description').fill('Default reviews');
+    await addForm.getByRole('button', { name: 'Add task' }).click();
+    await expect.poll(() => bodies.length).toBe(1);
+    expect(bodies[0]).toEqual({ description: 'Default reviews' });
+
+    // Custom reviews start from the project's and exclude masked and 9x hooks
+    await addForm.getByRole('checkbox', { name: 'Custom reviews' }).check();
+    const reviews = addForm.getByRole('group', { name: 'Reviews' });
+    await expect(reviews.getByRole('checkbox')).toHaveCount(2);
+    await expect(
+      reviews.getByRole('checkbox', { name: 'readability' }),
+    ).toBeChecked();
+    await reviews.getByRole('checkbox', { name: 'readability' }).uncheck();
+    await reviews.getByRole('checkbox', { name: 'testing' }).check();
+    await addForm.getByLabel('New task description').fill('Custom reviews');
+    await addForm.getByRole('button', { name: 'Add task' }).click();
+    await expect.poll(() => bodies.length).toBe(2);
+    expect(bodies[1]).toEqual({
+      description: 'Custom reviews',
+      hooks: ['testing'],
+    });
+
+    const edit = async () => {
+      await page.getByRole('button', { name: 'Task Actions' }).click();
+      await page.getByRole('button', { name: 'Edit Task' }).click();
+      return page.locator('#edit-modal');
+    };
+
+    // Saving without touching the reviews leaves them alone
+    let modal = await edit();
+    await expect(
+      modal.getByRole('checkbox', { name: 'Custom reviews' }),
+    ).toBeChecked();
+    await expect(
+      modal.getByRole('checkbox', { name: 'testing' }),
+    ).toBeChecked();
+    await modal.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => bodies.length).toBe(3);
+    expect(bodies[2]).not.toHaveProperty('hooks');
+
+    modal = await edit();
+    await modal.getByRole('checkbox', { name: 'testing' }).uncheck();
+    await modal.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => bodies.length).toBe(4);
+    expect(bodies[3].hooks).toEqual([]);
+
+    modal = await edit();
+    await modal.getByRole('checkbox', { name: 'Custom reviews' }).uncheck();
+    await modal.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => bodies.length).toBe(5);
+    expect(bodies[4].hooks).toBeNull();
+  });
+
   test('reports an unreadable tasks file through a toast', async ({ page }) => {
     let dataRequests = 0;
     await page.route('**/api/data', async (route) => {

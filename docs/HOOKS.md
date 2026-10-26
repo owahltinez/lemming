@@ -193,9 +193,13 @@ A task can pick its own reviews, which replace the project's for that task:
 
 ```bash
 lemming add "Redesign the settings page" --hooks ux,testing
-lemming edit <id> --hooks ''     # no reviews for this task
-lemming edit <id> --hooks '*'    # every review available now
+lemming edit <id> --hooks ''       # no reviews for this task
+lemming edit <id> --hooks '*'      # every review available now
+lemming edit <id> --project-hooks  # back to the project's reviews
 ```
+
+In the dashboard, tick **Custom reviews** when adding or editing a task to pick
+its reviews; leave it unticked to use the project's.
 
 `--hooks` accepts only reviews (priority below 90). Hooks at 90 and above, such
 as `roadmap`, orchestrate the queue and always follow the project's list. A task
