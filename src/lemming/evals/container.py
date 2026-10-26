@@ -78,6 +78,43 @@ def prune_build_cache(docker: str = "docker") -> None:
         pass
 
 
+def uv_command(
+    uv_args: list[str],
+    options: list[str],
+    image: str = DEFAULT_IMAGE,
+    docker: str = "docker",
+) -> list[str]:
+    """Returns the docker argv that runs uv in the image's lemming project.
+
+    The image's own entrypoint serves the web UI, so it is replaced with uv
+    and the command runs with the lemming install's interpreter.
+
+    Args:
+        uv_args: Arguments following uv run --project /opt/lemming.
+        options: Extra docker run options (mounts, env, network).
+        image: Image tag to run.
+        docker: Docker-compatible CLI binary to invoke.
+
+    Returns:
+        The full docker run argv.
+    """
+    return [
+        docker,
+        "run",
+        "--rm",
+        *options,
+        "--workdir",
+        WORKSPACE_MOUNT,
+        "--entrypoint",
+        "uv",
+        image,
+        "run",
+        "--project",
+        "/opt/lemming",
+        *uv_args,
+    ]
+
+
 def trial_command(
     workspace: pathlib.Path,
     lemming_home: pathlib.Path,
@@ -103,42 +140,28 @@ def trial_command(
     Returns:
         The full docker run argv.
     """
-    command = [
-        docker,
-        "run",
-        "--rm",
+    options = [
         "--volume",
         f"{workspace}:{WORKSPACE_MOUNT}",
         "--volume",
         f"{lemming_home}:{HOME_MOUNT}",
         "--env",
         f"LEMMING_HOME={HOME_MOUNT}",
-        "--workdir",
-        WORKSPACE_MOUNT,
-        "--entrypoint",
-        "uv",
     ]
 
     # Bare --env NAME keeps the secret's value out of the argv.
     for name in forward_env:
         if os.environ.get(name):
-            command.extend(["--env", name])
+            options.extend(["--env", name])
     for spec in volumes:
-        command.extend(["--volume", spec])
+        options.extend(["--volume", spec])
 
-    command.extend(
-        [
-            image,
-            "run",
-            "--project",
-            "/opt/lemming",
-            "python",
-            "-m",
-            "lemming.evals.trial",
-            *trial_args,
-        ]
+    return uv_command(
+        ["python", "-m", "lemming.evals.trial", *trial_args],
+        options,
+        image=image,
+        docker=docker,
     )
-    return command
 
 
 def run_trial(

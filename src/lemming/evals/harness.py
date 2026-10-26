@@ -7,6 +7,7 @@ docker-based runner from the container module, tests use in-process fakes.
 """
 
 import concurrent.futures
+import contextvars
 import dataclasses
 import json
 import os
@@ -104,6 +105,10 @@ class HarnessConfig:
     image: str = container.DEFAULT_IMAGE
     docker: str = "docker"
     volumes: tuple[str, ...] = ()
+
+
+# The running trial's config, for graders that execute workspace code.
+TRIAL_CONFIG = contextvars.ContextVar("trial_config", default=HarnessConfig())
 
 
 @dataclasses.dataclass
@@ -356,6 +361,7 @@ def _execute_trial(
     lemming_home = trial_dir / "home"
     lemming_home.mkdir(parents=True, exist_ok=True)
 
+    TRIAL_CONFIG.set(config)
     started = time.monotonic()
     error = ""
     try:
