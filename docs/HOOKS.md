@@ -19,6 +19,9 @@ more **orchestrator hooks**. Each hook:
     execution log, and any commands it runs (e.g. `lemming add`, `lemming edit`)
     are executed against the roadmap.
 
+Each hook run is killed after 15 minutes, or after the task's time limit if
+that is shorter. A time limit of 0 disables both.
+
 ## Naming Convention
 
 Hooks are Markdown files discovered from the filesystem, and udev-style filename

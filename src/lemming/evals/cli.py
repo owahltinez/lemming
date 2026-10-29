@@ -154,7 +154,7 @@ def _write_json_report(
     "--time-limit",
     default=10,
     show_default=True,
-    help="Per-trial hook time limit in minutes.",
+    help="Per-trial hook time limit in minutes (capped at 15).",
 )
 @click.option("--image", default=container.DEFAULT_IMAGE, show_default=True)
 @click.option("--docker", default="docker", show_default=True)

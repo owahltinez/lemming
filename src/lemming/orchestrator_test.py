@@ -6,6 +6,7 @@ import pytest
 
 from lemming import models, persistence
 from lemming.orchestrator import (
+    HOOK_TIME_LIMIT,
     _handle_runner_exit,
     _process_exhausted_retries,
     _process_finalizing_task,
@@ -979,6 +980,33 @@ def test_run_hooks_reverts_to_pending_when_hook_killed(
     assert task.requested_status is None
     assert task.attempts == 1
     assert any("hook" in p.lower() for p in task.progress)
+
+
+@mock.patch("lemming.prompts.prepare_hook_prompt")
+@mock.patch("lemming.runner.run_with_heartbeat")
+def test_run_hooks_caps_time_limit(mock_run, mock_prepare, hooks_env):
+    """A hook gets at most HOOK_TIME_LIMIT, not the task's whole budget."""
+    mock_prepare.return_value = "Mock Prompt"
+    mock_run.return_value = (0, "", "")
+
+    for time_limit, expected in [
+        (60, HOOK_TIME_LIMIT),
+        (0, 0),
+        (5, 5),
+    ]:
+        run_hooks(
+            hooks_env,
+            "12345678",
+            "agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            hooks=["roadmap"],
+            time_limit=time_limit,
+        )
+        _, kwargs = mock_run.call_args
+        assert kwargs["time_limit"] == expected
 
 
 @mock.patch("lemming.prompts.prepare_hook_prompt")
