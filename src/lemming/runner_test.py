@@ -1,4 +1,5 @@
 import pathlib
+import shutil
 import signal
 import subprocess
 import sys
@@ -524,6 +525,40 @@ def test_opencode_environment_accepts_gemini_api_key(tmp_path, monkeypatch):
     )
 
     assert env["GOOGLE_GENERATIVE_AI_API_KEY"] == "gemini-key"
+
+
+def test_runner_environment_appends_lemming_and_local_bin_to_path(
+    tmp_path, monkeypatch
+):
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    lemming_dir = tmp_path / "venv"
+    lemming_dir.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", f"/usr/bin:{local_bin}")
+    monkeypatch.setattr(sys, "executable", str(lemming_dir / "python"))
+
+    env = runner._runner_environment(["agy"], tmp_path / "tasks.yml", "abc")
+
+    assert env["PATH"].split(":") == [
+        "/usr/bin",
+        str(local_bin),
+        str(lemming_dir),
+    ]
+
+
+def test_runner_environment_finds_lemming_when_run_as_module(
+    tmp_path, monkeypatch
+):
+    # The dashboard launches `python -m lemming.main`, so argv[0] is main.py.
+    main_py = pathlib.Path(runner.__file__).with_name("main.py")
+    monkeypatch.setattr(sys, "argv", [str(main_py)])
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    env = runner._runner_environment(["agy"], tmp_path / "tasks.yml", "abc")
+
+    assert shutil.which("lemming", path=env["PATH"])
 
 
 def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):

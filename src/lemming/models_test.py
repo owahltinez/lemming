@@ -1,3 +1,5 @@
+import sys
+
 import pydantic
 import pytest
 
@@ -57,7 +59,7 @@ def test_detect_default_runner_picks_first_installed(monkeypatch):
     monkeypatch.setattr(
         models.shutil,
         "which",
-        lambda name: "/bin/x" if name == "claude" else None,
+        lambda name, path=None: "/bin/x" if name == "claude" else None,
     )
     assert models.detect_default_runner() == "claude"
     models.detect_default_runner.cache_clear()
@@ -65,15 +67,34 @@ def test_detect_default_runner_picks_first_installed(monkeypatch):
 
 def test_detect_default_runner_falls_back_to_agy(monkeypatch):
     models.detect_default_runner.cache_clear()
-    monkeypatch.setattr(models.shutil, "which", lambda name: None)
+    monkeypatch.setattr(models.shutil, "which", lambda name, path=None: None)
     assert models.detect_default_runner() == "agy"
     models.detect_default_runner.cache_clear()
 
 
 def test_detect_default_runner_prefers_agy(monkeypatch):
     models.detect_default_runner.cache_clear()
-    monkeypatch.setattr(models.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(
+        models.shutil, "which", lambda name, path=None: f"/bin/{name}"
+    )
     assert models.detect_default_runner() == "agy"
+    models.detect_default_runner.cache_clear()
+
+
+def test_detect_default_runner_searches_local_bin(tmp_path, monkeypatch):
+    # Agent subshells often inherit a minimal PATH without ~/.local/bin.
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    fake_runner = local_bin / "codex"
+    fake_runner.write_text("#!/bin/sh\n")
+    fake_runner.chmod(0o755)
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", str(empty_dir))
+    monkeypatch.setattr(sys, "executable", str(empty_dir / "python"))
+    models.detect_default_runner.cache_clear()
+    assert models.detect_default_runner() == "codex"
     models.detect_default_runner.cache_clear()
 
 
@@ -82,7 +103,7 @@ def test_roadmap_config_uses_detected_runner(monkeypatch):
     monkeypatch.setattr(
         models.shutil,
         "which",
-        lambda name: "/bin/x" if name == "codex" else None,
+        lambda name, path=None: "/bin/x" if name == "codex" else None,
     )
     assert models.RoadmapConfig().runner == "codex"
     # An explicit value always wins over detection.

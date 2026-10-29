@@ -265,6 +265,27 @@ def test_run_loop_treats_a_runner_that_never_started_as_a_failure(
     assert data.tasks[0].status == models.TaskStatus.PENDING
 
 
+@mock.patch("time.sleep", return_value=None)
+def test_run_loop_hints_when_runner_is_not_found(mock_sleep, setup_env, capsys):
+    test_tasks_file, _ = setup_env
+    data = persistence.load_tasks(test_tasks_file)
+    data.config.runner = "lemming-no-such-runner"
+    persistence.save_tasks(test_tasks_file, data)
+
+    run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+    )
+
+    assert "Command 'lemming-no-such-runner' not found" in (
+        capsys.readouterr().out
+    )
+
+
 @mock.patch("lemming.runner.run_with_heartbeat")
 @mock.patch("time.sleep", return_value=None)
 def test_run_loop_cancelled(mock_sleep, mock_run, setup_env):

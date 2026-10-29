@@ -581,6 +581,20 @@ def _check_milestone(data: models.Roadmap, until: str) -> bool | None:
     return None
 
 
+def _echo_runner_not_found(runner_name: str) -> None:
+    """Prints remediation for a runner command that could not be found."""
+    click.echo(
+        f"\nNOTE: Command '{runner_name}' not found.\n"
+        "If you are using a shell alias, "
+        "Python subprocesses cannot see it.\n"
+        "Fixes:\n"
+        "1. Use the absolute path: `lemming config set "
+        f"runner /path/to/{runner_name}`\n"
+        "2. Create an executable wrapper script for "
+        f"'{runner_name}' in your PATH."
+    )
+
+
 def run_loop(
     tasks_file: pathlib.Path,
     verbose: bool,
@@ -861,16 +875,7 @@ def run_loop(
                     f"with exit code {returncode}"
                 )
                 if returncode == 127:
-                    click.echo(
-                        f"\nNOTE: Command '{selected_runner}' not found.\n"
-                        "If you are using a shell alias, "
-                        "Python subprocesses cannot see it.\n"
-                        "Fixes:\n"
-                        "1. Use the absolute path: `lemming config set "
-                        f"runner /path/to/{selected_runner}`\n"
-                        "2. Create an executable wrapper script for "
-                        f"'{selected_runner}' in your PATH."
-                    )
+                    _echo_runner_not_found(selected_runner)
         except persistence.CorruptedTasksError:
             # Retrying cannot help an unreadable roadmap, and counting the
             # attempt would spend the task's retries on the wrong failure.
@@ -884,6 +889,9 @@ def run_loop(
             click.echo(
                 f"\nAn error occurred while executing {selected_runner}: {e}"
             )
+            # Popen raises this, not exit code 127, for a missing executable.
+            if isinstance(e, FileNotFoundError) and e.filename == cmd[0]:
+                _echo_runner_not_found(selected_runner)
 
         should_abort = _handle_runner_exit(
             tasks_file=tasks_file,

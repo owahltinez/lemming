@@ -71,7 +71,8 @@ Start the autonomous loop.
 
 ```bash
 # Run using the project's configured agent (defaults to the first
-# supported runner found on PATH: agy, opencode, claude, or codex)
+# supported runner found on PATH or in ~/.local/bin: agy, opencode,
+# claude, or codex)
 lemming run
 
 # Flags passed after -- are sent directly to the underlying runner
