@@ -12,6 +12,9 @@ from . import models, persistence, prompts, runner, shutdown
 from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, select_hooks
 from .tasks import lifecycle, limits, operations, progress, queries
 
+# Minutes a single hook may run, so a hung hook cannot burn a task's budget.
+HOOK_TIME_LIMIT = 15
+
 
 def _read_rejection(tasks_file: pathlib.Path, task_id: str) -> str | None:
     """Returns the task's current rejection, if it still exists.
@@ -59,7 +62,8 @@ def run_hooks(
             them on success.
         working_dir: Working directory for the hook runner processes.
         final_status: If provided, mark the task with this status after hooks.
-        time_limit: Time limit in minutes for each hook run (0 disables it).
+        time_limit: Task time limit in minutes; each hook run gets at most
+            HOOK_TIME_LIMIT of it (0 disables it).
         model_name: Model to request from the hook runner, if any.
         scope: What the hooks should look at. Defaults to the work the
             finished task left behind.
@@ -101,6 +105,7 @@ def run_hooks(
             )
         return exit_codes
 
+    hook_limit = min(time_limit, HOOK_TIME_LIMIT) if time_limit else 0
     for hook_index, hook_name in enumerate(active_hooks):
         # Reload tasks every time to ensure each hook sees progress from
         # previous hooks
@@ -142,7 +147,7 @@ def run_hooks(
             runner_args,
             no_defaults,
             verbose=verbose,
-            time_limit=time_limit,
+            time_limit=hook_limit,
             working_dir=working_dir,
             model=model_name,
         )
@@ -157,7 +162,7 @@ def run_hooks(
                 echo_fn=lambda line: click.echo(line, nl=False),
                 header=f"Hook: {hook_name}",
                 cwd=working_dir,
-                time_limit=time_limit,
+                time_limit=hook_limit,
             )
             exit_codes[hook_name] = returncode
             if returncode != 0:
