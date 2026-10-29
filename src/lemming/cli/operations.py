@@ -105,9 +105,6 @@ def run(
             click.echo(f"Error: {e}")
             ctx.exit(1)
 
-    # Determine the project's working directory
-    working_dir = paths.get_working_dir(tasks_file)
-
     # Parse environment overrides
     env_overrides = {}
     for e in env:
@@ -119,6 +116,9 @@ def run(
 
     if env_overrides:
         os.environ.update(env_overrides)
+
+    # After the overrides, which may move LEMMING_HOME; an explicit -C wins.
+    working_dir = ctx.obj["PROJECT_DIR"] or paths.get_working_dir(tasks_file)
 
     # Handle stop requests before claiming work, so a SIGTERM arriving mid-task
     # takes the runner down instead of orphaning it.

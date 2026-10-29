@@ -102,7 +102,10 @@ def cli(
     tasks_file = tasks_file.resolve()
 
     # Load .env files (global, then project-level); real env vars always win.
-    paths.load_dotenv(project_dir=paths.get_working_dir(tasks_file))
+    paths.load_dotenv(
+        project_dir=project_dir or paths.get_working_dir(tasks_file)
+    )
 
+    ctx.obj["PROJECT_DIR"] = project_dir
     ctx.obj["TASKS_FILE"] = tasks_file
     ctx.obj["VERBOSE"] = verbose

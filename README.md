@@ -507,7 +507,9 @@ lemming -C ~/src/other-project status
 `-C` works whether or not the target keeps a `tasks.yml` in its repo, so you
 never have to know where its isolated state lives. Because it changes the
 working directory, everything else follows too: the target's `.env`, its
-`.lemming/hooks`, and the directory the runner executes in.
+`.lemming/hooks`, and the directory the runner executes in. With a
+`--tasks-file` anywhere other than the target's root, `.env` and the runner's
+directory still follow `-C`, but hooks follow the tasks file.
 
 When an agent files a task this way from inside a `lemming run`, the new task
 records the task it came from via `parent` and `parent_tasks_file`. The
