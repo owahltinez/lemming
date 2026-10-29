@@ -206,6 +206,11 @@ lemming logs <id> | tail -n 30   # never the whole log
 A task is stuck when its run time approaches the limit with no new progress
 entries and the log tail shows the same step repeating. Otherwise leave it.
 
+If your harness backgrounds long commands and sleeps until they exit, a
+backgrounded `run --until` hides a stuck task until it exhausts its retries.
+Pair it with a wake-up near each task's time limit that runs the checks above;
+if the task is stuck, `lemming cancel <id>` and `add` smaller tasks in its place.
+
 Adjust the queue while it runs — new tasks are picked up automatically:
 
 ```sh
