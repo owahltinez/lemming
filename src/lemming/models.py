@@ -2,13 +2,29 @@
 
 import enum
 import functools
+import os
 import shutil
+import sys
 import time
 
 import pydantic
 
 # Runner CLIs the orchestrator knows how to drive, in default-preference order.
 KNOWN_RUNNERS = ("agy", "opencode", "claude", "codex")
+
+
+def runner_path() -> str:
+    """Returns PATH with lemming's own directory and ~/.local/bin appended.
+
+    Agent subshells often inherit a minimal PATH that omits where uv installs
+    lemming and the runner CLIs. Directories already present keep their order.
+    """
+    dirs = os.get_exec_path()
+    lemming_dir = os.path.dirname(sys.executable)
+    for extra in (lemming_dir, os.path.expanduser("~/.local/bin")):
+        if os.path.isdir(extra) and extra not in dirs:
+            dirs.append(extra)
+    return os.pathsep.join(dirs)
 
 
 @functools.cache
@@ -18,8 +34,9 @@ def detect_default_runner() -> str:
     Only used when no runner is persisted in the tasks file; an explicit
     (user-set) runner always takes precedence and remains sticky.
     """
+    path = runner_path()
     for name in KNOWN_RUNNERS:
-        if shutil.which(name):
+        if shutil.which(name, path=path):
             return name
     return KNOWN_RUNNERS[0]
 

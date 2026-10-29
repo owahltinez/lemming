@@ -600,6 +600,7 @@ def _runner_environment(
     env = os.environ.copy()
     env["LEMMING_PARENT_TASK_ID"] = task_id
     env["LEMMING_PARENT_TASKS_FILE"] = str(tasks_file.resolve())
+    env["PATH"] = models.runner_path()
 
     runner_base = os.path.basename(cmd[0]) if cmd else ""
     if runner_base.startswith("opencode"):
