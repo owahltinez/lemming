@@ -139,9 +139,10 @@ a clean tree stops the run rather than reviewing everything.
 Reviews may edit the working directory. Readability intentionally applies fixes,
 and testing may repair production code or tests. UX is instructed to remain
 advisory, but its prompt and `--no-yolo` do not enforce filesystem isolation. A
-global review override may perform any actions its prompt requests. When
-isolation is required, use a separate VCS-managed working copy and pass it with
-the global `-C` option, as in the example above.
+global review override may perform any actions its prompt requests. There is no
+read-only review mode: runners keep write access, so a prompt-only flag could
+not be enforced. When isolation is required, use a separate VCS-managed working
+copy and pass it with the global `-C` option, as in the example above.
 
 ## Drive a roadmap
 

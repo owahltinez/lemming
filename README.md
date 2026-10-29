@@ -130,9 +130,10 @@ Reviews may edit the working directory. The built-in readability review
 intentionally applies fixes, and testing may repair production code or tests.
 UX is instructed to remain advisory, but its prompt and `--no-yolo` do not
 enforce filesystem isolation. A global review override may perform any actions
-its prompt requests. When isolation is required, follow the working-copy
-guidance below and pass a separate VCS-managed working copy with
-`lemming -C <working-copy> exec --review ...`.
+its prompt requests. There is no read-only review mode: runners keep write
+access, so a prompt-only flag could not be enforced. When isolation is required,
+follow the working-copy guidance below and pass a separate VCS-managed working
+copy with `lemming -C <working-copy> exec --review ...`.
 
 Each run is self-contained: nothing is read from the project's roadmap or its
 local hooks, it runs only the requested task and reviews, and its state
@@ -446,7 +447,7 @@ These come before the subcommand and apply to all of them.
   - `-f/--file`: Read the description from a file, or `-` for stdin. Unlike
     `add`, there is no length cap.
   - `--review <names>`: Reviews to run after the task, comma-separated or
-    repeated; `all` selects every one. With no description, only the reviews
+    repeated; `'*'` selects every one. With no description, only the reviews
     run. Reviews may edit the working directory. Hooks that revise the roadmap
     cannot be selected.
   - `--scope <path|range>`: What the reviews look at. Paths pass through; a git
