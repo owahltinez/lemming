@@ -1,4 +1,5 @@
 import logging.config
+import os
 import pathlib
 import shutil
 import tempfile
@@ -97,6 +98,40 @@ class TestCLIOperations(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(run_loop.call_args.kwargs["max_tasks"], 2)
+
+    def test_run_uses_project_dir_over_external_tasks_file(self):
+        with tempfile.TemporaryDirectory() as repo:
+            repo_dir = pathlib.Path(repo).resolve()
+            with mock.patch.object(
+                operations, "run_loop", return_value=True
+            ) as run_loop:
+                result = self.cli_runner.invoke(
+                    cli.cli, ["-C", repo] + self.base_args + ["run"]
+                )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(run_loop.call_args.kwargs["working_dir"], repo_dir)
+
+    def test_run_applies_env_before_resolving_working_dir(self):
+        # With LEMMING_HOME pointing at the tasks file's dir, the file is
+        # isolated state and the runner must stay in the current directory.
+        with (
+            mock.patch.dict(os.environ),
+            mock.patch.object(
+                operations, "run_loop", return_value=True
+            ) as run_loop,
+        ):
+            result = self.cli_runner.invoke(
+                cli.cli,
+                self.base_args
+                + ["run", "--env", f"LEMMING_HOME={self.test_dir}"],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(
+            run_loop.call_args.kwargs["working_dir"],
+            pathlib.Path.cwd().resolve(),
+        )
 
     def test_run_resolves_until_prefix(self):
         persistence.save_tasks(

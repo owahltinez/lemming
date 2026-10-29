@@ -124,6 +124,25 @@ class TestProjectDirOption(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertEqual(seen, [self.other])
 
+    def test_loads_project_dir_env_with_external_tasks_file(self):
+        # A tasks file in a scratch dir must not move .env discovery off -C.
+        scratch = self.here / "scratch"
+        scratch.mkdir()
+        tasks_file = scratch / "tasks.yml"
+        persistence.save_tasks(tasks_file, models.Roadmap())
+        env_file = self.other / ".env"
+        env_file.write_text("LEMMING_TEST_PROJECT_ENV=repo\n")
+        env_file.chmod(0o600)
+        self.addCleanup(os.environ.pop, "LEMMING_TEST_PROJECT_ENV", None)
+
+        result = self.cli_runner.invoke(
+            main.cli,
+            ["-C", str(self.other), "--tasks-file", str(tasks_file), "status"],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(os.environ.get("LEMMING_TEST_PROJECT_ENV"), "repo")
+
     def test_restores_the_original_working_directory(self):
         self.cli_runner.invoke(main.cli, ["-C", str(self.other), "status"])
 
