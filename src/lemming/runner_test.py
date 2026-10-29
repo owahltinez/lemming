@@ -1,3 +1,4 @@
+import json
 import pathlib
 import signal
 import subprocess
@@ -1035,6 +1036,54 @@ def test_extract_error_message_is_bounded():
 
     assert message is not None
     assert len(message) <= 200
+
+
+# Lost-write fixtures follow agy's step_update events; 1.4 renamed the tool
+# and its target key, so every case runs against both shapes.
+_AGY_WRITE_SHAPES = [("write_to_file", "TargetFile"), ("write_file", "Path")]
+_ARTIFACT_ERROR = (
+    "ArtifactMetadata was provided but /w/probe.py is not a valid artifact"
+    " path; artifacts must be in /h/.gemini/antigravity-cli/brain/72cc/"
+)
+
+
+def _agy_tool_step(tool, key, state, path, error=None):
+    info = {"name": tool, "parameters": {key: path}}
+    if error:
+        info["error"] = {"type": "TOOL_ERROR", "message": error}
+    step = {"state": state, "tool_name": tool, "tool_info": info}
+    return json.dumps({"event": "step_update", "step_update": step}) + "\n"
+
+
+@pytest.mark.parametrize(("tool", "key"), _AGY_WRITE_SHAPES)
+def test_extract_lost_writes_reports_a_rejected_write(tool, key):
+    output = (
+        _agy_tool_step(tool, key, "ACTIVE", "/w/probe.py")
+        + _agy_tool_step(tool, key, "ERROR", "/w/probe.py", _ARTIFACT_ERROR)
+        + '{"event":"result","result":{"status":"SUCCESS"}}\n'
+    )
+
+    assert runner.extract_lost_writes(output) == ["/w/probe.py"]
+
+
+@pytest.mark.parametrize(("tool", "key"), _AGY_WRITE_SHAPES)
+def test_extract_lost_writes_ignores_a_recovered_write(tool, key):
+    output = _agy_tool_step(
+        tool, key, "ERROR", "/w/probe.py", _ARTIFACT_ERROR
+    ) + _agy_tool_step(tool, key, "DONE", "/w/probe.py")
+
+    assert runner.extract_lost_writes(output) == []
+
+
+@pytest.mark.parametrize(("tool", "key"), _AGY_WRITE_SHAPES)
+def test_extract_lost_writes_ignores_unrelated_tool_errors(tool, key):
+    output = _agy_tool_step(
+        tool, key, "ERROR", "/w/probe.py", "permission denied"
+    ) + _agy_tool_step(
+        "run_command", "CommandLine", "ERROR", "/w/probe.py", _ARTIFACT_ERROR
+    )
+
+    assert runner.extract_lost_writes(output) == []
 
 
 # Final-message fixtures trimmed from real runs of each supported runner.

@@ -405,7 +405,8 @@ def extract_lost_writes(output: str) -> list[str]:
     Agy since 1.1.12 rejects a `write_to_file` carrying ArtifactMetadata for
     a workspace path. The model usually retries without it, but sometimes
     writes the file into agy's own artifact directory instead and still
-    reports success (google-antigravity/antigravity-cli#838).
+    reports success (google-antigravity/antigravity-cli#838). Agy 1.4 streams
+    the tool as `write_file` with a `Path` rather than a `TargetFile`.
 
     Args:
         output: Captured runner output, one JSON event per line.
@@ -416,7 +417,7 @@ def extract_lost_writes(output: str) -> list[str]:
     lost: dict[str, None] = {}
     for raw_line in output.splitlines():
         line = raw_line.strip()
-        if not line.startswith("{") or "write_to_file" not in line:
+        if not line.startswith("{") or '"write_' not in line:
             continue
         try:
             event = json.loads(line)
@@ -427,13 +428,15 @@ def extract_lost_writes(output: str) -> list[str]:
         update = event.get("step_update") if isinstance(event, dict) else None
         if not isinstance(update, dict):
             continue
-        if update.get("tool_name") != "write_to_file":
+        if update.get("tool_name") not in ("write_to_file", "write_file"):
             continue
         info = update.get("tool_info")
         if not isinstance(info, dict):
             continue
         params = info.get("parameters")
-        target = params.get("TargetFile") if isinstance(params, dict) else None
+        if not isinstance(params, dict):
+            continue
+        target = params.get("TargetFile") or params.get("Path")
         if not isinstance(target, str):
             continue
 
