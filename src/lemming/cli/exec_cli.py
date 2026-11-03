@@ -283,7 +283,7 @@ def exec_command(
     working_dir = pathlib.Path.cwd().resolve()
 
     scope_text = None
-    if reviews:
+    if reviews and (prompt is None or scope_values):
         try:
             entries = scope.resolve_scope(scope_values, working_dir)
         except scope.ScopeError as e:
