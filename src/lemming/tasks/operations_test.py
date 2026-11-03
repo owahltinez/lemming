@@ -974,7 +974,7 @@ def test_rollback_task_multi_hook_updates_chained_hooks_and_post_tree(
     assert after_h1.post_tree is not None and after_h1.post_tree != h2_post
     assert after_h1.hook_trees == {"testing": [runner_tree, after_h1.post_tree]}
     testing_diff = snapshots.diff_trees(
-        tasks_file, *after_h1.hook_trees["testing"]
+        tasks_file, runner_tree, after_h1.post_tree
     )
     assert "b.py" in testing_diff
     assert "a.py" not in testing_diff
