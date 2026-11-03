@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from lemming import paths
+from lemming import paths, snapshots
 
 from .. import models, persistence
 from . import lifecycle
@@ -400,9 +400,37 @@ def test_reject_task_blocks_only_a_requested_completion(tmp_path):
     assert reverted and reverted.rejection is None
 
 
-def test_reset_task(tmp_path):
+def test_revert_task_to_pending_preserves_snapshot_fields(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = models.Task(
+        id="12345678",
+        description="Task 1",
+        status=models.TaskStatus.IN_PROGRESS,
+        pre_tree="aaa",
+        runner_tree="bbb",
+        post_tree="ccc",
+        pre_head="ddd",
+        diff_summary="1 file (+1/-0): a.py (+1/-0)",
+    )
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    reverted = lifecycle.revert_task_to_pending(tasks_file, "12345678")
+    assert reverted is not None
+    assert reverted.pre_tree == "aaa"
+    assert reverted.runner_tree == "bbb"
+    assert reverted.post_tree == "ccc"
+    assert reverted.pre_head == "ddd"
+    assert reverted.diff_summary == "1 file (+1/-0): a.py (+1/-0)"
+
+
+def test_reset_task(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
     tasks_file = tmp_path / "tasks.yml"
     task_id = "12345678"
+    snapshots_dir = snapshots.get_snapshots_dir(tasks_file)
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    (snapshots_dir / "HEAD").write_text("ref: refs/heads/main\n")
+
     data = models.Roadmap(
         tasks=[
             models.Task(
@@ -413,6 +441,12 @@ def test_reset_task(tmp_path):
                 execution_times={"runner": 10.0},
                 superseded_at=100.0,
                 superseded_reason="split",
+                pre_tree="aaa",
+                runner_tree="bbb",
+                post_tree="ccc",
+                pre_head="ddd",
+                diff_summary="1 file (+1/-0): a.py (+1/-0)",
+                hook_trees={"readability": ["bbb", "ccc"]},
             )
         ],
     )
@@ -429,7 +463,14 @@ def test_reset_task(tmp_path):
     assert reset_task.execution_times is None
     assert reset_task.superseded_at is None
     assert reset_task.superseded_reason is None
+    assert reset_task.pre_tree is None
+    assert reset_task.runner_tree is None
+    assert reset_task.post_tree is None
+    assert reset_task.pre_head is None
+    assert reset_task.diff_summary is None
+    assert reset_task.hook_trees is None
     assert not log_file.exists()
+    assert not snapshots_dir.exists()
 
 
 @patch("lemming.tasks.lifecycle.is_pid_alive")

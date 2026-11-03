@@ -97,6 +97,12 @@ class Task(pydantic.BaseModel):
     # Set by a finalization hook that found a defect it could not fix.
     # Blocks the requested completion and is cleared on every retry.
     rejection: str | None = None
+    pre_tree: str | None = None
+    runner_tree: str | None = None
+    post_tree: str | None = None
+    pre_head: str | None = None
+    diff_summary: str | None = None
+    hook_trees: dict[str, list[str]] | None = None
 
 
 class RoadmapConfig(pydantic.BaseModel):
