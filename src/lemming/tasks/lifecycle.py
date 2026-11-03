@@ -7,7 +7,7 @@ import secrets
 import signal
 import time
 
-from .. import models, paths, persistence
+from .. import models, paths, persistence, snapshots
 from . import limits
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,12 @@ def is_pid_alive(pid: int) -> bool:
 def is_loop_running(tasks_file: pathlib.Path) -> bool:
     """Check if an orchestrator loop is actively running."""
     return persistence.is_loop_running(tasks_file)
+
+
+def is_loop_lock_held(tasks_file: pathlib.Path) -> bool:
+    """Check if a live process holds the loop lock while holding tasks.lock."""
+    pid = persistence.get_loop_pid(tasks_file)
+    return pid is not None and is_pid_alive(pid)
 
 
 def update_run_time(task: models.Task, end_time: float | None = None) -> None:
@@ -500,6 +506,32 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
     return True
 
 
+def clear_task_state(task: models.Task) -> None:
+    """Resets a task's status, attempts, progress, and snapshot fields."""
+    task.status = models.TaskStatus.PENDING
+    task.attempts = 0
+    task.progress = []
+    task.run_time = 0.0
+    task.execution_times = None
+    task.active_execution_component = None
+    task.active_execution_started_at = None
+    task.completed_at = None
+    task.superseded_at = None
+    task.superseded_reason = None
+    task.started_at = None
+    task.last_started_at = None
+    task.pid = None
+    task.last_heartbeat = None
+    task.requested_status = None
+    task.rejection = None
+    task.pre_tree = None
+    task.runner_tree = None
+    task.post_tree = None
+    task.pre_head = None
+    task.diff_summary = None
+    task.hook_trees = None
+
+
 def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
     """Resets a task's attempts and progress.
 
@@ -516,24 +548,13 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
         if not target:
             raise models.TaskNotFoundError(f"Task {task_id} not found")
 
-        target.status = models.TaskStatus.PENDING
-        target.attempts = 0
-        target.progress = []
-        target.run_time = 0.0
-        target.execution_times = None
-        target.active_execution_component = None
-        target.active_execution_started_at = None
-        target.completed_at = None
-        target.superseded_at = None
-        target.superseded_reason = None
-        target.started_at = None
-        target.last_started_at = None
-        target.pid = None
-        target.last_heartbeat = None
-        target.requested_status = None
-        target.rejection = None
-
+        was_in_progress = target.status == models.TaskStatus.IN_PROGRESS
+        clear_task_state(target)
         persistence.save_tasks(tasks_file, data)
+        if not was_in_progress and not is_loop_lock_held(tasks_file):
+            snapshots.prune_snapshots(
+                tasks_file, snapshots.collect_task_trees(data.tasks)
+            )
 
         reset_task_logs(tasks_file, target.id)
     return target

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from .. import models, paths, persistence
+from .. import models, paths, persistence, snapshots
 from . import lifecycle, limits, operations, queries
 
 
@@ -272,7 +272,8 @@ def test_index_rejects_positions_that_cannot_be_displayed(tmp_path):
         operations.add_task(tasks_file, "Too far", index=3)
 
 
-def test_update_task_status_lifecycle(tmp_path):
+def test_update_task_status_lifecycle(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
     tasks_file = tmp_path / "tasks.yml"
     task = operations.add_task(tasks_file, "Status lifecycle")
     task_id = task.id
@@ -284,10 +285,19 @@ def test_update_task_status_lifecycle(tmp_path):
     assert updated.status == models.TaskStatus.COMPLETED
     assert updated.completed_at is not None
 
-    # 2. COMPLETED -> PENDING (resets attempts and completed_at)
+    # 2. COMPLETED -> PENDING resets attempts, completed_at, and snapshots.
+    snapshots_dir = snapshots.get_snapshots_dir(tasks_file)
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    (snapshots_dir / "HEAD").write_text("ref: refs/heads/main\n")
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
         data.tasks[0].attempts = 5
+        data.tasks[0].pre_tree = "aaa"
+        data.tasks[0].runner_tree = "bbb"
+        data.tasks[0].post_tree = "ccc"
+        data.tasks[0].pre_head = "ddd"
+        data.tasks[0].diff_summary = "1 file (+1/-0): a.py (+1/-0)"
+        data.tasks[0].hook_trees = {"readability": ["bbb", "ccc"]}
         persistence.save_tasks(tasks_file, data)
 
     updated = operations.update_task(
@@ -296,6 +306,13 @@ def test_update_task_status_lifecycle(tmp_path):
     assert updated.status == models.TaskStatus.PENDING
     assert updated.completed_at is None
     assert updated.attempts == 0
+    assert updated.pre_tree is None
+    assert updated.runner_tree is None
+    assert updated.post_tree is None
+    assert updated.pre_head is None
+    assert updated.diff_summary is None
+    assert updated.hook_trees is None
+    assert not snapshots_dir.exists()
 
 
 def test_update_task_parent_fields(tmp_path):
@@ -395,10 +412,14 @@ def test_delete_all_tasks_removes_runner_logs(tmp_path, monkeypatch):
     task = operations.add_task(tasks_file, "Task")
     log_file = paths.get_log_file(tasks_file, task.id)
     log_file.write_text("runner output")
+    snapshots_dir = snapshots.get_snapshots_dir(tasks_file)
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    (snapshots_dir / "HEAD").write_text("ref: refs/heads/main\n")
 
     operations.delete_tasks(tasks_file, all_tasks=True)
 
     assert not log_file.exists()
+    assert not snapshots_dir.exists()
 
 
 def test_update_task_rejects_ambiguous_prefix(tmp_path):

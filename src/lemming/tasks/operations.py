@@ -5,7 +5,7 @@ import pathlib
 import shutil
 import time
 
-from .. import models, paths, persistence
+from .. import models, paths, persistence, snapshots
 from . import lifecycle, limits, queries
 
 _DONE_STATUSES = (
@@ -211,7 +211,14 @@ def delete_tasks(
                 data.tasks = [t for t in data.tasks if t.id != target.id]
 
         persistence.save_tasks(tasks_file, data)
-        return initial_count - len(data.tasks)
+        removed = initial_count - len(data.tasks)
+        if (all_tasks or removed > 0) and not lifecycle.is_loop_lock_held(
+            tasks_file
+        ):
+            snapshots.prune_snapshots(
+                tasks_file, snapshots.collect_task_trees(data.tasks)
+            )
+        return removed
 
 
 def supersede_task(
@@ -343,6 +350,7 @@ def update_task(
             else:
                 target.parent_tasks_file = parent_tasks_file
 
+        pruned_to_pending = False
         if status and status != target.status:
             # If the task is currently in progress, we don't transition to
             # completed/failed immediately. We set requested_status so the
@@ -386,10 +394,19 @@ def update_task(
                     target.superseded_at = None
                     target.superseded_reason = None
                     target.attempts = 0
+                    target.pid = None
+                    target.last_heartbeat = None
                     target.requested_status = None
                     target.rejection = None
                     target.active_execution_component = None
                     target.active_execution_started_at = None
+                    target.pre_tree = None
+                    target.runner_tree = None
+                    target.post_tree = None
+                    target.pre_head = None
+                    target.diff_summary = None
+                    target.hook_trees = None
+                    pruned_to_pending = True
                 elif target.completed_at is not None:
                     target.completed_at = None
 
@@ -402,6 +419,10 @@ def update_task(
             data.tasks = _insert_at_queue_index(data.tasks, target, index)
 
         persistence.save_tasks(tasks_file, data)
+        if pruned_to_pending and not lifecycle.is_loop_lock_held(tasks_file):
+            snapshots.prune_snapshots(
+                tasks_file, snapshots.collect_task_trees(data.tasks)
+            )
     return target
 
 
