@@ -8,7 +8,18 @@ import traceback
 
 import click
 
-from . import models, persistence, prompts, runner, shutdown
+from . import (
+    models,
+    paths,
+    persistence,
+    prompts,
+    runner,
+    shutdown,
+    snapshots,
+)
+from . import (
+    scope as scope_mod,
+)
 from .hooks import FAILURE_HOOK_PRIORITY, get_hook_priority, select_hooks
 from .tasks import lifecycle, limits, operations, progress, queries
 
@@ -16,19 +27,50 @@ from .tasks import lifecycle, limits, operations, progress, queries
 HOOK_TIME_LIMIT = 15
 
 
-def _read_rejection(tasks_file: pathlib.Path, task_id: str) -> str | None:
-    """Returns the task's current rejection, if it still exists.
+def _persist_completed_snapshot(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    working_dir: pathlib.Path,
+) -> None:
+    """Captures and persists post_tree and diff_summary on a completed task."""
+    post_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        current = next((t for t in data.tasks if t.id == task_id), None)
+        if current is None:
+            return
+        current.post_tree = post_tree
+        current.diff_summary = (
+            snapshots.summarize_diff(tasks_file, current.pre_tree, post_tree)
+            if current.pre_tree and post_tree
+            else None
+        )
+        persistence.save_tasks(tasks_file, data)
 
-    Args:
-        tasks_file: Path to the tasks YAML file.
-        task_id: ID of the task a hook just ran against.
 
-    Returns:
-        The rejection reason, or None when the task is gone or accepted.
-    """
-    data = persistence.load_tasks(tasks_file)
-    task = next((t for t in data.tasks if t.id == task_id), None)
-    return task.rejection if task else None
+def _record_hook_tree_and_read_rejection(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    hook_name: str,
+    hook_pre_tree: str | None,
+    hook_post_tree: str | None,
+) -> str | None:
+    """Persists a hook's tree pair (if any) and returns the task's rejection."""
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        task = next((t for t in data.tasks if t.id == task_id), None)
+        if task is None:
+            return None
+        if (
+            task.status == models.TaskStatus.IN_PROGRESS
+            and hook_pre_tree is not None
+            and hook_post_tree is not None
+        ):
+            if task.hook_trees is None:
+                task.hook_trees = {}
+            task.hook_trees[hook_name] = [hook_pre_tree, hook_post_tree]
+            persistence.save_tasks(tasks_file, data)
+        return task.rejection
 
 
 def run_hooks(
@@ -73,6 +115,7 @@ def run_hooks(
         the runner failed to launch). Skipped hooks are absent.
     """
     exit_codes: dict[str, int] = {}
+    working_dir = working_dir or paths.get_working_dir(tasks_file)
     data = persistence.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
     if not task:
@@ -103,6 +146,8 @@ def run_hooks(
             operations.update_task(
                 tasks_file, task_id, status=final_status, force=True
             )
+            if final_status == models.TaskStatus.COMPLETED:
+                _persist_completed_snapshot(tasks_file, task_id, working_dir)
         return exit_codes
 
     hook_limit = min(time_limit, HOOK_TIME_LIMIT) if time_limit else 0
@@ -117,7 +162,7 @@ def run_hooks(
                     f"Task {task_id} not found during hook '{hook_name}' run."
                 )
             continue
-        if (
+        if task.status == models.TaskStatus.CANCELLED or (
             hook_index > 0
             and final_status is not None
             and task.status != models.TaskStatus.IN_PROGRESS
@@ -152,6 +197,8 @@ def run_hooks(
             model=model_name,
         )
 
+        hook_pre_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+        hook_pre_head = snapshots.head_commit(working_dir)
         try:
             # Append hooks to the main runner log for a unified execution trace.
             returncode, stdout, stderr = runner.run_with_heartbeat(
@@ -178,16 +225,55 @@ def run_hooks(
         except persistence.CorruptedTasksError:
             # Not a hook failure: reporting it as one blames the wrong thing
             # and lets the loop carry on writing to an unreadable roadmap.
+            if hook_pre_tree is not None:
+                snapshots.restore_tree(
+                    tasks_file,
+                    working_dir,
+                    hook_pre_tree,
+                    target_head=hook_pre_head,
+                )
             raise
         except Exception as e:
             exit_codes[hook_name] = runner.RETURNCODE_LAUNCH_FAILED
             click.echo(f"Hook '{hook_name}' error: {e}")
+        except BaseException:
+            if hook_pre_tree is not None:
+                snapshots.restore_tree(
+                    tasks_file,
+                    working_dir,
+                    hook_pre_tree,
+                    target_head=hook_pre_head,
+                )
+            raise
+
+        hook_post_tree = None
+        if exit_codes[hook_name] != 0:
+            latest_data = persistence.load_tasks(tasks_file)
+            latest_task = next(
+                (t for t in latest_data.tasks if t.id == task_id), None
+            )
+            if (
+                latest_task is not None
+                and latest_task.status == models.TaskStatus.CANCELLED
+            ):
+                break
+            if hook_pre_tree is not None:
+                snapshots.restore_tree(
+                    tasks_file,
+                    working_dir,
+                    hook_pre_tree,
+                    target_head=hook_pre_head,
+                )
+        elif exit_codes[hook_name] == 0 and hook_pre_tree is not None:
+            hook_post_tree = snapshots.snapshot_tree(tasks_file, working_dir)
 
         # A hook that finds a defect it cannot fix rejects the completion
         # rather than failing its own process. Attribute it here, while it is
         # still known which hook ran, but keep going: the later hooks (the
         # roadmap hook above all) need to see the rejection too.
-        rejection = _read_rejection(tasks_file, task_id)
+        rejection = _record_hook_tree_and_read_rejection(
+            tasks_file, task_id, hook_name, hook_pre_tree, hook_post_tree
+        )
         if rejection and rejection != task.rejection:
             # reject_task bounds the reason to one progress entry, but the
             # attribution prefix can still push it over; an oversized entry
@@ -247,6 +333,8 @@ def run_hooks(
             operations.update_task(
                 tasks_file, task_id, status=final_status, force=True
             )
+            if final_status == models.TaskStatus.COMPLETED:
+                _persist_completed_snapshot(tasks_file, task_id, working_dir)
         except models.TaskNotFoundError:
             # Task may have been deleted by the orchestrator (e.g. after
             # a failure it decided to take a different approach).  This
@@ -265,6 +353,167 @@ def run_hooks(
             traceback.print_exc()
 
     return exit_codes
+
+
+def _restore_exhausted_task_tree(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    working_dir: pathlib.Path,
+) -> None:
+    """Writes attempt-final.patch, restores pre_tree, and clears trees."""
+    data = persistence.load_tasks(tasks_file)
+    task = next((t for t in data.tasks if t.id == task_id), None)
+    if task and task.pre_tree:
+        current_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+        if current_tree and current_tree != task.pre_tree:
+            lifecycle.write_patch_artifact(
+                tasks_file,
+                task_id,
+                "attempt-final.patch",
+                task.pre_tree,
+                current_tree,
+            )
+        if current_tree != task.pre_tree or (
+            task.pre_head is not None
+            and snapshots.head_commit(working_dir) != task.pre_head
+        ):
+            snapshots.restore_tree(
+                tasks_file,
+                working_dir,
+                task.pre_tree,
+                current_tree=current_tree,
+                target_head=task.pre_head,
+            )
+    with persistence.lock_tasks(tasks_file):
+        latest = persistence.load_tasks(tasks_file)
+        target = next((t for t in latest.tasks if t.id == task_id), None)
+        if target is not None and (
+            target.runner_tree is not None or target.hook_trees is not None
+        ):
+            target.runner_tree = None
+            target.hook_trees = None
+            persistence.save_tasks(tasks_file, latest)
+
+
+def _restore_cancelled_task(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    working_dir: pathlib.Path,
+) -> None:
+    """Restores workspace and clears trees if a cancelled task has pre_tree."""
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        target = next((t for t in data.tasks if t.id == task_id), None)
+        if target is None:
+            return
+        target_tree = target.pre_tree
+        target_head = target.pre_head
+        if target_tree is not None:
+            current_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+            if current_tree != target_tree or (
+                target_head is not None
+                and snapshots.head_commit(working_dir) != target_head
+            ):
+                lifecycle.write_patch_artifact(
+                    tasks_file,
+                    task_id,
+                    "cancelled.patch",
+                    target_tree,
+                    current_tree,
+                )
+                snapshots.restore_tree(
+                    tasks_file,
+                    working_dir,
+                    target_tree,
+                    current_tree=current_tree,
+                    target_head=target_head,
+                )
+        if (
+            target.pre_tree is not None
+            or target.pre_head is not None
+            or target.runner_tree is not None
+            or target.hook_trees is not None
+        ):
+            target.pre_tree = None
+            target.pre_head = None
+            target.runner_tree = None
+            target.hook_trees = None
+            persistence.save_tasks(tasks_file, data)
+
+
+def _restore_interrupted_attempt(
+    tasks_file: pathlib.Path,
+    task: models.Task,
+    working_dir: pathlib.Path,
+    attempt_pre_tree: str | None,
+    attempt_pre_head: str | None,
+    *,
+    clear_task_trees: bool,
+) -> None:
+    """Saves attempt patch and restores workspace when a runner interrupts."""
+    if clear_task_trees:
+        latest = persistence.load_tasks(tasks_file)
+        current = next((t for t in latest.tasks if t.id == task.id), None)
+        if (
+            current is not None
+            and current.status == models.TaskStatus.CANCELLED
+        ):
+            _restore_cancelled_task(tasks_file, task.id, working_dir)
+            return
+
+    cur_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+    base_tree = task.pre_tree or attempt_pre_tree
+    target_tree = (
+        (task.pre_tree or attempt_pre_tree)
+        if clear_task_trees
+        else (attempt_pre_tree or task.pre_tree)
+    )
+    target_head = (
+        (task.pre_head or attempt_pre_head)
+        if clear_task_trees
+        else (attempt_pre_head or task.pre_head)
+    )
+    if base_tree and cur_tree and cur_tree != base_tree:
+        lifecycle.write_patch_artifact(
+            tasks_file,
+            task.id,
+            f"attempt-{max(1, task.attempts)}.patch",
+            base_tree,
+            cur_tree,
+        )
+    if target_tree and (
+        cur_tree != target_tree
+        or (
+            target_head is not None
+            and snapshots.head_commit(working_dir) != target_head
+        )
+    ):
+        snapshots.restore_tree(
+            tasks_file,
+            working_dir,
+            target_tree,
+            current_tree=cur_tree,
+            target_head=target_head,
+        )
+    if clear_task_trees:
+        with persistence.lock_tasks(tasks_file):
+            latest = persistence.load_tasks(tasks_file)
+            target = next((t for t in latest.tasks if t.id == task.id), None)
+            if (
+                target is not None
+                and target.status != models.TaskStatus.CANCELLED
+            ):
+                lifecycle.update_run_time(target)
+                target.status = models.TaskStatus.PENDING
+                target.requested_status = None
+                target.rejection = None
+                target.pid = None
+                target.last_heartbeat = None
+                target.active_execution_component = None
+                target.active_execution_started_at = None
+                target.runner_tree = None
+                target.hook_trees = None
+                persistence.save_tasks(tasks_file, latest)
 
 
 def _process_exhausted_retries(
@@ -286,6 +535,9 @@ def _process_exhausted_retries(
 
     Returns True to abort the run loop, False to continue.
     """
+    working_dir = working_dir or paths.get_working_dir(tasks_file)
+    _restore_exhausted_task_tree(tasks_file, task_id, working_dir)
+
     # Run hooks (like roadmap revision) even on final failure to give
     # them a chance to heal the task before we abort.
     # Mark as in_progress so hooks can run and heartbeats work.
@@ -313,6 +565,14 @@ def _process_exhausted_retries(
     # Re-check: if a hook reset/edited/replaced the task, continue the loop
     data = persistence.load_tasks(tasks_file)
     healed_task = next((t for t in data.tasks if t.id == task_id), None)
+    if (
+        healed_task is not None
+        and healed_task.status == models.TaskStatus.PENDING
+        and healed_task.pre_tree is None
+    ):
+        snapshots.prune_snapshots(
+            tasks_file, snapshots.collect_task_trees(data.tasks)
+        )
     if (
         healed_task
         and models.TaskStatus.FAILED
@@ -354,6 +614,70 @@ def _process_finalizing_task(
             f"({requested_status}). Skipping runner."
         )
 
+    resolved_dir = working_dir or paths.get_working_dir(tasks_file)
+    data = persistence.load_tasks(tasks_file)
+    current_task = next((t for t in data.tasks if t.id == task_id), None)
+    hook_scope = scope
+    if current_task is not None:
+        if requested_status != models.TaskStatus.COMPLETED:
+            if current_task.pre_tree:
+                current_tree = snapshots.snapshot_tree(tasks_file, resolved_dir)
+                if current_tree and current_tree != current_task.pre_tree:
+                    lifecycle.write_patch_artifact(
+                        tasks_file,
+                        task_id,
+                        f"attempt-{max(1, current_task.attempts)}.patch",
+                        current_task.pre_tree,
+                        current_tree,
+                    )
+                if current_tree != current_task.pre_tree or (
+                    current_task.pre_head is not None
+                    and snapshots.head_commit(resolved_dir)
+                    != current_task.pre_head
+                ):
+                    snapshots.restore_tree(
+                        tasks_file,
+                        resolved_dir,
+                        current_task.pre_tree,
+                        current_tree=current_tree,
+                        target_head=current_task.pre_head,
+                    )
+            if (
+                current_task.runner_tree is not None
+                or current_task.hook_trees is not None
+            ):
+                with persistence.lock_tasks(tasks_file):
+                    latest = persistence.load_tasks(tasks_file)
+                    target = next(
+                        (t for t in latest.tasks if t.id == task_id), None
+                    )
+                    if target is not None:
+                        target.runner_tree = None
+                        target.hook_trees = None
+                        persistence.save_tasks(tasks_file, latest)
+        elif requested_status == models.TaskStatus.COMPLETED:
+            if current_task.runner_tree is None:
+                rt = snapshots.snapshot_tree(tasks_file, resolved_dir)
+                if rt is not None:
+                    with persistence.lock_tasks(tasks_file):
+                        latest = persistence.load_tasks(tasks_file)
+                        target = next(
+                            (t for t in latest.tasks if t.id == task_id), None
+                        )
+                        if target is not None:
+                            target.runner_tree = rt
+                            persistence.save_tasks(tasks_file, latest)
+                    current_task.runner_tree = rt
+            if (
+                hook_scope is None
+                and current_task.pre_tree
+                and current_task.runner_tree
+            ):
+                changed = snapshots.changed_files(
+                    tasks_file, current_task.pre_tree, current_task.runner_tree
+                )
+                hook_scope = scope_mod.describe(changed)
+
     run_hooks(
         tasks_file,
         task_id,
@@ -367,8 +691,23 @@ def _process_finalizing_task(
         final_status=requested_status,
         time_limit=time_limit,
         model_name=model_name,
-        scope=scope,
+        scope=hook_scope,
     )
+    refreshed = persistence.load_tasks(tasks_file)
+    post_task = next((t for t in refreshed.tasks if t.id == task_id), None)
+    if (
+        post_task is not None
+        and post_task.status == models.TaskStatus.CANCELLED
+    ):
+        _restore_cancelled_task(tasks_file, task_id, resolved_dir)
+    elif (
+        post_task is not None
+        and post_task.status == models.TaskStatus.PENDING
+        and post_task.pre_tree is None
+    ):
+        snapshots.prune_snapshots(
+            tasks_file, snapshots.collect_task_trees(refreshed.tasks)
+        )
 
 
 def _handle_runner_exit(
@@ -391,11 +730,14 @@ def _handle_runner_exit(
     scope: str | None = None,
     retry_runner_failures: bool = False,
     abort_failed_finalization: bool = False,
+    attempt_pre_tree: str | None = None,
+    attempt_pre_head: str | None = None,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
     Returns True to abort the run loop, False to continue.
     """
+    working_dir = working_dir or paths.get_working_dir(tasks_file)
     runner_failed = returncode not in (
         0,
         -15,
@@ -417,7 +759,8 @@ def _handle_runner_exit(
     # Post-execution validation and heartbeat cleanup
     # This will mark the task as COMPLETED or PENDING based on whether
     # the agent called 'lemming complete'.
-    if runner_failed and not retry_runner_failures:
+    uncounted_failure = runner_failed and not retry_runner_failures
+    if uncounted_failure:
         post_task = lifecycle.finish_task_attempt(
             tasks_file, task_id, count_attempt=False
         )
@@ -427,11 +770,97 @@ def _handle_runner_exit(
     if not post_task:
         click.echo("Error: Task disappeared from roadmap during execution.")
         return True
+    uncounted_failure = uncounted_failure and not post_task.requested_status
+
+    if post_task.status == models.TaskStatus.CANCELLED:
+        _restore_cancelled_task(tasks_file, task_id, working_dir)
+        if verbose:
+            click.echo("Task was cancelled. Continuing orchestrator.")
+        return False
 
     # Run orchestrator hooks synchronously if the task requested a status
     # change (completion or failure). This ensures the roadmap is updated
     # and all validation hooks complete before the next task is picked up.
     requested_status = post_task.requested_status
+    runner_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+    preserve_prior_attempt = bool(
+        uncounted_failure
+        and attempt_pre_tree
+        and post_task.pre_tree
+        and attempt_pre_tree != post_task.pre_tree
+    )
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        target = next((t for t in data.tasks if t.id == task_id), None)
+        if target is not None:
+            if requested_status == models.TaskStatus.COMPLETED:
+                if runner_tree is not None:
+                    target.runner_tree = runner_tree
+                    persistence.save_tasks(tasks_file, data)
+            elif preserve_prior_attempt:
+                if target.runner_tree is None:
+                    target.runner_tree = attempt_pre_tree
+                    persistence.save_tasks(tasks_file, data)
+            elif (
+                target.runner_tree is not None or target.hook_trees is not None
+            ):
+                target.runner_tree = None
+                target.hook_trees = None
+                persistence.save_tasks(tasks_file, data)
+    if requested_status == models.TaskStatus.COMPLETED:
+        if runner_tree is not None:
+            post_task.runner_tree = runner_tree
+    elif preserve_prior_attempt:
+        post_task.runner_tree = post_task.runner_tree or attempt_pre_tree
+    else:
+        post_task.runner_tree = None
+        post_task.hook_trees = None
+
+    hook_scope = scope
+    if requested_status != models.TaskStatus.COMPLETED:
+        target_tree = (
+            (attempt_pre_tree or post_task.pre_tree)
+            if uncounted_failure
+            else (post_task.pre_tree or attempt_pre_tree)
+        )
+        base_tree = post_task.pre_tree or attempt_pre_tree
+        target_head = (
+            (attempt_pre_head or post_task.pre_head)
+            if uncounted_failure
+            else (post_task.pre_head or attempt_pre_head)
+        )
+        attempt_num = (
+            post_task.attempts + 1
+            if uncounted_failure
+            else max(1, post_task.attempts)
+        )
+        lifecycle.write_patch_artifact(
+            tasks_file,
+            task_id,
+            f"attempt-{max(1, attempt_num)}.patch",
+            base_tree,
+            runner_tree,
+        )
+        if target_tree and (
+            runner_tree != target_tree
+            or (
+                target_head is not None
+                and snapshots.head_commit(working_dir) != target_head
+            )
+        ):
+            snapshots.restore_tree(
+                tasks_file,
+                working_dir,
+                target_tree,
+                current_tree=runner_tree,
+                target_head=target_head,
+            )
+    elif hook_scope is None and post_task.pre_tree and runner_tree:
+        changed = snapshots.changed_files(
+            tasks_file, post_task.pre_tree, runner_tree
+        )
+        hook_scope = scope_mod.describe(changed)
+
     if requested_status:
         run_hooks(
             tasks_file,
@@ -446,7 +875,7 @@ def _handle_runner_exit(
             final_status=post_task.requested_status,
             time_limit=time_limit,
             model_name=model_name,
-            scope=scope,
+            scope=hook_scope,
         )
 
         # A finalizing task keeps its in-progress status until the hooks
@@ -457,11 +886,24 @@ def _handle_runner_exit(
         post_task = next(
             (t for t in refreshed.tasks if t.id == task_id), post_task
         )
+        if post_task.status == models.TaskStatus.CANCELLED:
+            _restore_cancelled_task(tasks_file, task_id, working_dir)
+            if verbose:
+                click.echo("Task was cancelled. Continuing orchestrator.")
+            return False
+        if (
+            post_task.status == models.TaskStatus.PENDING
+            and post_task.pre_tree is None
+        ):
+            snapshots.prune_snapshots(
+                tasks_file, snapshots.collect_task_trees(refreshed.tasks)
+            )
         if (
             abort_failed_finalization
             and requested_status == models.TaskStatus.COMPLETED
             and post_task.status == models.TaskStatus.PENDING
         ):
+            _restore_exhausted_task_tree(tasks_file, task_id, working_dir)
             return True
 
     if post_task.status == models.TaskStatus.COMPLETED:
@@ -487,7 +929,7 @@ def _handle_runner_exit(
                 )
             return True
 
-        if runner_failed and not post_task.requested_status:
+        if runner_failed and not requested_status:
             # The runner usually says why it stopped (quota, a rejected
             # model, an auth failure); without this the reason stays buried
             # in the log behind a generic notice.
@@ -643,6 +1085,7 @@ def run_loop(
         True when the roadmap ran to completion, the task limit was reached,
         or the milestone was reached.
     """
+    working_dir = working_dir or paths.get_working_dir(tasks_file)
     one_task_id = None
     one_task_config = None
     one_task_runner = None
@@ -820,6 +1263,10 @@ def run_loop(
                 task = next(
                     (t for t in finalized.tasks if t.id == task_id), None
                 )
+                if task and task.status == models.TaskStatus.PENDING:
+                    _restore_exhausted_task_tree(
+                        tasks_file, task_id, working_dir
+                    )
                 return bool(task and task.status == models.TaskStatus.COMPLETED)
             settled_count += _task_settled(tasks_file, task_id)
             continue
@@ -856,6 +1303,36 @@ def run_loop(
             tasks_file, task_id, runner.describe_command(cmd, prompt)
         )
 
+        attempt_pre_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+        attempt_pre_head = snapshots.head_commit(working_dir)
+        if (
+            (
+                current_task.pre_tree is None
+                and (
+                    attempt_pre_tree is not None or attempt_pre_head is not None
+                )
+            )
+            or current_task.runner_tree is not None
+            or current_task.hook_trees is not None
+        ):
+            with persistence.lock_tasks(tasks_file):
+                latest = persistence.load_tasks(tasks_file)
+                target = next(
+                    (t for t in latest.tasks if t.id == task_id), None
+                )
+                if target is not None:
+                    if target.pre_tree is None:
+                        target.pre_tree = attempt_pre_tree
+                        target.pre_head = attempt_pre_head
+                    target.runner_tree = None
+                    target.hook_trees = None
+                    persistence.save_tasks(tasks_file, latest)
+            if current_task.pre_tree is None:
+                current_task.pre_tree = attempt_pre_tree
+                current_task.pre_head = attempt_pre_head
+            current_task.runner_tree = None
+            current_task.hook_trees = None
+
         returncode = 0
         stdout, stderr = "", ""
         try:
@@ -884,6 +1361,14 @@ def run_loop(
         except persistence.CorruptedTasksError:
             # Retrying cannot help an unreadable roadmap, and counting the
             # attempt would spend the task's retries on the wrong failure.
+            _restore_interrupted_attempt(
+                tasks_file,
+                current_task,
+                working_dir,
+                attempt_pre_tree,
+                attempt_pre_head,
+                clear_task_trees=False,
+            )
             raise
         except Exception as e:
             # Leaving the return code at its initialised zero reports a
@@ -897,6 +1382,16 @@ def run_loop(
             # Popen raises this, not exit code 127, for a missing executable.
             if isinstance(e, FileNotFoundError) and e.filename == cmd[0]:
                 _echo_runner_not_found(selected_runner)
+        except BaseException:
+            _restore_interrupted_attempt(
+                tasks_file,
+                current_task,
+                working_dir,
+                attempt_pre_tree,
+                attempt_pre_head,
+                clear_task_trees=True,
+            )
+            raise
 
         should_abort = _handle_runner_exit(
             tasks_file=tasks_file,
@@ -918,6 +1413,8 @@ def run_loop(
             scope=scope,
             retry_runner_failures=once,
             abort_failed_finalization=once,
+            attempt_pre_tree=attempt_pre_tree,
+            attempt_pre_head=attempt_pre_head,
         )
         if should_abort:
             return False
@@ -929,6 +1426,7 @@ def run_loop(
             if not task or task.status != models.TaskStatus.PENDING:
                 return bool(task and task.status == models.TaskStatus.COMPLETED)
             if task.attempts >= retries:
+                _restore_exhausted_task_tree(tasks_file, task_id, working_dir)
                 return False
 
 

@@ -3,7 +3,7 @@
 import dataclasses
 import pathlib
 
-from . import hooks, models, paths, persistence, runner
+from . import hooks, models, paths, persistence, runner, snapshots
 from .tasks import limits
 
 # What a review looks at when the caller named nothing. The orchestrator
@@ -166,6 +166,8 @@ def _format_task_block(
     )
     description = _compact_text(task.description, description_limit)
     block = f"- {marker} ({task_id}) {description}\n"
+    if effective_status == models.TaskStatus.COMPLETED and task.diff_summary:
+        block += f"  Files: {task.diff_summary}\n"
 
     include_progress = (
         effective_status != models.TaskStatus.COMPLETED
@@ -406,6 +408,15 @@ def prepare_hook_prompt(
     finished_str += (
         f"Attempts: {finished_task.attempts}/{data.config.retries}\n"
     )
+    diff_summary = finished_task.diff_summary
+    post_tree = finished_task.post_tree or finished_task.runner_tree
+    if not diff_summary and finished_task.pre_tree and post_tree:
+        diff_summary = snapshots.summarize_diff(
+            tasks_file,
+            finished_task.pre_tree,
+            post_tree,
+        )
+    finished_str += f"Changes: {diff_summary or '0 files changed'}\n"
 
     if (
         finished_task.attempts >= data.config.retries

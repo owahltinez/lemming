@@ -1,10 +1,11 @@
 import os
+import subprocess
 import time
 from unittest import mock
 
 import pytest
 
-from lemming import models, persistence
+from lemming import models, paths, persistence, prompts, snapshots
 from lemming.orchestrator import (
     HOOK_TIME_LIMIT,
     _handle_runner_exit,
@@ -20,7 +21,10 @@ from lemming.tasks import lifecycle, operations, progress
 
 
 @pytest.fixture
-def setup_env(tmp_path):
+def setup_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "snapshot_tree", lambda *_a, **_kw: None)
+    monkeypatch.setattr(snapshots, "head_commit", lambda *_a, **_kw: None)
     test_tasks_file = tmp_path / "tasks_test.yml"
 
     # Scaffold a valid file with one task
@@ -59,8 +63,10 @@ def test_format_duration():
     assert format_duration(120) == "2h"
 
 
-@mock.patch("subprocess.Popen")
-def test_run_loop_success(mock_popen, setup_env):
+@mock.patch("lemming.snapshots.head_commit", return_value=None)
+@mock.patch("lemming.snapshots.snapshot_tree", return_value=None)
+@mock.patch("lemming.runner.subprocess.Popen")
+def test_run_loop_success(mock_popen, _mock_snap, _mock_head, setup_env):
     test_tasks_file, initial_data = setup_env
     # Simulate runner reporting success
     mock_process = mock.MagicMock()
@@ -94,9 +100,13 @@ def test_run_loop_success(mock_popen, setup_env):
     assert data.tasks[0].status == models.TaskStatus.COMPLETED
 
 
-@mock.patch("subprocess.Popen")
+@mock.patch("lemming.snapshots.head_commit", return_value=None)
+@mock.patch("lemming.snapshots.snapshot_tree", return_value=None)
+@mock.patch("lemming.runner.subprocess.Popen")
 @mock.patch("time.sleep", return_value=None)
-def test_run_loop_retry_and_fail(mock_sleep, mock_popen, setup_env):
+def test_run_loop_retry_and_fail(
+    mock_sleep, mock_popen, _mock_snap, _mock_head, setup_env
+):
     test_tasks_file, initial_data = setup_env
     # Runner finishes but doesn't report completion
     mock_process = mock.MagicMock()
@@ -1516,3 +1526,1016 @@ def test_run_loop_propagates_corrupted_tasks(mock_run, setup_env, capsys):
         )
 
     assert "An error occurred while executing" not in capsys.readouterr().out
+
+
+def test_run_loop_records_snapshots_and_passes_changed_files_scope(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t1", description="Update app")],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["readability"]
+            ),
+        ),
+    )
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        header = kwargs.get("header") or ""
+        if header.startswith("Hook:"):
+            (work / "app.py").write_text(
+                "v2\nformatted = True\n", encoding="utf-8"
+            )
+            return 0, "", ""
+        (work / "app.py").write_text("v2\n", encoding="utf-8")
+        (work / "extra.py").write_text("x = 1\n", encoding="utf-8")
+        progress.add_progress(t_file, t_id, "updated app")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        return 0, "", ""
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch(
+            "lemming.prompts.prepare_hook_prompt",
+            wraps=prompts.prepare_hook_prompt,
+        ) as mock_prepare,
+        mock.patch("time.sleep", return_value=None),
+    ):
+        assert run_loop(
+            tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            working_dir=work,
+        )
+
+    mock_prepare.assert_called_once()
+    seen_scope = mock_prepare.call_args.kwargs["scope"]
+    assert seen_scope is not None
+    assert "- app.py" in seen_scope
+    assert "- extra.py" in seen_scope
+
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.COMPLETED
+    assert task.pre_tree is not None
+    assert task.runner_tree is not None
+    assert task.post_tree is not None
+    assert task.runner_tree != task.pre_tree
+    assert task.post_tree != task.runner_tree
+    assert task.hook_trees == {
+        "readability": [task.runner_tree, task.post_tree]
+    }
+    assert (
+        task.diff_summary == "2 files (+3/-1): app.py (+2/-1), extra.py (+1/-0)"
+    )
+    assert (work / "app.py").read_text(
+        encoding="utf-8"
+    ) == "v2\nformatted = True\n"
+
+
+def test_run_loop_reverts_workspace_and_writes_patch_on_incomplete_attempt(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    git_env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+    }
+    subprocess.run(
+        ["git", "init", "--quiet", str(work)], env=git_env, check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(work), "config", "commit.gpgsign", "false"],
+        env=git_env,
+        check=True,
+    )
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(work), "add", "-A"], env=git_env, check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(work), "commit", "-q", "-m", "init"],
+        env=git_env,
+        check=True,
+    )
+    initial_head = snapshots.head_commit(work)
+    assert initial_head is not None
+
+    tasks_file = work / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Flaky task",
+                    hook_trees={"stale": ["aaa", "bbb"]},
+                )
+            ],
+            config=models.RoadmapConfig(retries=2, runner="agy", hooks=[]),
+        ),
+    )
+
+    attempt_counter = 0
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        nonlocal attempt_counter
+        attempt_counter += 1
+        assert persistence.load_tasks(t_file).tasks[0].hook_trees is None
+        if attempt_counter == 1:
+            (work / "app.py").write_text("broken\n", encoding="utf-8")
+            (work / "stray.txt").write_text("stray\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(work), "add", "-A"], env=git_env, check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(work), "commit", "-q", "-m", "bad"],
+                env=git_env,
+                check=True,
+            )
+            return RETURNCODE_TIMEOUT, "", ""
+
+        # Attempt 2 must see the restored workspace and initial HEAD.
+        assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+        assert not (work / "stray.txt").exists()
+        assert snapshots.head_commit(work) == initial_head
+        (work / "app.py").write_text("clean_v2\n", encoding="utf-8")
+        progress.add_progress(t_file, t_id, "fixed on retry")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        return 0, "", ""
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+    ):
+        assert run_loop(
+            tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            working_dir=work,
+            hooks=[],
+        )
+
+    patch_file = paths.get_artifacts_dir(tasks_file, "t1") / "attempt-1.patch"
+    assert patch_file.is_file()
+    assert "+broken" in patch_file.read_text(encoding="utf-8")
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.pre_head == initial_head
+    assert task.diff_summary == "1 file (+1/-1): app.py (+1/-1)"
+
+
+def test_hooks_revert_nonzero_exit_and_exhausted_rejection_saves_final_patch(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t1", description="Task")],
+            config=models.RoadmapConfig(
+                retries=1, runner="agy", hooks=["testing", "roadmap"]
+            ),
+        ),
+    )
+
+    failure_hook_saw_app: list[str] = []
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        header = kwargs.get("header") or ""
+        if header == "Task Runner":
+            (work / "app.py").write_text("rejected_v2\n", encoding="utf-8")
+            progress.add_progress(t_file, t_id, "attempted")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+            return 0, "", ""
+        if header == "Hook: testing":
+            # Rejects completion and exits 0: changes stay on disk for retry,
+            # until _process_exhausted_retries cleans up.
+            lifecycle.reject_task(t_file, t_id, "tests failed")
+            return 0, "", ""
+        if header == "Hook: roadmap":
+            data = persistence.load_tasks(t_file)
+            t = data.tasks[0]
+            if t.requested_status == models.TaskStatus.COMPLETED:
+                # Simulate a crashing hook mutating the tree; must be reverted
+                # to hook_pre_tree (which still has rejected_v2).
+                (work / "crashed_hook.txt").write_text(
+                    "bad\n", encoding="utf-8"
+                )
+                return 1, "", ""
+            failure_hook_saw_app.append(
+                (work / "app.py").read_text(encoding="utf-8")
+            )
+            return 0, "", ""
+        return 0, "", ""
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+    ):
+        completed = run_loop(
+            tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            working_dir=work,
+        )
+
+    assert completed is False
+    # Non-zero hook edit was reverted immediately.
+    assert not (work / "crashed_hook.txt").exists()
+    # Exhausted retries restored pre_tree before running failure hooks.
+    assert failure_hook_saw_app == ["v1\n"]
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+    final_patch = (
+        paths.get_artifacts_dir(tasks_file, "t1") / "attempt-final.patch"
+    )
+    assert final_patch.is_file()
+    assert "+rejected_v2" in final_patch.read_text(encoding="utf-8")
+
+
+def test_rejected_attempt_followed_by_runner_failure_captures_full_patch(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    (work / "b.py").write_text("b1\n", encoding="utf-8")
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t1", description="Task")],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["testing", "roadmap"]
+            ),
+        ),
+    )
+
+    runner_calls = 0
+    failure_prompts: list[str] = []
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        nonlocal runner_calls
+        header = kwargs.get("header") or ""
+        if header == "Task Runner":
+            runner_calls += 1
+            if runner_calls == 1:
+                (work / "a.py").write_text("attempt1_a\n", encoding="utf-8")
+                progress.add_progress(t_file, t_id, "attempt 1")
+                operations.update_task(
+                    t_file, t_id, status=models.TaskStatus.COMPLETED
+                )
+                return 0, "", ""
+            # Attempt 2 modifies b.py on top of attempt 1's rejected changes,
+            # then times out without completing.
+            assert (work / "a.py").read_text(encoding="utf-8") == "attempt1_a\n"
+            (work / "b.py").write_text("attempt2_b\n", encoding="utf-8")
+            return RETURNCODE_TIMEOUT, "", ""
+        if header == "Hook: testing":
+            lifecycle.reject_task(t_file, t_id, "tests failed")
+            return 0, "", ""
+        if header == "Hook: roadmap":
+            data = persistence.load_tasks(t_file)
+            t = data.tasks[0]
+            if t.requested_status == models.TaskStatus.FAILED:
+                assert t.runner_tree is None
+                assert t.hook_trees is None
+                failure_prompts.append(
+                    prompts.prepare_hook_prompt("roadmap", data, t, t_file)
+                )
+            return 0, "", ""
+        return 0, "", ""
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+    ):
+        completed = run_loop(
+            tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            working_dir=work,
+        )
+
+    assert completed is False
+    assert (work / "a.py").read_text(encoding="utf-8") == "v1\n"
+    assert (work / "b.py").read_text(encoding="utf-8") == "b1\n"
+    patch2 = paths.get_artifacts_dir(tasks_file, "t1") / "attempt-2.patch"
+    assert patch2.is_file()
+    patch2_text = patch2.read_text(encoding="utf-8")
+    assert "+attempt1_a" in patch2_text
+    assert "+attempt2_b" in patch2_text
+    assert len(failure_prompts) == 1
+    assert "Changes: 0 files changed\n" in failure_prompts[0]
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.runner_tree is None
+    assert "testing" not in (task.hook_trees or {})
+
+
+def test_failed_task_clears_runner_tree_and_reset_keeps_hook_trees_none(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t1", description="Task")],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["roadmap"]
+            ),
+        ),
+    )
+
+    seen_prompts: list[str] = []
+    runner_calls = 0
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        nonlocal runner_calls
+        header = kwargs.get("header") or ""
+        if header == "Task Runner":
+            runner_calls += 1
+            if runner_calls == 1:
+                (work / "app.py").write_text("failed_edit\n", encoding="utf-8")
+                progress.add_progress(t_file, t_id, "cannot proceed")
+                operations.update_task(
+                    t_file, t_id, status=models.TaskStatus.FAILED
+                )
+                return 0, "", ""
+            return 0, "", ""
+        if header == "Hook: roadmap":
+            data = persistence.load_tasks(t_file)
+            t = data.tasks[0]
+            assert t.runner_tree is None
+            seen_prompts.append(
+                prompts.prepare_hook_prompt("roadmap", data, t, t_file)
+            )
+            lifecycle.reset_task(t_file, t_id)
+            return 0, "", ""
+        return 0, "", ""
+
+    t0 = snapshots.snapshot_tree(tasks_file, work)
+    data = persistence.load_tasks(tasks_file)
+    data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+    data.tasks[0].attempts = 1
+    data.tasks[0].pre_tree = t0
+    data.tasks[0].progress = ["cannot proceed"]
+    data.tasks[0].requested_status = models.TaskStatus.FAILED
+    persistence.save_tasks(tasks_file, data)
+    (work / "app.py").write_text("failed_edit\n", encoding="utf-8")
+
+    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
+        should_abort = _handle_runner_exit(
+            tasks_file=tasks_file,
+            task_id="t1",
+            returncode=0,
+            stdout="",
+            stderr="",
+            retries=2,
+            retry_delay=0,
+            runner_name="agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["roadmap"],
+            working_dir=work,
+            time_limit=1,
+            attempt_pre_tree=t0,
+        )
+
+    assert not should_abort
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+    assert len(seen_prompts) == 1
+    assert "Changes: 0 files changed\n" in seen_prompts[0]
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.PENDING
+    assert task.runner_tree is None
+    assert task.hook_trees is None
+
+
+def test_cancellation_during_hooks_restores_once_and_suppresses_stdout(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    t0 = snapshots.snapshot_tree(tasks_file, work)
+    assert t0 is not None
+
+    (work / "app.py").write_text("runner_v2\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Cancel in hook",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    attempts=1,
+                    pre_tree=t0,
+                    progress=["done"],
+                    requested_status=models.TaskStatus.COMPLETED,
+                )
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["testing", "roadmap"]
+            ),
+        ),
+    )
+
+    hook_calls: list[str] = []
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        header = kwargs.get("header") or ""
+        hook_calls.append(header)
+        lifecycle.cancel_task(t_file, t_id, working_dir=work)
+        # User edit after cancel_task restore must not be overwritten.
+        (work / "app.py").write_text("user_edit\n", encoding="utf-8")
+        return -15, "", ""
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch(
+            "lemming.prompts.prepare_hook_prompt", return_value="Prompt"
+        ),
+    ):
+        should_abort = _handle_runner_exit(
+            tasks_file=tasks_file,
+            task_id="t1",
+            returncode=0,
+            stdout="NOISY RUNNER STDOUT",
+            stderr="NOISY RUNNER STDERR",
+            retries=2,
+            retry_delay=0,
+            runner_name="agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["testing", "roadmap"],
+            working_dir=work,
+            time_limit=1,
+            attempt_pre_tree=t0,
+        )
+
+    assert should_abort is False
+    assert hook_calls == ["Hook: testing"]
+    assert (work / "app.py").read_text(encoding="utf-8") == "user_edit\n"
+    captured = capsys.readouterr()
+    assert "NOISY RUNNER STDOUT" not in captured.out
+    assert "NOISY RUNNER STDERR" not in captured.err
+
+
+def test_run_loop_restores_workspace_on_keyboard_interrupted_runner(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    t0 = snapshots.snapshot_tree(tasks_file, work)
+    assert t0 is not None
+    # Simulate a prior rejected attempt leaving t1 on disk while pre_tree is t0.
+    (work / "app.py").write_text("rejected_v1\n", encoding="utf-8")
+    t1 = snapshots.snapshot_tree(tasks_file, work)
+    assert t1 is not None
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Interrupted",
+                    attempts=1,
+                    pre_tree=t0,
+                    runner_tree=t1,
+                    hook_trees={"testing": [t1, t1]},
+                )
+            ],
+            config=models.RoadmapConfig(retries=3, runner="agy", hooks=[]),
+        ),
+    )
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        (work / "app.py").write_text("interrupted_v2\n", encoding="utf-8")
+        progress.add_progress(t_file, t_id, "completed just before ctrl+c")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        raise KeyboardInterrupt
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(
+            tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            working_dir=work,
+            hooks=[],
+        )
+
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+    patch_file = paths.get_artifacts_dir(tasks_file, "t1") / "attempt-2.patch"
+    assert patch_file.is_file()
+    assert "+interrupted_v2" in patch_file.read_text(encoding="utf-8")
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.PENDING
+    assert task.requested_status is None
+    assert task.rejection is None
+    assert task.pid is None
+    assert task.last_heartbeat is None
+    assert task.active_execution_component is None
+    assert task.active_execution_started_at is None
+    assert task.runner_tree is None
+    assert task.hook_trees is None
+
+    # If cancel_task already ran before KeyboardInterrupt, delegate without
+    # overwriting post-cancel user edits or writing an attempt patch.
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t2", description="Cancel before interrupt")],
+            config=models.RoadmapConfig(retries=2, runner="agy", hooks=[]),
+        ),
+    )
+
+    def fake_cancel_then_interrupt(cmd, t_file, t_id, verbose, **kwargs):
+        (work / "app.py").write_text("runner_dirty\n", encoding="utf-8")
+        lifecycle.cancel_task(t_file, t_id, working_dir=work)
+        (work / "app.py").write_text("user_edit\n", encoding="utf-8")
+        raise KeyboardInterrupt
+
+    with (
+        mock.patch(
+            "lemming.runner.run_with_heartbeat",
+            side_effect=fake_cancel_then_interrupt,
+        ),
+        mock.patch("lemming.orchestrator.os.getpid", return_value=None),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(
+            tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            working_dir=work,
+            hooks=[],
+        )
+
+    assert (work / "app.py").read_text(encoding="utf-8") == "user_edit\n"
+    assert not (
+        paths.get_artifacts_dir(tasks_file, "t2") / "attempt-1.patch"
+    ).exists()
+    cancelled_task = persistence.load_tasks(tasks_file).tasks[0]
+    assert cancelled_task.status == models.TaskStatus.CANCELLED
+    assert cancelled_task.pre_tree is None
+
+
+def test_finalizing_task_snapshots_runner_tree_and_once_restores_on_reject(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    t0 = snapshots.snapshot_tree(tasks_file, work)
+    assert t0 is not None
+
+    (work / "app.py").write_text("resumed_v2\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Resumed finalizing",
+                    status=models.TaskStatus.PENDING,
+                    attempts=0,
+                    pre_tree=t0,
+                    runner_tree=None,
+                    progress=["completed before crash"],
+                    requested_status=models.TaskStatus.COMPLETED,
+                )
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["testing"]
+            ),
+        ),
+    )
+
+    seen_scopes: list[str | None] = []
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        t = persistence.load_tasks(t_file).tasks[0]
+        assert t.runner_tree is not None
+        lifecycle.reject_task(t_file, t_id, "broken")
+        return 0, "", ""
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch(
+            "lemming.prompts.prepare_hook_prompt",
+            side_effect=lambda h, d, t, tf, scope=None: (
+                seen_scopes.append(scope) or "Prompt"
+            ),
+        ),
+        mock.patch("time.sleep", return_value=None),
+    ):
+        completed = run_loop(
+            tasks_file,
+            verbose=False,
+            retry_delay=0,
+            yolo=True,
+            no_defaults=False,
+            runner_args=(),
+            working_dir=work,
+            once=True,
+        )
+
+    assert completed is False
+    assert seen_scopes and seen_scopes[0] is not None
+    assert "- app.py" in seen_scopes[0]
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+    final_patch = (
+        paths.get_artifacts_dir(tasks_file, "t1") / "attempt-final.patch"
+    )
+    assert final_patch.is_file()
+    assert "+resumed_v2" in final_patch.read_text(encoding="utf-8")
+
+    # Reset during _process_finalizing_task triggers deferred prune.
+    (work / "app.py").write_text("v2\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Finalizing reset",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    attempts=1,
+                    pre_tree=t0,
+                    progress=["failed"],
+                    requested_status=models.TaskStatus.FAILED,
+                )
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["roadmap"]
+            ),
+        ),
+    )
+    pruned: list[set[str]] = []
+    monkeypatch.setattr(
+        snapshots,
+        "prune_snapshots",
+        lambda tf, keep: pruned.append(set(keep)),
+    )
+
+    def fake_reset(cmd, tf, tid, verbose, **kw):
+        lifecycle.reset_task(tf, tid)
+        return 0, "", ""
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_reset),
+        mock.patch(
+            "lemming.prompts.prepare_hook_prompt", return_value="Prompt"
+        ),
+    ):
+        _process_finalizing_task(
+            tasks_file=tasks_file,
+            task_id="t1",
+            requested_status=models.TaskStatus.FAILED,
+            runner_name="agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["roadmap"],
+            working_dir=work,
+            time_limit=1,
+        )
+
+    assert len(pruned) == 1
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+
+    # Cancelled during _process_finalizing_task restores pre_tree.
+    (work / "app.py").write_text("v2\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Finalizing cancel",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    attempts=1,
+                    pre_tree=t0,
+                    progress=["done"],
+                    requested_status=models.TaskStatus.COMPLETED,
+                )
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["roadmap"]
+            ),
+        ),
+    )
+
+    def cancel_status_only(cmd, tf, tid, verbose, **kw):
+        with persistence.lock_tasks(tf):
+            d = persistence.load_tasks(tf)
+            d.tasks[0].status = models.TaskStatus.CANCELLED
+            persistence.save_tasks(tf, d)
+        return 0, "", ""
+
+    with (
+        mock.patch(
+            "lemming.runner.run_with_heartbeat", side_effect=cancel_status_only
+        ),
+        mock.patch(
+            "lemming.prompts.prepare_hook_prompt", return_value="Prompt"
+        ),
+    ):
+        _process_finalizing_task(
+            tasks_file=tasks_file,
+            task_id="t1",
+            requested_status=models.TaskStatus.COMPLETED,
+            runner_name="agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["roadmap"],
+            working_dir=work,
+            time_limit=1,
+        )
+
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.pre_tree is None
+    assert task.runner_tree is None
+
+
+def test_uncounted_runner_failure_preserves_prior_rejected_attempt_tree(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    (work / "b.py").write_text("b1\n", encoding="utf-8")
+    t0 = snapshots.snapshot_tree(tasks_file, work)
+    assert t0 is not None
+
+    # Attempt 1 wrote attempt-1.patch and left rejected changes on disk (t1).
+    (work / "a.py").write_text("attempt1_a\n", encoding="utf-8")
+    t1 = snapshots.snapshot_tree(tasks_file, work)
+    assert t1 is not None
+    lifecycle.write_patch_artifact(tasks_file, "t1", "attempt-1.patch", t0, t1)
+
+    # Attempt 2 starts from t1, mutates b.py, and fails with exit code 1.
+    (work / "b.py").write_text("crashed_b\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Uncounted fail",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    attempts=2,
+                    pre_tree=t0,
+                    runner_tree=None,
+                )
+            ],
+            config=models.RoadmapConfig(retries=3, runner="agy", hooks=[]),
+        ),
+    )
+
+    should_abort = _handle_runner_exit(
+        tasks_file=tasks_file,
+        task_id="t1",
+        returncode=1,
+        stdout="",
+        stderr="",
+        retries=3,
+        retry_delay=0,
+        runner_name="agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        active_hooks=[],
+        working_dir=work,
+        time_limit=1,
+        retry_runner_failures=False,
+        attempt_pre_tree=t1,
+    )
+
+    assert should_abort is True
+    # Workspace is restored to t1 (Attempt 1's rejected state), not t0!
+    assert (work / "a.py").read_text(encoding="utf-8") == "attempt1_a\n"
+    assert (work / "b.py").read_text(encoding="utf-8") == "b1\n"
+    artifacts_dir = paths.get_artifacts_dir(tasks_file, "t1")
+    patch1 = (artifacts_dir / "attempt-1.patch").read_text(encoding="utf-8")
+    patch2 = (artifacts_dir / "attempt-2.patch").read_text(encoding="utf-8")
+    assert "+crashed_b" not in patch1
+    assert "+crashed_b" in patch2
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.attempts == 1
+    assert task.runner_tree == t1
+
+    # If the runner explicitly called `lemming fail` (requested_status=FAILED)
+    # before exiting 1, it is a counted finalizing failure, not uncounted.
+    (work / "b.py").write_text("explicit_fail_b\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Explicit fail then exit 1",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    attempts=2,
+                    pre_tree=t0,
+                    runner_tree=t1,
+                    progress=["gave up"],
+                    requested_status=models.TaskStatus.FAILED,
+                )
+            ],
+            config=models.RoadmapConfig(retries=3, runner="agy", hooks=[]),
+        ),
+    )
+
+    should_abort_explicit = _handle_runner_exit(
+        tasks_file=tasks_file,
+        task_id="t1",
+        returncode=1,
+        stdout="",
+        stderr="",
+        retries=3,
+        retry_delay=0,
+        runner_name="agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        active_hooks=[],
+        working_dir=work,
+        time_limit=1,
+        retry_runner_failures=False,
+        attempt_pre_tree=t1,
+    )
+
+    assert should_abort_explicit is False
+    assert (work / "a.py").read_text(encoding="utf-8") == "v1\n"
+    assert (work / "b.py").read_text(encoding="utf-8") == "b1\n"
+    assert not (artifacts_dir / "attempt-3.patch").exists()
+    explicit_task = persistence.load_tasks(tasks_file).tasks[0]
+    assert explicit_task.status == models.TaskStatus.FAILED
+    assert explicit_task.attempts == 2
+    assert explicit_task.runner_tree is None
+
+
+def test_reset_task_in_hook_defers_prune_until_after_run_hooks(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    t0 = snapshots.snapshot_tree(tasks_file, work)
+    assert t0 is not None
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Reset in hook",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    attempts=1,
+                    pre_tree=t0,
+                    progress=["failed"],
+                    requested_status=models.TaskStatus.FAILED,
+                )
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["roadmap"]
+            ),
+        ),
+    )
+
+    events: list[str] = []
+    orig_prune = snapshots.prune_snapshots
+
+    def tracking_prune(t_file, keep):
+        events.append("prune")
+        return orig_prune(t_file, keep)
+
+    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
+        events.append("hook_start")
+        lifecycle.reset_task(t_file, t_id)
+        assert "prune" not in events
+        # Hook failure after reset_task still restores intact hook_pre_tree.
+        (work / "app.py").write_text("hook_dirty\n", encoding="utf-8")
+        events.append("hook_end")
+        return 1, "", ""
+
+    monkeypatch.setattr(snapshots, "prune_snapshots", tracking_prune)
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch(
+            "lemming.prompts.prepare_hook_prompt", return_value="Prompt"
+        ),
+    ):
+        should_abort = _handle_runner_exit(
+            tasks_file=tasks_file,
+            task_id="t1",
+            returncode=0,
+            stdout="",
+            stderr="",
+            retries=2,
+            retry_delay=0,
+            runner_name="agy",
+            yolo=True,
+            runner_args=(),
+            no_defaults=False,
+            verbose=False,
+            active_hooks=["roadmap"],
+            working_dir=work,
+            time_limit=1,
+            attempt_pre_tree=t0,
+        )
+
+    assert should_abort is False
+    assert events == ["hook_start", "hook_end", "prune"]
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"

@@ -574,3 +574,142 @@ def test_record_resolved_command_ignores_unknown_task(tmp_path):
 
     data = persistence.load_tasks(tasks_file)
     assert data.tasks[0].resolved_command is None
+
+
+def test_cancel_in_progress_task_saves_patch_and_restores_pre_tree(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    assert pre_tree is not None
+
+    task = models.Task(
+        id="cancel12",
+        description="In-progress task",
+        status=models.TaskStatus.IN_PROGRESS,
+        pre_tree=pre_tree,
+    )
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    (work / "a.py").write_text("dirty\n", encoding="utf-8")
+    (work / "stray.py").write_text("stray\n", encoding="utf-8")
+
+    assert lifecycle.cancel_task(tasks_file, "cancel12", working_dir=work)
+
+    assert (work / "a.py").read_text(encoding="utf-8") == "v1\n"
+    assert not (work / "stray.py").exists()
+    patch_file = (
+        paths.get_artifacts_dir(tasks_file, "cancel12") / "cancelled.patch"
+    )
+    assert patch_file.is_file()
+    assert "+dirty" in patch_file.read_text(encoding="utf-8")
+
+
+def test_cancel_pending_rejected_task_by_prefix_restores_and_clears_trees(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    assert pre_tree is not None
+
+    (work / "a.py").write_text("rejected_v2\n", encoding="utf-8")
+    runner_tree = snapshots.snapshot_tree(tasks_file, work)
+    assert runner_tree is not None
+
+    task = models.Task(
+        id="cancel99",
+        description="Pending after hook rejection",
+        status=models.TaskStatus.PENDING,
+        pre_tree=pre_tree,
+        runner_tree=runner_tree,
+        hook_trees={"testing": [runner_tree, runner_tree]},
+    )
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    assert lifecycle.cancel_task(tasks_file, "cancel", working_dir=work)
+
+    assert (work / "a.py").read_text(encoding="utf-8") == "v1\n"
+    patch_file = (
+        paths.get_artifacts_dir(tasks_file, "cancel99") / "cancelled.patch"
+    )
+    assert patch_file.is_file()
+    assert "+rejected_v2" in patch_file.read_text(encoding="utf-8")
+    updated = persistence.load_tasks(tasks_file).tasks[0]
+    assert updated.status == models.TaskStatus.CANCELLED
+    assert updated.pre_tree is None
+    assert updated.runner_tree is None
+    assert updated.hook_trees is None
+
+
+def test_cancel_task_skips_restore_if_orchestrator_restored_during_kill(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    assert pre_tree is not None
+
+    (work / "a.py").write_text("dirty\n", encoding="utf-8")
+    task = models.Task(
+        id="cancel88",
+        description="Race task",
+        status=models.TaskStatus.IN_PROGRESS,
+        pid=99999,
+        pre_tree=pre_tree,
+    )
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    def fake_kill(_pid):
+        mid = persistence.load_tasks(tasks_file).tasks[0]
+        assert mid.status == models.TaskStatus.CANCELLED
+        assert mid.pre_tree == pre_tree
+        # Simulate _handle_runner_exit restoring and clearing pre_tree first.
+        with persistence.lock_tasks(tasks_file):
+            data = persistence.load_tasks(tasks_file)
+            data.tasks[0].pre_tree = None
+            persistence.save_tasks(tasks_file, data)
+        (work / "a.py").write_text("user_post_restore_edit\n", encoding="utf-8")
+
+    monkeypatch.setattr(lifecycle, "_kill_pid_tree", fake_kill)
+
+    assert lifecycle.cancel_task(tasks_file, "cancel88", working_dir=work)
+    assert (work / "a.py").read_text(
+        encoding="utf-8"
+    ) == "user_post_restore_edit\n"
+
+
+def test_reset_task_skips_prune_when_task_was_in_progress(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    task = models.Task(
+        id="reset77",
+        description="In progress hook reset",
+        status=models.TaskStatus.IN_PROGRESS,
+        pre_tree="aaa",
+    )
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    pruned: list[set[str]] = []
+    monkeypatch.setattr(
+        snapshots, "prune_snapshots", lambda _tf, keep: pruned.append(keep)
+    )
+
+    assert lifecycle.reset_task(tasks_file, "reset77")
+    assert pruned == []

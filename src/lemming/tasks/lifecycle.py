@@ -420,6 +420,24 @@ def reset_task_logs(tasks_file: pathlib.Path, task_id: str) -> None:
         log_file.unlink()
 
 
+def write_patch_artifact(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    filename: str,
+    pre_tree: str | None,
+    post_tree: str | None,
+) -> None:
+    """Writes the diff between two trees into the task's artifacts directory."""
+    if not pre_tree or not post_tree or pre_tree == post_tree:
+        return
+    patch_text = snapshots.diff_trees(tasks_file, pre_tree, post_tree)
+    if not patch_text:
+        return
+    artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / filename).write_text(patch_text, encoding="utf-8")
+
+
 def _kill_pid_tree(pid: int) -> None:
     """Kills a process and its entire process group by PID.
 
@@ -463,12 +481,18 @@ def _kill_pid_tree(pid: int) -> None:
         pass
 
 
-def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
+def cancel_task(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    working_dir: pathlib.Path | None = None,
+) -> bool:
     """Mark a task cancelled and stop its runner process, if active.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task to cancel.
+        working_dir: Optional workspace directory to restore when cancelling
+            an in-progress task.
 
     Returns:
         True if the task was found and cancellation was attempted, False
@@ -477,17 +501,28 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
     # Update the task state first and release the lock: the kill below can
     # wait out a grace period and must not stall heartbeats or readers.
     task_pid = None
+    was_in_progress = False
+    pre_tree = None
+    prev_runner_tree = None
+    resolved_id = task_id
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
-        task = next((t for t in data.tasks if t.id == task_id), None)
+        task = next(
+            (t for t in data.tasks if t.id == task_id),
+            None,
+        ) or next(
+            (t for t in data.tasks if t.id.startswith(task_id)),
+            None,
+        )
         if not task:
             return False
 
+        resolved_id = task.id
+        was_in_progress = task.status == models.TaskStatus.IN_PROGRESS
+        pre_tree = task.pre_tree
+        prev_runner_tree = task.runner_tree
         loop_pid = persistence.get_loop_pid(tasks_file)
-        if (
-            task.status == models.TaskStatus.IN_PROGRESS
-            and task.pid != loop_pid
-        ):
+        if was_in_progress and task.pid != loop_pid:
             task_pid = task.pid
 
         update_run_time(task)
@@ -497,11 +532,49 @@ def cancel_task(tasks_file: pathlib.Path, task_id: str) -> bool:
         task.requested_status = None
         task.active_execution_component = None
         task.active_execution_started_at = None
+        task.runner_tree = None
+        task.hook_trees = None
+        if not ((was_in_progress or prev_runner_tree is not None) and pre_tree):
+            task.pre_tree = None
+            task.pre_head = None
 
         persistence.save_tasks(tasks_file, data)
 
     if task_pid:
         _kill_pid_tree(task_pid)
+
+    if (was_in_progress or prev_runner_tree is not None) and pre_tree:
+        resolved_dir = working_dir or paths.get_working_dir(tasks_file)
+        with persistence.lock_tasks(tasks_file):
+            data = persistence.load_tasks(tasks_file)
+            current = next((t for t in data.tasks if t.id == resolved_id), None)
+            if current is not None and current.pre_tree is not None:
+                restore_target = current.pre_tree
+                restore_head = current.pre_head
+                current_tree = snapshots.snapshot_tree(tasks_file, resolved_dir)
+                write_patch_artifact(
+                    tasks_file,
+                    resolved_id,
+                    "cancelled.patch",
+                    restore_target,
+                    current_tree,
+                )
+                if current_tree != restore_target or (
+                    restore_head is not None
+                    and snapshots.head_commit(resolved_dir) != restore_head
+                ):
+                    snapshots.restore_tree(
+                        tasks_file,
+                        resolved_dir,
+                        restore_target,
+                        current_tree=current_tree,
+                        target_head=restore_head,
+                    )
+                current.pre_tree = None
+                current.pre_head = None
+                current.runner_tree = None
+                current.hook_trees = None
+                persistence.save_tasks(tasks_file, data)
 
     return True
 

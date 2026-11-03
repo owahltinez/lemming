@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from unittest import mock
 
@@ -312,9 +313,9 @@ def test_exec_retries_transient_runner_failures(workspace, first_result):
 
 def test_exec_retries_a_real_runner_process(workspace):
     """The CLI preserves task state across actual subprocess launches."""
-    fake_runner = workspace / "flaky_runner.py"
+    fake_runner = workspace.parent / "flaky_runner.py"
     fake_runner.write_text(
-        "#!/usr/bin/env python3\n"
+        f"#!{sys.executable}\n"
         "import json\n"
         "import os\n"
         "import pathlib\n"
@@ -461,6 +462,7 @@ def repo(workspace):
     _git(workspace, "init", "-q", "-b", "main")
     _git(workspace, "config", "user.email", "test@example.com")
     _git(workspace, "config", "user.name", "Test")
+    _git(workspace, "config", "commit.gpgsign", "false")
     (workspace / "committed.py").write_text("x = 1\n")
     _git(workspace, "add", "committed.py")
     _git(workspace, "commit", "-qm", "initial")
@@ -570,10 +572,17 @@ def test_review_rejects_an_unresolvable_scope(repo):
 
 def test_a_task_can_be_followed_by_reviews(repo):
     """Doing the work and gating it is one invocation, in order."""
+    (repo / "committed.py").write_text("preexisting_dirty = True\n")
     headers = []
+    review_prompts = []
 
     def record(cmd, tasks_file, task_id, *args, **kwargs):
-        headers.append(kwargs.get("header"))
+        header = kwargs.get("header")
+        headers.append(header)
+        if header == "Task Runner":
+            (repo / "pagination.py").write_text("page = 1\n")
+        else:
+            review_prompts.append(cmd[-1])
         return _finish("Done.")(cmd, tasks_file, task_id, *args, **kwargs)
 
     with mock.patch("lemming.runner.run_with_heartbeat", record):
@@ -582,6 +591,9 @@ def test_a_task_can_be_followed_by_reviews(repo):
         )
 
     assert headers == ["Task Runner", "Hook: readability"]
+    assert len(review_prompts) == 1
+    assert "- pagination.py" in review_prompts[0]
+    assert "- committed.py" not in review_prompts[0]
 
 
 def test_a_failing_review_does_not_become_a_task_run(repo):

@@ -2,7 +2,7 @@ import pathlib
 
 import pytest
 
-from lemming import models, paths, persistence, prompts
+from lemming import models, paths, persistence, prompts, snapshots
 
 
 def test_load_prompt():
@@ -618,3 +618,52 @@ def test_review_hooks_take_their_breadth_from_the_scope(hook_name):
 
     assert "{{scope}}" in prompt
     assert "in the last task" not in prompt
+
+
+def test_format_task_block_and_hook_prompt_include_diff_summary(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    tasks_file = tmp_path / "tasks.yml"
+    local_hooks_dir = tmp_path / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    (local_hooks_dir / "test-hook.md").write_text(
+        "Roadmap:\n{{roadmap}}\nFinished:\n{{finished_task}}"
+    )
+
+    done_with_diff = models.Task(
+        id="t1",
+        description="Task 1",
+        status=models.TaskStatus.COMPLETED,
+        diff_summary="1 file (+3/-1): src/app.py (+3/-1)",
+    )
+    done_no_diff = models.Task(
+        id="t2",
+        description="Task 2",
+        status=models.TaskStatus.COMPLETED,
+    )
+    current = models.Task(
+        id="t3",
+        description="Task 3",
+        status=models.TaskStatus.IN_PROGRESS,
+        requested_status=models.TaskStatus.COMPLETED,
+    )
+    data = models.Roadmap(tasks=[done_with_diff, done_no_diff, current])
+
+    hook_prompt = prompts.prepare_hook_prompt(
+        "test-hook", data, current, tasks_file
+    )
+    assert "  Files: 1 file (+3/-1): src/app.py (+3/-1)\n" in hook_prompt
+    assert hook_prompt.count("  Files:") == 1
+    assert "Changes: 0 files changed\n" in hook_prompt
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    current.pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v1\nv2\n", encoding="utf-8")
+    current.runner_tree = snapshots.snapshot_tree(tasks_file, work)
+    hook_prompt_with_changes = prompts.prepare_hook_prompt(
+        "test-hook", data, current, tasks_file
+    )
+    assert "Changes: 1 file (+1/-0): a.py (+1/-0)\n" in hook_prompt_with_changes
