@@ -95,10 +95,17 @@ lemming --tasks-file <path> reject <taskid> '<reason>'
 A rejection only applies to a task that is finalizing as completed, and it
 does not change the task's status on the spot. The remaining hooks still run
 and see the task as `REJECTED` with the reason, so the roadmap hook can tell
-a rejected task from a finished one. Once every hook has run, the task is
-reverted to pending with its attempt count intact, exactly as it is when a
-hook process fails, and the reason is left in its progress so the next
-attempt starts with the diagnosis.
+a rejected task from a finished one. Once every hook has run, Lemming saves the
+rejected attempt's diff as an `attempt-<N>.patch` artifact, restores the
+workspace to the task's `pre_tree`, and reverts the task to pending with its
+attempt count intact — just as it does when a hook process fails. The rejection
+reason stays in `progress` so the next attempt starts with the diagnosis.
+
+Each hook that runs is also bracketed by its own shadow Git snapshot pair in
+`hook_trees`. If an individual hook process crashes or exits non-zero, its own
+workspace edits are rolled back before the task attempt is reverted. On a
+completed task, you can inspect or undo a single hook's edits with
+`lemming diff <id> --hook <name>` and `lemming rollback <id> --hook <name>`.
 
 Under `lemming exec` there is no second attempt: the run ends on the first
 rejection, and under `lemming run` a rejection on the task's final attempt

@@ -79,10 +79,10 @@ lemming run
 lemming run -- --model claude-3-5-sonnet
 ```
 
-The loop runs every task in one shared workspace, and the orchestrator never
-branches or commits on your behalf. Give the whole run its own branch or
-worktree first if you want to be able to throw it away — see
-[docs/WORKSPACE.md](docs/WORKSPACE.md).
+The loop runs every task in one shared workspace, snapshotting the working tree
+in an isolated shadow Git repository before and after each task and hook without
+touching your `.git` history. Give the whole run its own branch or worktree
+first when working in parallel — see [docs/WORKSPACE.md](docs/WORKSPACE.md).
 
 ---
 
@@ -229,9 +229,11 @@ loops through each pending task:
     `lemming complete` or `lemming fail`. Agents can also schedule new tasks
     with `lemming add`, breaking down complex work into smaller steps that
     Lemming will pick up automatically.
-4.  **Retry or advance**: On failure, Lemming retries the task up to the
-    configured roadmap limit, with accumulated progress as context so the agent
-    learns from previous attempts. On success, it moves to the next task.
+4.  **Retry or advance**: On failure, timeout, or cancellation, Lemming saves
+    the discarded workspace diff as an `attempt-<N>.patch` artifact, restores
+    the working tree to the task's pre-run snapshot, and retries up to the
+    configured limit with accumulated progress as context. On success, it moves
+    to the next task.
 5.  **Orchestration**: After each task, Lemming can run one or more
     **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the
     results and adapt the roadmap if needed. Hooks are enabled by default but
@@ -414,8 +416,22 @@ These come before the subcommand and apply to all of them.
 
 - **`complete <id>`**: Mark a task as successful.
 - **`fail <id>`**: Mark a task as a terminal failure (will not be retried).
-- **`cancel <id>`**: Stop an in-progress task (kills the runner process).
+- **`reject <id> <reason>`**: Reject a finalizing task's completion from a
+  review hook, sending it back for a retry.
+- **`cancel <id>`**: Stop an in-progress task (kills the runner process and
+  restores its pre-run workspace snapshot).
 - **`reset <id>`**: Clear attempts and progress to start a task fresh.
+- **`diff [<id>]`**: Print the workspace diff captured for a task (defaults to
+  the active or most recent snapshotted task).
+  - `--stat`: Show diffstat summary instead of the full patch.
+  - `--hook <name>`: Show only the diff introduced by a specific post-run hook.
+- **`rollback <id>`**: Revert a completed task's workspace changes and reset
+  `<id>` and subsequent tasks to pending (requires an idle loop and a clean
+  workspace).
+  - `--only`: Revert only `<id>`'s patch in place (3-way reverse apply) and
+    reset only `<id>`.
+  - `--hook <name>`: Revert only the changes made by a specific post-run hook,
+    keeping the task completed.
 - Superseded tasks remain visible as non-failing history; replacement tasks link
   back through their parent task ID.
 - **`logs [<id>]`**: Print a task's execution log to stdout, including retained
