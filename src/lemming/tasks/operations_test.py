@@ -462,3 +462,615 @@ def test_update_goal(tmp_path):
     operations.update_goal(tasks_file, "new goal")
     data = persistence.load_tasks(tasks_file)
     assert data.goal == "new goal"
+
+
+def test_rollback_task_rewinds_workspace_and_subsequent_started_tasks(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("v0\n", encoding="utf-8")
+    t1_pre = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_pre is not None
+
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    (work / "b.py").write_text("b1\n", encoding="utf-8")
+    t1_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_post is not None
+
+    (work / "c.py").write_text("c1\n", encoding="utf-8")
+    t2_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t2_post is not None
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t0",
+                    description="Earlier",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=5.0,
+                    attempts=1,
+                    progress=["done 0"],
+                    pre_tree=t1_pre,
+                    post_tree=t1_pre,
+                ),
+                models.Task(
+                    id="t1",
+                    description="First",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=10.0,
+                    attempts=1,
+                    progress=["done 1"],
+                    pre_tree=t1_pre,
+                    post_tree=t1_post,
+                    diff_summary="2 files (+2/-1)",
+                ),
+                models.Task(
+                    id="t2",
+                    description="Second",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=20.0,
+                    attempts=2,
+                    progress=["done 2"],
+                    pre_tree=t1_post,
+                    post_tree=t2_post,
+                    diff_summary="1 file (+1/-0)",
+                ),
+                models.Task(
+                    id="t3",
+                    description="Unstarted",
+                    status=models.TaskStatus.PENDING,
+                ),
+            ]
+        ),
+    )
+
+    reset = operations.rollback_task(tasks_file, "t1", working_dir=work)
+    assert [t.id for t in reset] == ["t1", "t2"]
+    assert (work / "a.py").read_text(encoding="utf-8") == "v0\n"
+    assert not (work / "b.py").exists()
+    assert not (work / "c.py").exists()
+
+    persisted = {t.id: t for t in persistence.load_tasks(tasks_file).tasks}
+    assert persisted["t0"].status == models.TaskStatus.COMPLETED
+    for tid in ("t1", "t2"):
+        assert persisted[tid].status == models.TaskStatus.PENDING
+        assert persisted[tid].attempts == 0
+        assert persisted[tid].progress == []
+        assert persisted[tid].pre_tree is None
+        assert persisted[tid].post_tree is None
+        assert persisted[tid].diff_summary is None
+    assert persisted["t3"].status == models.TaskStatus.PENDING
+
+
+def test_rollback_task_only_reverts_target_patch(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("a0\n", encoding="utf-8")
+    (work / "b.py").write_text("b0\n", encoding="utf-8")
+    t1_pre = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_pre is not None
+
+    (work / "a.py").write_text("a1\n", encoding="utf-8")
+    t1_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_post is not None
+
+    (work / "b.py").write_text("b1\n", encoding="utf-8")
+    t2_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t2_post is not None
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="First",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=10.0,
+                    attempts=1,
+                    progress=["done 1"],
+                    pre_tree=t1_pre,
+                    post_tree=t1_post,
+                ),
+                models.Task(
+                    id="t2",
+                    description="Second",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=20.0,
+                    attempts=1,
+                    progress=["done 2"],
+                    pre_tree=t1_post,
+                    post_tree=t2_post,
+                ),
+            ]
+        ),
+    )
+
+    reset = operations.rollback_task(
+        tasks_file, "t1", only=True, working_dir=work
+    )
+    assert [t.id for t in reset] == ["t1"]
+    assert (work / "a.py").read_text(encoding="utf-8") == "a0\n"
+    assert (work / "b.py").read_text(encoding="utf-8") == "b1\n"
+
+    persisted = {t.id: t for t in persistence.load_tasks(tasks_file).tasks}
+    assert persisted["t1"].status == models.TaskStatus.PENDING
+    assert persisted["t1"].attempts == 0
+    assert persisted["t1"].progress == []
+    assert persisted["t1"].pre_tree is None
+    assert persisted["t1"].post_tree is None
+    assert persisted["t2"].status == models.TaskStatus.COMPLETED
+    assert persisted["t2"].post_tree == t2_post
+
+
+def test_rollback_task_rejects_running_loop_or_missing_snapshots(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(id="no_pre", description="No pre"),
+                models.Task(
+                    id="no_post", description="No post", pre_tree="aaa"
+                ),
+            ]
+        ),
+    )
+
+    persistence.acquire_loop_lock(tasks_file)
+    try:
+        with pytest.raises(ValueError, match="loop is running"):
+            operations.rollback_task(tasks_file, "no_post")
+    finally:
+        persistence.release_loop_lock(tasks_file)
+
+    with pytest.raises(ValueError, match="Cannot combine --only and --hook"):
+        operations.rollback_task(
+            tasks_file, "no_post", only=True, hook="readability"
+        )
+
+    with pytest.raises(ValueError, match="no pre_tree"):
+        operations.rollback_task(tasks_file, "no_pre")
+
+    with pytest.raises(ValueError, match="no post_tree"):
+        operations.rollback_task(tasks_file, "no_post", only=True)
+
+    with pytest.raises(ValueError, match="no snapshot for hook 'readability'"):
+        operations.rollback_task(tasks_file, "no_post", hook="readability")
+
+
+def test_rollback_task_hook_reverts_only_hook_and_keeps_completed(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("v0\n", encoding="utf-8")
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    runner_tree = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v1\n# formatted\n", encoding="utf-8")
+    post_tree = snapshots.snapshot_tree(tasks_file, work)
+    assert pre_tree and runner_tree and post_tree
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="First",
+                    status=models.TaskStatus.COMPLETED,
+                    attempts=1,
+                    progress=["done"],
+                    pre_tree=pre_tree,
+                    runner_tree=runner_tree,
+                    post_tree=post_tree,
+                    diff_summary=snapshots.summarize_diff(
+                        tasks_file, pre_tree, post_tree
+                    ),
+                    hook_trees={"readability": [runner_tree, post_tree]},
+                )
+            ]
+        ),
+    )
+
+    affected = operations.rollback_task(
+        tasks_file, "t1", hook="readability", working_dir=work
+    )
+    assert [t.id for t in affected] == ["t1"]
+    assert (work / "a.py").read_text(encoding="utf-8") == "v1\n"
+
+    updated = persistence.load_tasks(tasks_file).tasks[0]
+    assert updated.status == models.TaskStatus.COMPLETED
+    assert updated.attempts == 1
+    assert updated.hook_trees is None
+    assert updated.post_tree == runner_tree
+    assert updated.diff_summary == "1 file (+1/-1): a.py (+1/-1)"
+
+
+def test_rollback_task_hook_does_not_leak_subsequent_task_changes(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("v0\n", encoding="utf-8")
+    t1_pre = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    t1_runner = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v1\n# formatted\n", encoding="utf-8")
+    t1_post = snapshots.snapshot_tree(tasks_file, work)
+    (work / "b.py").write_text("task2 work\n", encoding="utf-8")
+    t2_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_pre and t1_runner and t1_post and t2_post
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="First",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=10.0,
+                    attempts=1,
+                    progress=["done 1"],
+                    pre_tree=t1_pre,
+                    runner_tree=t1_runner,
+                    post_tree=t1_post,
+                    diff_summary=snapshots.summarize_diff(
+                        tasks_file, t1_pre, t1_post
+                    ),
+                    hook_trees={"readability": [t1_runner, t1_post]},
+                ),
+                models.Task(
+                    id="t2",
+                    description="Second",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=20.0,
+                    attempts=1,
+                    progress=["done 2"],
+                    pre_tree=t1_post,
+                    runner_tree=t2_post,
+                    post_tree=t2_post,
+                    diff_summary=snapshots.summarize_diff(
+                        tasks_file, t1_post, t2_post
+                    ),
+                ),
+            ]
+        ),
+    )
+
+    operations.rollback_task(
+        tasks_file, "t1", hook="readability", working_dir=work
+    )
+    assert (work / "a.py").read_text(encoding="utf-8") == "v1\n"
+    assert (work / "b.py").read_text(encoding="utf-8") == "task2 work\n"
+
+    updated_t1 = persistence.load_tasks(tasks_file).tasks[0]
+    assert updated_t1.post_tree == t1_runner
+    assert updated_t1.diff_summary == "1 file (+1/-1): a.py (+1/-1)"
+    assert "b.py" not in (updated_t1.diff_summary or "")
+
+
+def test_rollback_task_places_reset_tasks_before_unstarted_pending_tasks(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("v0\n", encoding="utf-8")
+    t1_pre = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    t1_post = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v2\n", encoding="utf-8")
+    t2_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_pre and t1_post and t2_post
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="First",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=10.0,
+                    completed_at=15.0,
+                    attempts=1,
+                    progress=["done 1"],
+                    pre_tree=t1_pre,
+                    post_tree=t1_post,
+                ),
+                models.Task(
+                    id="t2",
+                    description="Second",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=20.0,
+                    completed_at=25.0,
+                    attempts=1,
+                    progress=["done 2"],
+                    pre_tree=t1_post,
+                    post_tree=t2_post,
+                ),
+                models.Task(
+                    id="t_cancelled_pending",
+                    description="Cancelled before ever starting",
+                    status=models.TaskStatus.CANCELLED,
+                    completed_at=30.0,
+                ),
+            ]
+        ),
+    )
+
+    with patch.object(lifecycle, "generate_task_id", return_value="t3"):
+        operations.add_task(tasks_file, "Added later")
+
+    before_ids = [t.id for t in persistence.load_tasks(tasks_file).tasks]
+    assert before_ids == ["t3", "t1", "t2", "t_cancelled_pending"]
+
+    log1 = paths.get_log_file(tasks_file, "t1")
+    log1.write_text("log 1", encoding="utf-8")
+
+    reset = operations.rollback_task(tasks_file, "t1", working_dir=work)
+    assert [t.id for t in reset] == ["t1", "t2"]
+    assert not log1.exists()
+
+    after_tasks = persistence.load_tasks(tasks_file).tasks
+    assert [t.id for t in after_tasks] == [
+        "t1",
+        "t2",
+        "t3",
+        "t_cancelled_pending",
+    ]
+    assert after_tasks[3].status == models.TaskStatus.CANCELLED
+    next_up = queries.get_pending_task(persistence.load_tasks(tasks_file))
+    assert next_up is not None and next_up.id == "t1"
+
+
+def test_rollback_task_refuses_dirty_workspace_since_latest_snapshot(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("v0\n", encoding="utf-8")
+    t1_pre = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    t1_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_pre and t1_post
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="First",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=10.0,
+                    attempts=1,
+                    progress=["done"],
+                    pre_tree=t1_pre,
+                    post_tree=t1_post,
+                )
+            ]
+        ),
+    )
+
+    (work / "a.py").write_text("uncommitted user edit\n", encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Working directory has uncommitted changes since the last task "
+            "snapshot"
+        ),
+    ):
+        operations.rollback_task(tasks_file, "t1", working_dir=work)
+
+    assert (work / "a.py").read_text(
+        encoding="utf-8"
+    ) == "uncommitted user edit\n"
+    persisted = persistence.load_tasks(tasks_file).tasks[0]
+    assert persisted.status == models.TaskStatus.COMPLETED
+    assert persisted.post_tree == t1_post
+
+    # Also refuses dirty workspace when runner_tree/post_tree were cleared.
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="First failed",
+                    status=models.TaskStatus.FAILED,
+                    started_at=10.0,
+                    attempts=3,
+                    pre_tree=t1_pre,
+                )
+            ]
+        ),
+    )
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Working directory has uncommitted changes since the last task "
+            "snapshot"
+        ),
+    ):
+        operations.rollback_task(tasks_file, "t1", working_dir=work)
+
+
+def test_rollback_task_multi_hook_updates_chained_hooks_and_post_tree(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("v0\n", encoding="utf-8")
+    (work / "b.py").write_text("b0\n", encoding="utf-8")
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+
+    (work / "a.py").write_text("v1\n", encoding="utf-8")
+    runner_tree = snapshots.snapshot_tree(tasks_file, work)
+
+    (work / "a.py").write_text("v1\n# formatted\n", encoding="utf-8")
+    h1_post = snapshots.snapshot_tree(tasks_file, work)
+
+    (work / "b.py").write_text("b1\n", encoding="utf-8")
+    h2_post = snapshots.snapshot_tree(tasks_file, work)
+    assert pre_tree and runner_tree and h1_post and h2_post
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Multi-hook task",
+                    status=models.TaskStatus.COMPLETED,
+                    attempts=1,
+                    progress=["done"],
+                    pre_tree=pre_tree,
+                    runner_tree=runner_tree,
+                    post_tree=h2_post,
+                    hook_trees={
+                        "readability": [runner_tree, h1_post],
+                        "testing": [h1_post, h2_post],
+                    },
+                )
+            ]
+        ),
+    )
+
+    operations.rollback_task(
+        tasks_file, "t1", hook="readability", working_dir=work
+    )
+
+    assert (work / "a.py").read_text(encoding="utf-8") == "v1\n"
+    assert (work / "b.py").read_text(encoding="utf-8") == "b1\n"
+    after_h1 = persistence.load_tasks(tasks_file).tasks[0]
+    assert after_h1.post_tree is not None and after_h1.post_tree != h2_post
+    assert after_h1.hook_trees == {"testing": [runner_tree, after_h1.post_tree]}
+    testing_diff = snapshots.diff_trees(
+        tasks_file, *after_h1.hook_trees["testing"]
+    )
+    assert "b.py" in testing_diff
+    assert "a.py" not in testing_diff
+
+    operations.rollback_task(tasks_file, "t1", hook="testing", working_dir=work)
+    assert (work / "b.py").read_text(encoding="utf-8") == "b0\n"
+    after_h2 = persistence.load_tasks(tasks_file).tasks[0]
+    assert after_h2.post_tree == runner_tree
+    assert after_h2.hook_trees is None
+
+
+def test_rollback_task_only_repositions_target_to_pending_queue(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+
+    (work / "a.py").write_text("a0\n", encoding="utf-8")
+    (work / "b.py").write_text("b0\n", encoding="utf-8")
+    t1_pre = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.py").write_text("a1\n", encoding="utf-8")
+    t1_post = snapshots.snapshot_tree(tasks_file, work)
+    (work / "b.py").write_text("b1\n", encoding="utf-8")
+    t2_post = snapshots.snapshot_tree(tasks_file, work)
+    assert t1_pre and t1_post and t2_post
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t0_done",
+                    description="Earlier completed",
+                    status=models.TaskStatus.COMPLETED,
+                ),
+                models.Task(
+                    id="t1",
+                    description="Target completed",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=10.0,
+                    attempts=1,
+                    pre_tree=t1_pre,
+                    post_tree=t1_post,
+                ),
+                models.Task(
+                    id="t2_done",
+                    description="Later completed",
+                    status=models.TaskStatus.COMPLETED,
+                    started_at=20.0,
+                    attempts=1,
+                    pre_tree=t1_post,
+                    post_tree=t2_post,
+                ),
+            ]
+        ),
+    )
+
+    operations.rollback_task(tasks_file, "t1", only=True, working_dir=work)
+    after_ids = [t.id for t in persistence.load_tasks(tasks_file).tasks]
+    assert after_ids == ["t1", "t0_done", "t2_done"]
+
+
+def test_delete_and_update_skip_prune_snapshots_when_loop_active(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    tasks_file = tmp_path / "tasks.yml"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Done 1",
+                    status=models.TaskStatus.COMPLETED,
+                ),
+                models.Task(
+                    id="t2",
+                    description="Done 2",
+                    status=models.TaskStatus.COMPLETED,
+                ),
+            ]
+        ),
+    )
+
+    persistence.acquire_loop_lock(tasks_file)
+    try:
+        with patch(
+            "lemming.tasks.operations.snapshots.prune_snapshots"
+        ) as mock_prune:
+            operations.update_task(
+                tasks_file, "t1", status=models.TaskStatus.PENDING
+            )
+            operations.delete_tasks(tasks_file, task_id="t2", force=True)
+            mock_prune.assert_not_called()
+    finally:
+        persistence.release_loop_lock(tasks_file)

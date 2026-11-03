@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from lemming import models, paths, persistence
+from lemming import models, paths, persistence, snapshots
 from lemming.api import main
 from lemming.tasks import limits, operations, progress
 
@@ -525,10 +525,17 @@ def test_add_task_starts_loop_with_cwd(test_workspace, client):
 
 
 def test_cancel_task_endpoint(client, test_tasks):
-    with patch("lemming.tasks.lifecycle.cancel_task", return_value=True):
+    with patch(
+        "lemming.tasks.lifecycle.cancel_task", return_value=True
+    ) as mock_cancel:
         response = client.post("/api/tasks/task3/cancel")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
+        mock_cancel.assert_called_once_with(
+            test_tasks,
+            "task3",
+            working_dir=main.app.state.root,
+        )
 
     with patch("lemming.tasks.lifecycle.cancel_task", return_value=False):
         response = client.post("/api/tasks/nonexistent/cancel")
@@ -576,3 +583,114 @@ def test_add_task_rejects_outside_parent_tasks_file(client, test_tasks):
 def test_get_task_log_rejects_traversal(client, test_tasks):
     response = client.get("/api/tasks/..%2Fsecret/log")
     assert response.status_code in (400, 404)
+
+
+def test_get_task_diff_and_rollback_endpoints(client, test_tasks, monkeypatch):
+    root = main.app.state.root
+    monkeypatch.setenv("LEMMING_HOME", str(root / "lemming_home"))
+    sample = root / "sample.py"
+    sample.write_text("before\n", encoding="utf-8")
+    pre_tree = snapshots.snapshot_tree(test_tasks, root)
+    assert pre_tree is not None
+
+    sample.write_text("after\n", encoding="utf-8")
+    runner_tree = snapshots.snapshot_tree(test_tasks, root)
+    assert runner_tree is not None
+
+    sample.write_text("after\n# formatted\n", encoding="utf-8")
+    post_tree = snapshots.snapshot_tree(test_tasks, root)
+    assert post_tree is not None
+    summary = snapshots.summarize_diff(test_tasks, pre_tree, post_tree)
+
+    with persistence.lock_tasks(test_tasks):
+        data = persistence.load_tasks(test_tasks)
+        task1 = next(t for t in data.tasks if t.id == "task1")
+        task1.pre_tree = pre_tree
+        task1.runner_tree = runner_tree
+        task1.post_tree = post_tree
+        task1.diff_summary = summary
+        task1.hook_trees = {"readability": [runner_tree, post_tree]}
+        persistence.save_tasks(test_tasks, data)
+
+    diff_resp = client.get("/api/tasks/task1/diff")
+    assert diff_resp.status_code == 200
+    payload = diff_resp.json()
+    assert "-before" in payload["diff"]
+    assert "+after" in payload["diff"]
+    assert payload["summary"] == summary
+
+    hook_diff_resp = client.get(
+        "/api/tasks/task1/diff", params={"hook": "readability"}
+    )
+    assert hook_diff_resp.status_code == 200
+    assert "+# formatted" in hook_diff_resp.json()["diff"]
+    assert (
+        client.get(
+            "/api/tasks/task1/diff", params={"hook": "missing"}
+        ).status_code
+        == 404
+    )
+
+    assert client.get("/api/tasks/nonexistent/diff").status_code == 404
+
+    with patch("lemming.tasks.lifecycle.is_loop_running", return_value=True):
+        busy = client.post("/api/tasks/task1/rollback", json={"only": True})
+        assert busy.status_code == 400
+
+    with patch("lemming.tasks.lifecycle.is_loop_running", return_value=False):
+        active_task_busy = client.post(
+            "/api/tasks/task1/rollback", json={"only": True}
+        )
+        assert active_task_busy.status_code == 400
+
+        with persistence.lock_tasks(test_tasks):
+            data = persistence.load_tasks(test_tasks)
+            task3 = next(t for t in data.tasks if t.id == "task3")
+            task3.status = models.TaskStatus.PENDING
+            task3.pid = None
+            task3.last_heartbeat = None
+            persistence.save_tasks(test_tasks, data)
+
+        combo = client.post(
+            "/api/tasks/task1/rollback",
+            json={"only": True, "hook": "readability"},
+        )
+        assert combo.status_code == 400
+
+        hook_rb = client.post(
+            "/api/tasks/task1/rollback", json={"hook": "readability"}
+        )
+        assert hook_rb.status_code == 200
+        assert sample.read_text(encoding="utf-8") == "after\n"
+        task1_mid = next(
+            t
+            for t in persistence.load_tasks(test_tasks).tasks
+            if t.id == "task1"
+        )
+        assert task1_mid.status == models.TaskStatus.COMPLETED
+        assert task1_mid.hook_trees is None
+
+        rb_resp = client.post("/api/tasks/task1/rollback", json={"only": True})
+        assert rb_resp.status_code == 200
+        assert sample.read_text(encoding="utf-8") == "before\n"
+        task1_after = next(
+            t
+            for t in persistence.load_tasks(test_tasks).tasks
+            if t.id == "task1"
+        )
+        assert task1_after.status == models.TaskStatus.PENDING
+        assert task1_after.pre_tree is None
+
+        sample.write_text("unrelated dirty edit\n", encoding="utf-8")
+        with persistence.lock_tasks(test_tasks):
+            data = persistence.load_tasks(test_tasks)
+            task1 = next(t for t in data.tasks if t.id == "task1")
+            task1.status = models.TaskStatus.CANCELLED
+            task1.pre_tree = pre_tree
+            task1.runner_tree = None
+            task1.post_tree = None
+            persistence.save_tasks(test_tasks, data)
+
+        cancelled_diff = client.get("/api/tasks/task1/diff")
+        assert cancelled_diff.status_code == 200
+        assert cancelled_diff.json() == {"diff": "", "summary": None}
