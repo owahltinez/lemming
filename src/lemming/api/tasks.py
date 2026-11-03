@@ -3,7 +3,7 @@
 import fastapi
 import pydantic
 
-from .. import hooks, models, paths, persistence
+from .. import hooks, models, paths, persistence, snapshots
 from ..tasks import lifecycle, operations, queries
 from . import context, loop
 
@@ -203,7 +203,9 @@ def cancel_task_endpoint(
 ):
     """Cancel a running or pending task."""
     if lifecycle.cancel_task(
-        context.resolve_tasks_file(request.app.state, project), task_id
+        context.resolve_tasks_file(request.app.state, project),
+        task_id,
+        working_dir=context.resolve_project_dir(request.app.state, project),
     ):
         return {"status": "ok"}
     raise fastapi.HTTPException(404, "Task not found")
@@ -236,3 +238,88 @@ def get_task_log(
     except (ValueError, models.AmbiguousTaskIdError) as e:
         raise fastapi.HTTPException(400, str(e))
     return {"log": log_file.read_text(encoding="utf-8")}
+
+
+@router.get("/api/tasks/{task_id}/diff")
+def get_task_diff(
+    request: fastapi.Request,
+    task_id: str,
+    hook: str | None = None,
+    project: str | None = None,
+):
+    """Get the git diff and summary captured for a task."""
+    tasks_file = context.resolve_tasks_file(request.app.state, project)
+    working_dir = context.resolve_project_dir(request.app.state, project)
+    with persistence.read_lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+    try:
+        target = queries.resolve_task(data.tasks, task_id)
+    except models.TaskNotFoundError as e:
+        raise fastapi.HTTPException(404, str(e))
+    except models.AmbiguousTaskIdError as e:
+        raise fastapi.HTTPException(400, str(e))
+
+    if hook:
+        pair = (target.hook_trees or {}).get(hook)
+        if not pair or len(pair) != 2 or not pair[0] or not pair[1]:
+            raise fastapi.HTTPException(
+                404, f"Task {target.id} has no snapshot for hook '{hook}'"
+            )
+        h_pre, h_post = pair
+        return {
+            "diff": snapshots.diff_trees(tasks_file, h_pre, h_post),
+            "summary": snapshots.summarize_diff(tasks_file, h_pre, h_post),
+        }
+
+    if not target.pre_tree:
+        return {"diff": "", "summary": target.diff_summary}
+
+    end_tree = target.post_tree or target.runner_tree
+    if not end_tree and target.status == models.TaskStatus.IN_PROGRESS:
+        end_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+    diff_text = (
+        snapshots.diff_trees(tasks_file, target.pre_tree, end_tree)
+        if end_tree
+        else ""
+    )
+    summary = target.diff_summary or (
+        snapshots.summarize_diff(tasks_file, target.pre_tree, end_tree)
+        if end_tree
+        else None
+    )
+    return {"diff": diff_text, "summary": summary}
+
+
+class RollbackTaskRequest(pydantic.BaseModel):
+    """Request body for rolling back a task."""
+
+    only: bool = False
+    hook: str | None = None
+
+
+@router.post("/api/tasks/{task_id}/rollback")
+def rollback_task_endpoint(
+    request: fastapi.Request,
+    task_id: str,
+    body: RollbackTaskRequest = fastapi.Body(
+        default_factory=RollbackTaskRequest
+    ),
+    hook: str | None = None,
+    project: str | None = None,
+):
+    """Roll back workspace changes for a task and reset state to pending."""
+    tasks_file = context.resolve_tasks_file(request.app.state, project)
+    working_dir = context.resolve_project_dir(request.app.state, project)
+    try:
+        reset_tasks = operations.rollback_task(
+            tasks_file,
+            task_id,
+            only=body.only,
+            hook=hook if hook is not None else body.hook,
+            working_dir=working_dir,
+        )
+    except models.TaskNotFoundError as e:
+        raise fastapi.HTTPException(404, str(e))
+    except ValueError as e:
+        raise fastapi.HTTPException(400, str(e))
+    return {"status": "ok", "tasks": reset_tasks}

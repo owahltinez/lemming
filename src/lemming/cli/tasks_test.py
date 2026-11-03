@@ -8,7 +8,7 @@ from unittest import mock
 
 import click.testing
 
-from lemming import models, paths, persistence
+from lemming import models, paths, persistence, snapshots
 from lemming.cli import main as cli
 from lemming.tasks import lifecycle, limits, operations
 
@@ -371,12 +371,141 @@ class TestCLITasks(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Task 12345678 cancelled.", result.output)
 
+        with mock.patch(
+            "lemming.tasks.lifecycle.cancel_task", return_value=True
+        ) as mock_cancel:
+            res = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["cancel", "12345678"]
+            )
+            self.assertEqual(res.exit_code, 0)
+            mock_cancel.assert_called_once_with(
+                self.test_tasks_file,
+                "12345678",
+                working_dir=None,
+            )
+
     def test_reset_command(self):
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["reset", "12345678"]
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("attempts, progress, and logs cleared", result.output)
+
+    def test_status_displays_diff_summary(self):
+        summary = "1 file (+2/-1): a.py (+2/-1)"
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.COMPLETED
+            data.tasks[0].diff_summary = summary
+            persistence.save_tasks(self.test_tasks_file, data)
+
+        overview = self.cli_runner.invoke(cli.cli, self.base_args + ["status"])
+        self.assertEqual(overview.exit_code, 0)
+        self.assertIn(f"    Changes: {summary}", overview.output)
+
+        detail = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", "1234"]
+        )
+        self.assertEqual(detail.exit_code, 0)
+        self.assertIn(f"Changes:       {summary}", detail.output)
+
+    def test_diff_and_rollback_commands(self):
+        work = pathlib.Path(self.test_dir)
+        with mock.patch.dict(os.environ, {"LEMMING_HOME": str(work / "home")}):
+            target_file = work / "hello.py"
+            target_file.write_text("v1\n", encoding="utf-8")
+            pre_tree = snapshots.snapshot_tree(self.test_tasks_file, work)
+
+            target_file.write_text("v2\n", encoding="utf-8")
+            runner_tree = snapshots.snapshot_tree(self.test_tasks_file, work)
+
+            target_file.write_text("v2\n# hook\n", encoding="utf-8")
+            post_tree = snapshots.snapshot_tree(self.test_tasks_file, work)
+            assert pre_tree and runner_tree and post_tree
+
+            with persistence.lock_tasks(self.test_tasks_file):
+                data = persistence.load_tasks(self.test_tasks_file)
+                data.tasks[0].status = models.TaskStatus.COMPLETED
+                data.tasks[0].completed_at = 100.0
+                data.tasks[0].pre_tree = pre_tree
+                data.tasks[0].runner_tree = runner_tree
+                data.tasks[0].post_tree = post_tree
+                data.tasks[0].hook_trees = {
+                    "readability": [runner_tree, post_tree]
+                }
+                persistence.save_tasks(self.test_tasks_file, data)
+
+            diff_res = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["diff"]
+            )
+            self.assertEqual(diff_res.exit_code, 0, diff_res.output)
+            self.assertIn("-v1", diff_res.output)
+            self.assertIn("+v2", diff_res.output)
+
+            hook_diff = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["diff", "--hook", "readability"]
+            )
+            self.assertEqual(hook_diff.exit_code, 0, hook_diff.output)
+            self.assertNotIn("-v1", hook_diff.output)
+            self.assertIn("+# hook", hook_diff.output)
+
+            stat_res = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["diff", "1234", "--stat"]
+            )
+            self.assertEqual(stat_res.exit_code, 0, stat_res.output)
+            self.assertIn("hello.py", stat_res.output)
+
+            hook_rb = self.cli_runner.invoke(
+                cli.cli,
+                self.base_args + ["rollback", "1234", "--hook", "readability"],
+            )
+            self.assertEqual(hook_rb.exit_code, 0, hook_rb.output)
+            self.assertEqual(target_file.read_text(encoding="utf-8"), "v2\n")
+            after_hook = persistence.load_tasks(self.test_tasks_file).tasks[0]
+            self.assertEqual(after_hook.status, models.TaskStatus.COMPLETED)
+            self.assertIsNone(after_hook.hook_trees)
+
+            rb_res = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["rollback", "1234", "--only"]
+            )
+            self.assertEqual(rb_res.exit_code, 0, rb_res.output)
+            self.assertIn("12345678", rb_res.output)
+            self.assertEqual(target_file.read_text(encoding="utf-8"), "v1\n")
+            reloaded = persistence.load_tasks(self.test_tasks_file).tasks[0]
+            self.assertEqual(reloaded.status, models.TaskStatus.PENDING)
+
+    def test_diff_does_not_snapshot_working_dir_for_cancelled_task(self):
+        work = pathlib.Path(self.test_dir)
+        with mock.patch.dict(os.environ, {"LEMMING_HOME": str(work / "home")}):
+            target_file = work / "hello.py"
+            target_file.write_text("v1\n", encoding="utf-8")
+            pre_tree = snapshots.snapshot_tree(self.test_tasks_file, work)
+            assert pre_tree is not None
+
+            target_file.write_text("dirty later edit\n", encoding="utf-8")
+
+            with persistence.lock_tasks(self.test_tasks_file):
+                data = persistence.load_tasks(self.test_tasks_file)
+                data.tasks[0].status = models.TaskStatus.CANCELLED
+                data.tasks[0].completed_at = 100.0
+                data.tasks[0].pre_tree = pre_tree
+                data.tasks[0].runner_tree = None
+                data.tasks[0].post_tree = None
+                persistence.save_tasks(self.test_tasks_file, data)
+
+            diff_res = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["diff", "1234"]
+            )
+            self.assertEqual(diff_res.exit_code, 0, diff_res.output)
+            self.assertEqual(diff_res.output, "")
+
+            combo_rb = self.cli_runner.invoke(
+                cli.cli,
+                self.base_args
+                + ["rollback", "1234", "--only", "--hook", "readability"],
+            )
+            self.assertNotEqual(combo_rb.exit_code, 0)
+            self.assertIn("Cannot combine --only and --hook", combo_rb.output)
 
 
 if __name__ == "__main__":

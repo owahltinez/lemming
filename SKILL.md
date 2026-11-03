@@ -161,7 +161,10 @@ lemming run --until <task-id>                # or stops once that task settles
 
 The loop shares one workspace across all its tasks, so isolate the **whole run**
 — one branch or worktree created before `lemming run`, driven with
-`lemming -C <worktree> run` — never one per task.
+`lemming -C <worktree> run` — never one per task. In a greenfield directory
+without a `.gitignore`, create one (or queue it as the first `--oneshot` task)
+before tasks install dependencies or run builds so workspace snapshots skip
+`node_modules/`, `.venv/`, and build outputs.
 
 **Mark mechanical tasks `--oneshot`.** After every other task, a roadmap hook
 may revise the queue and any enabled reviews run; each hook is a full agent
@@ -185,8 +188,13 @@ milestones instead:
    which. Add `--max-tasks N` as a budget cap when a runaway roadmap hook
    would be expensive.
 2. Between milestones, judge direction: `lemming status --brief`, then
-   `lemming status <id>` for the tasks that matter. Re-plan with `add`, `edit`,
-   `supersede`, or `delete`, then run the next milestone.
+   `lemming status <id>` for the tasks that matter. Inspect a task's changes
+   with `lemming diff [<id>] [--stat] [--hook <name>]`, or undo them with
+   `lemming rollback <id>` (rewinds from `<id>` onward),
+   `lemming rollback <id> --only` (reverts only `<id>`'s patch), or
+   `lemming rollback <id> --hook <name>` (reverts only one hook's edits).
+   Re-plan with `add`, `edit`, `supersede`, or `delete`, then run the next
+   milestone.
 3. Delegate each milestone to a subagent when one exists, so the polling and
    the log reading stay out of your context. The subagent reports back in the
    fixed shape below, nothing more.
@@ -201,6 +209,7 @@ sparingly and read the smallest thing that answers the question:
 ```sh
 lemming status --brief      # one row per task, no descriptions
 lemming status <id>         # Run Time against the time limit, progress entries
+lemming diff [<id>] --stat  # diffstat for a task (or the full patch without --stat)
 lemming logs <id> | tail -n 30   # never the whole log
 ```
 
@@ -247,8 +256,13 @@ work done adds tasks with `lemming add`; the running loop picks them up.
 - **`exec` makes one attempt by default.** `--retries N` opts into at most `N`
   total task attempts with progress carried forward. Explicit failure,
   cancellation, interruption, and failed reviews stop immediately.
-- **Interrupting leaves partial edits.** Nothing is restored, so there is no
-  atomicity to rely on.
+- **Failed attempts roll back automatically.** Each task snapshots the working
+  tree in a shadow Git repository before it starts; if an attempt fails, times
+  out, crashes, or is cancelled, its diff is saved under `<id>-artifacts/` and
+  the workspace (and host Git `HEAD`) is restored to the task's `pre_tree`.
+  Completed tasks (or individual hook edits) can be inspected with
+  `lemming diff [<id>] [--stat] [--hook <name>]` or rolled back when the loop
+  is idle via `lemming rollback <id> [--only] [--hook <name>]`.
 - **Concurrent runs in one checkout interleave their edits.** Give each writing
   run its own VCS-managed working copy and address it with `-C`; retain the copy
   until its result is recovered.

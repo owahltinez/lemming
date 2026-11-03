@@ -426,6 +426,222 @@ def update_task(
     return target
 
 
+def _task_start_marker(task: models.Task) -> float | None:
+    """Returns the earliest recorded execution timestamp for a task."""
+    return task.started_at or task.last_started_at or task.completed_at
+
+
+def _has_task_started(task: models.Task) -> bool:
+    """Returns whether a task has started or recorded execution state."""
+    return bool(
+        task.started_at
+        or task.last_started_at
+        or task.attempts > 0
+        or task.pre_tree
+        or task.runner_tree
+        or task.post_tree
+        or task.hook_trees
+    )
+
+
+def rollback_task(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    *,
+    only: bool = False,
+    hook: str | None = None,
+    working_dir: pathlib.Path | None = None,
+) -> list[models.Task]:
+    """Rolls back workspace changes for a task and resets task state to pending.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        task_id: Full task ID or an unambiguous prefix.
+        only: If True, reverse-apply only the target task's patch. If False,
+            restore the workspace to target.pre_tree and reset target plus all
+            tasks that started at or after target.
+        hook: Optional hook name to revert without resetting task status.
+        working_dir: Optional workspace directory override.
+
+    Returns:
+        The list of affected tasks.
+
+    Raises:
+        ValueError: If the orchestrator loop is running, the task is missing or
+            lacks required tree snapshots, or the patch cannot be reverted.
+    """
+    if only and hook is not None:
+        raise ValueError("Cannot combine --only and --hook")
+
+    resolved_dir = working_dir or paths.get_working_dir(tasks_file)
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        if lifecycle.is_loop_lock_held(tasks_file) or any(
+            lifecycle.is_task_active(t, time.time()) for t in data.tasks
+        ):
+            raise ValueError(
+                "Cannot roll back while a task or orchestrator loop is running"
+            )
+
+        target = queries.resolve_task(data.tasks, task_id)
+        if hook is not None:
+            hook_trees = target.hook_trees
+            pair = hook_trees.get(hook) if hook_trees else None
+            if (
+                hook_trees is None
+                or not pair
+                or len(pair) != 2
+                or not pair[0]
+                or not pair[1]
+            ):
+                raise ValueError(
+                    f"Task {target.id} has no snapshot for hook '{hook}'"
+                )
+            h_pre, h_post = pair
+            snapshots.revert_tree_patch(tasks_file, resolved_dir, h_pre, h_post)
+            del hook_trees[hook]
+            revert_to_tree = getattr(
+                snapshots, "revert_tree_patch_to_tree", None
+            )
+            cascaded: dict[str, str] = {h_post: h_pre}
+
+            def _patch_tree(sha: str) -> str | None:
+                if sha in cascaded:
+                    return cascaded[sha]
+                patched = (
+                    revert_to_tree(tasks_file, sha, h_pre, h_post)
+                    if revert_to_tree is not None
+                    else None
+                )
+                if patched is not None:
+                    cascaded[sha] = patched
+                return patched
+
+            if hook_trees:
+                for other_hook, other_pair in list(hook_trees.items()):
+                    if len(other_pair) == 2:
+                        other_pre, other_post = other_pair
+                        if other_pre in cascaded:
+                            other_pre = cascaded[other_pre]
+                            patched_post = _patch_tree(other_post)
+                            if patched_post is not None:
+                                other_post = patched_post
+                        elif other_post in cascaded:
+                            other_post = cascaded[other_post]
+                        hook_trees[other_hook] = [other_pre, other_post]
+            else:
+                target.hook_trees = None
+            if target.post_tree:
+                updated_post = _patch_tree(target.post_tree)
+                if updated_post is not None:
+                    target.post_tree = updated_post
+            target.diff_summary = (
+                snapshots.summarize_diff(
+                    tasks_file, target.pre_tree, target.post_tree
+                )
+                if target.pre_tree and target.post_tree
+                else None
+            )
+            persistence.save_tasks(tasks_file, data)
+            snapshots.prune_snapshots(
+                tasks_file, snapshots.collect_task_trees(data.tasks)
+            )
+            return [target]
+
+        if not target.pre_tree:
+            raise ValueError(
+                f"Task {target.id} has no pre_tree snapshot to roll back to"
+            )
+
+        if only:
+            if not target.post_tree:
+                raise ValueError(
+                    f"Task {target.id} has no post_tree snapshot to revert"
+                )
+            snapshots.revert_tree_patch(
+                tasks_file, resolved_dir, target.pre_tree, target.post_tree
+            )
+            lifecycle.clear_task_state(target)
+            _remove_task_files(tasks_file, target.id)
+            reset_tasks = [target]
+        else:
+            target_idx = data.tasks.index(target)
+            target_marker = _task_start_marker(target)
+            candidates: list[tuple[tuple[float, int], models.Task]] = []
+            for idx, task in enumerate(data.tasks):
+                if task.id == target.id:
+                    should_reset = True
+                elif not _has_task_started(task):
+                    should_reset = False
+                else:
+                    task_marker = _task_start_marker(task)
+                    if target_marker is not None and task_marker is not None:
+                        should_reset = task_marker >= target_marker
+                    else:
+                        should_reset = idx >= target_idx
+                if should_reset:
+                    marker = _task_start_marker(task)
+                    sort_marker = marker if marker is not None else float("inf")
+                    candidates.append(((sort_marker, idx), task))
+
+            candidates.sort(key=lambda item: item[0])
+            reset_tasks = [task for _, task in candidates]
+
+            latest_tree = next(
+                (
+                    t.post_tree or t.runner_tree
+                    for t in reversed(reset_tasks)
+                    if t.post_tree or t.runner_tree
+                ),
+                None
+                if any(
+                    t.status == models.TaskStatus.IN_PROGRESS
+                    for t in reset_tasks
+                )
+                else target.pre_tree,
+            )
+            current_tree = snapshots.snapshot_tree(tasks_file, resolved_dir)
+            if (
+                latest_tree is not None
+                and current_tree is not None
+                and current_tree != latest_tree
+            ):
+                raise ValueError(
+                    "Working directory has uncommitted changes since the last "
+                    "task snapshot"
+                )
+
+            snapshots.restore_tree(
+                tasks_file,
+                resolved_dir,
+                target.pre_tree,
+                current_tree=current_tree,
+                target_head=target.pre_head,
+            )
+            for task in reset_tasks:
+                lifecycle.clear_task_state(task)
+                _remove_task_files(tasks_file, task.id)
+
+        reset_ids = {task.id for task in reset_tasks}
+        remaining_queue = [
+            t
+            for t in data.tasks
+            if t.id not in reset_ids and t.status not in _DONE_STATUSES
+        ]
+        remaining_done = [
+            t
+            for t in data.tasks
+            if t.id not in reset_ids and t.status in _DONE_STATUSES
+        ]
+        data.tasks = reset_tasks + remaining_queue + remaining_done
+
+        persistence.save_tasks(tasks_file, data)
+        snapshots.prune_snapshots(
+            tasks_file, snapshots.collect_task_trees(data.tasks)
+        )
+        return reset_tasks
+
+
 def update_goal(tasks_file: pathlib.Path, goal: str) -> None:
     """Updates the project's long-term goal.
 

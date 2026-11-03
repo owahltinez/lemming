@@ -8,7 +8,7 @@ import typing
 
 import click
 
-from .. import hooks, models, paths, persistence
+from .. import hooks, models, paths, persistence, snapshots
 from ..tasks import lifecycle, operations, queries
 from .main import cli
 
@@ -60,6 +60,9 @@ def _echo_task_summary(
     # Descriptions dominate the output; brief mode keeps rows scannable.
     summary = "" if brief else f" {task.description}"
     click.echo(f"({task.id}){parent_str}{summary}")
+
+    if task.diff_summary:
+        click.echo(f"    Changes: {task.diff_summary}")
 
     if task.status == models.TaskStatus.SUPERSEDED:
         if task.superseded_reason:
@@ -565,6 +568,8 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
     if target.resolved_command:
         click.echo(f"Last Command:  {target.resolved_command}")
     click.echo(f"Attempts:      {target.attempts}")
+    if target.diff_summary:
+        click.echo(f"Changes:       {target.diff_summary}")
     if target.created_at:
         created_time = time.strftime(
             "%Y-%m-%d %H:%M:%S %Z", time.localtime(target.created_at)
@@ -624,6 +629,35 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
             click.echo(f"[{i}] {entry}")
 
 
+def _latest_or_active_task(tasks: list[models.Task]) -> models.Task | None:
+    """Returns the currently running task, or the most recently finished one."""
+    active = next(
+        (t for t in tasks if t.status == models.TaskStatus.IN_PROGRESS),
+        None,
+    )
+    if active:
+        return active
+    finished = [
+        task
+        for task in tasks
+        if task.status
+        in (
+            models.TaskStatus.COMPLETED,
+            models.TaskStatus.FAILED,
+            models.TaskStatus.CANCELLED,
+            models.TaskStatus.SUPERSEDED,
+        )
+    ]
+    if not finished:
+        return None
+    return max(
+        finished,
+        key=lambda task: (
+            task.completed_at or task.superseded_at or task.created_at or 0
+        ),
+    )
+
+
 @cli.command(short_help="[<taskid>] Print a task's log to stdout")
 @click.argument("task_id", required=False)
 @click.option(
@@ -660,38 +694,7 @@ def logs(ctx: click.Context, task_id: str | None, as_json: bool):
             click.echo(f"Error: {e}")
             ctx.exit(1)
     else:
-        # Try to find an active task
-        target = next(
-            (
-                t
-                for t in data.tasks
-                if t.status == models.TaskStatus.IN_PROGRESS
-            ),
-            None,
-        )
-        if not target:
-            # Fall back to the most recently finished task.
-            finished = [
-                task
-                for task in data.tasks
-                if task.status
-                in (
-                    models.TaskStatus.COMPLETED,
-                    models.TaskStatus.FAILED,
-                    models.TaskStatus.CANCELLED,
-                    models.TaskStatus.SUPERSEDED,
-                )
-            ]
-            if finished:
-                target = max(
-                    finished,
-                    key=lambda task: (
-                        task.completed_at
-                        or task.superseded_at
-                        or task.created_at
-                        or 0
-                    ),
-                )
+        target = _latest_or_active_task(data.tasks)
 
     # A log resolved by ID stands on its own, because the task it belonged
     # to may have been removed. Without one, a task is needed to derive the
@@ -834,7 +837,9 @@ def reject(ctx: click.Context, task_id: str, reason: str):
 def cancel(ctx: click.Context, task_id: str):
     """Cancels a task, stopping its runner if it is active."""
     tasks_file = ctx.obj["TASKS_FILE"]
-    if lifecycle.cancel_task(tasks_file, task_id):
+    if lifecycle.cancel_task(
+        tasks_file, task_id, working_dir=ctx.obj.get("PROJECT_DIR")
+    ):
         click.echo(f"Task {task_id} cancelled.")
     else:
         click.echo(f"Error: Task {task_id} not found or not in progress.")
@@ -855,3 +860,110 @@ def reset(ctx: click.Context, task_id: str):
     except ValueError as e:
         click.echo(f"Error: {e}")
         ctx.exit(1)
+
+
+@cli.command(short_help="[<taskid>] Show the git diff for a task")
+@click.argument("task_id", required=False)
+@click.option(
+    "--stat",
+    is_flag=True,
+    help="Show diffstat summary instead of the full patch.",
+)
+@click.option(
+    "--hook",
+    "hook_name",
+    help="Show only the diff introduced by a specific hook.",
+)
+@click.pass_context
+def diff(
+    ctx: click.Context,
+    task_id: str | None,
+    stat: bool,
+    hook_name: str | None,
+):
+    """Prints the workspace diff captured for a task."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    working_dir = ctx.obj.get("PROJECT_DIR") or paths.get_working_dir(
+        tasks_file
+    )
+    data = persistence.load_tasks(tasks_file)
+
+    if task_id:
+        try:
+            target = queries.resolve_task(data.tasks, task_id)
+        except (models.TaskNotFoundError, models.AmbiguousTaskIdError) as e:
+            click.echo(f"Error: {e}")
+            ctx.exit(1)
+    else:
+        target = _latest_or_active_task(
+            [t for t in data.tasks if t.pre_tree]
+        ) or _latest_or_active_task(data.tasks)
+        if target is None:
+            click.echo("Error: No active or recently finished task found.")
+            ctx.exit(1)
+
+    if hook_name:
+        pair = (target.hook_trees or {}).get(hook_name)
+        if not pair or len(pair) != 2 or not pair[0] or not pair[1]:
+            click.echo(
+                f"Error: No snapshot available for hook '{hook_name}' "
+                f"on task {target.id}."
+            )
+            ctx.exit(1)
+        start_tree, end_tree = pair[0], pair[1]
+    else:
+        if not target.pre_tree:
+            click.echo(f"Error: No snapshot available for task {target.id}.")
+            ctx.exit(1)
+
+        start_tree = target.pre_tree
+        end_tree = target.post_tree or target.runner_tree
+        if not end_tree and target.status == models.TaskStatus.IN_PROGRESS:
+            end_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+        if not end_tree:
+            return
+
+    output = snapshots.diff_trees(tasks_file, start_tree, end_tree, stat=stat)
+    if output:
+        click.echo(output, nl=False)
+
+
+@cli.command(short_help="<taskid> Roll back workspace and task state")
+@click.argument("task_id")
+@click.option(
+    "--only",
+    is_flag=True,
+    help="Revert only this task's patch instead of rewinding subsequent tasks.",
+)
+@click.option(
+    "--hook",
+    "hook_name",
+    help="Revert only the changes made by a specific hook.",
+)
+@click.pass_context
+def rollback(
+    ctx: click.Context,
+    task_id: str,
+    only: bool,
+    hook_name: str | None,
+):
+    """Rolls back a task's changes and resets task state to pending."""
+    tasks_file = ctx.obj["TASKS_FILE"]
+    working_dir = ctx.obj.get("PROJECT_DIR")
+    try:
+        reset_tasks = operations.rollback_task(
+            tasks_file,
+            task_id,
+            only=only,
+            hook=hook_name,
+            working_dir=working_dir,
+        )
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
+
+    ids = ", ".join(task.id for task in reset_tasks)
+    if hook_name:
+        click.echo(f"Rolled back hook '{hook_name}' on task {ids}")
+    else:
+        click.echo(f"Rolled back task(s): {ids}")
