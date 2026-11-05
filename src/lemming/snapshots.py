@@ -55,6 +55,9 @@ def _repo_lock(repo_dir: pathlib.Path) -> Iterator[None]:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        # The flock excludes live git writers; a leftover lock is from a kill.
+        with contextlib.suppress(OSError):
+            (repo_dir / "index.lock").unlink(missing_ok=True)
         held.add(lock_path)
         try:
             yield

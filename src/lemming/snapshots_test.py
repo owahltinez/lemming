@@ -493,3 +493,20 @@ def test_snapshot_tree_evicts_newly_ignored_files_from_index(
     t2 = snapshots.snapshot_tree(tasks_file, work)
     assert t2 is not None
     assert snapshots._tree_files(repo_dir, t2) == {".gitignore", "app.js"}
+
+
+def test_snapshot_tree_recovers_from_stale_index_lock(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("print('hi')\n", encoding="utf-8")
+    assert snapshots.snapshot_tree(tasks_file, work) is not None
+
+    # A git process killed mid-add (timeout, reboot) leaves its lock behind.
+    repo_dir = snapshots.get_snapshots_dir(tasks_file)
+    (repo_dir / "index.lock").write_text("", encoding="utf-8")
+    (work / "app.py").write_text("print('bye')\n", encoding="utf-8")
+
+    assert snapshots.snapshot_tree(tasks_file, work) is not None
+    assert not (repo_dir / "index.lock").exists()

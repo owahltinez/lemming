@@ -379,7 +379,7 @@ class TestCLITasks(unittest.TestCase):
             )
             self.assertEqual(res.exit_code, 0)
             mock_cancel.assert_called_once_with(
-                self.test_tasks_file,
+                self.test_tasks_file.resolve(),
                 "12345678",
                 working_dir=None,
             )
