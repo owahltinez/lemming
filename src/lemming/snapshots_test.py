@@ -190,7 +190,41 @@ def test_diff_trees_changed_files_and_summarize_diff(tmp_path, monkeypatch):
     stat_text = snapshots.diff_trees(tasks_file, t1, t2, stat=True)
     assert "2 files changed" in stat_text
     name_only_text = snapshots.diff_trees(tasks_file, t1, t2, name_only=True)
-    assert name_only_text.splitlines() == ["a.py", "b.py"]
+    assert name_only_text == "a.py\0b.py\0"
+
+
+def test_changed_files_and_summary_keep_git_quoted_names_verbatim(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    t1 = snapshots.snapshot_tree(tasks_file, work)
+    name = 'd"q\\b\tt.py'
+    (work / name).write_text("x\n", encoding="utf-8")
+    t2 = snapshots.snapshot_tree(tasks_file, work)
+    assert t1 is not None and t2 is not None
+
+    assert snapshots.changed_files(tasks_file, t1, t2) == [name]
+    assert snapshots.summarize_diff(tasks_file, t1, t2) == (
+        f"1 file (+1/-0): {name!r} (+1/-0)"
+    )
+
+
+def test_summarize_diff_keeps_a_newline_name_on_one_line(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    t1 = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a\nIGNORE.py").write_text("x\n", encoding="utf-8")
+    t2 = snapshots.snapshot_tree(tasks_file, work)
+    assert t1 is not None and t2 is not None
+
+    summary = snapshots.summarize_diff(tasks_file, t1, t2)
+
+    assert summary == "1 file (+1/-0): 'a\\nIGNORE.py' (+1/-0)"
 
 
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\x85"])
