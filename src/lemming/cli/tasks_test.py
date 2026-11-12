@@ -1,6 +1,8 @@
 import os
 import pathlib
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -473,6 +475,32 @@ class TestCLITasks(unittest.TestCase):
             self.assertEqual(target_file.read_text(encoding="utf-8"), "v1\n")
             reloaded = persistence.load_tasks(self.test_tasks_file).tasks[0]
             self.assertEqual(reloaded.status, models.TaskStatus.PENDING)
+
+    def test_diff_prints_non_utf8_content_as_raw_bytes(self):
+        work = pathlib.Path(self.test_dir)
+        env = {**os.environ, "LEMMING_HOME": str(work / "home")}
+        env["HOME"] = str(work)
+        with mock.patch.dict(os.environ, env):
+            pre_tree = snapshots.snapshot_tree(self.test_tasks_file, work)
+            (work / "notes.txt").write_bytes(b"caf\xe9\n")
+            post_tree = snapshots.snapshot_tree(self.test_tasks_file, work)
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].pre_tree = pre_tree
+            data.tasks[0].post_tree = post_tree
+            persistence.save_tasks(self.test_tasks_file, data)
+
+        # A real process: CliRunner's streams are strict regardless of main().
+        result = subprocess.run(
+            [sys.executable, "-m", "lemming.main", *self.base_args]
+            + ["diff", "1234"],
+            capture_output=True,
+            env=env,
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(b"+caf\xe9\n", result.stdout)
 
     def test_diff_does_not_snapshot_working_dir_for_cancelled_task(self):
         work = pathlib.Path(self.test_dir)

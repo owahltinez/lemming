@@ -1,5 +1,6 @@
 import os
 import signal
+import subprocess
 import time
 from unittest.mock import patch
 
@@ -713,3 +714,25 @@ def test_reset_task_skips_prune_when_task_was_in_progress(
 
     assert lifecycle.reset_task(tasks_file, "reset77")
     assert pruned == []
+
+
+def test_write_patch_artifact_keeps_non_utf8_bytes(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    notes = work / "notes.txt"
+    notes.write_bytes(b"caf\xe9\n")
+    post_tree = snapshots.snapshot_tree(tasks_file, work)
+
+    lifecycle.write_patch_artifact(
+        tasks_file, "latin1", "attempt-1.patch", pre_tree, post_tree
+    )
+
+    notes.unlink()
+    patch_file = (
+        paths.get_artifacts_dir(tasks_file, "latin1") / "attempt-1.patch"
+    )
+    subprocess.run(["git", "apply", str(patch_file)], cwd=work, check=True)
+    assert notes.read_bytes() == b"caf\xe9\n"

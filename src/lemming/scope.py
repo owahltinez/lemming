@@ -38,6 +38,7 @@ def _git(working_dir: pathlib.Path, *args: str) -> subprocess.CompletedProcess:
         cwd=working_dir,
         capture_output=True,
         text=True,
+        errors="surrogateescape",
         check=False,
     )
 

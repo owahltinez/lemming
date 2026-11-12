@@ -1,12 +1,14 @@
 """FastAPI application setup: middleware, routers, and static files."""
 
 import importlib.resources
+import json
 import logging
 import pathlib
 
 import fastapi
 import fastapi.responses
 import fastapi.staticfiles
+import starlette.exceptions
 
 from .. import paths, persistence
 from . import auth, config, directories, files, hooks, tasks
@@ -24,7 +26,21 @@ class FilteredStaticFiles(fastapi.staticfiles.StaticFiles):
         return super().lookup_path(path)
 
 
-app = fastapi.FastAPI()
+class AsciiJSONResponse(fastapi.responses.JSONResponse):
+    """JSON response that escapes the lone surrogates of non-UTF-8 git output.
+
+    Being a custom class also keeps FastAPI off pydantic's JSON serializer,
+    which rejects surrogates before render() sees them.
+    """
+
+    def render(self, content: object) -> bytes:
+        """Serializes content with every non-ASCII character escaped."""
+        return json.dumps(
+            content, allow_nan=False, separators=(",", ":")
+        ).encode()
+
+
+app = fastapi.FastAPI(default_response_class=AsciiJSONResponse)
 app.state.tasks_file = paths.get_default_tasks_file()
 app.state.root = pathlib.Path.cwd().resolve()
 app.state.disable_auto_start = False
@@ -38,6 +54,16 @@ app.include_router(files.router)
 app.include_router(directories.router)
 app.include_router(hooks.router)
 app.include_router(config.router)
+
+
+@app.exception_handler(starlette.exceptions.HTTPException)
+def handle_http_exception(
+    request: fastapi.Request, exc: starlette.exceptions.HTTPException
+) -> fastapi.responses.JSONResponse:
+    """Renders HTTP errors like the default handler, but surrogate-safe."""
+    return AsciiJSONResponse(
+        {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+    )
 
 
 @app.exception_handler(persistence.CorruptedTasksError)
