@@ -31,7 +31,7 @@ def get_files_api(request: fastapi.Request, path: str):
     if not target_path.is_dir():
         raise fastapi.HTTPException(400, "Not a directory")
 
-    contents = []
+    contents: list[dict] = []
     for item in target_path.iterdir():
         if paths.is_ignored(item):
             continue
