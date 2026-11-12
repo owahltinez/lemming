@@ -1,4 +1,5 @@
 import pathlib
+import subprocess
 import sys
 from unittest import mock
 
@@ -60,5 +61,6 @@ def test_start_loop_if_needed_starts_process(tmp_path):
             args, kwargs = mock_popen.call_args
             assert args[0] == expected_cmd
             assert kwargs["start_new_session"] is True
+            assert kwargs["stdin"] == subprocess.DEVNULL
             assert kwargs["cwd"] == cwd
             assert "PATH" in kwargs["env"]

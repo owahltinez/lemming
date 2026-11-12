@@ -371,6 +371,10 @@ These come before the subcommand and apply to all of them.
   - `--json`: Emit machine-readable JSON instead of formatted text, so scripts
     never have to parse the internal state file.
   - `--brief`: Omit task descriptions, which otherwise dominate the output.
+  - An `in_progress` task with no loop running is flagged as abandoned;
+    `lemming run --detach` reclaims it. If its runner outlived the loop,
+    `status` names the runner's pid to kill first, and `run` refuses to start
+    a second runner until it is gone.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index`, `--runner`,
@@ -460,6 +464,10 @@ These come before the subcommand and apply to all of them.
   - `--max-tasks N`: Stop between tasks once `N` have completed or failed,
     printing `Stopped after N tasks; M pending.` Attempts that leave a task
     pending do not count. Combine with `--until` as a budget cap.
+  - `--detach`: Start the loop in its own session and return, printing its PID
+    and log file (`loop.log` in the project's state directory). The loop
+    outlives the shell or agent harness that started it; check on it with
+    `status --brief` and end it with `stop`.
   - `--`: Arguments after `--` go directly to the underlying runner; any other
     extra argument is an error. A per-task `--runner`/`--model` overrides
     anything passed here.

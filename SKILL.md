@@ -160,8 +160,8 @@ lemming goal "Add offline support with a service worker and a sync queue"
 lemming add "Register the service worker and cache the app shell"
 lemming add "Queue writes in IndexedDB while offline"
 lemming add "Bump the service worker cache version" --oneshot
-lemming run                                  # runs until the queue drains
-lemming run --until <task-id>                # or stops once that task settles
+lemming run --detach                         # runs until the queue drains
+lemming run --detach --until <task-id>       # or stops once that task settles
 ```
 
 The loop shares one workspace across all its tasks, so isolate the **whole run**
@@ -185,13 +185,16 @@ lands in your context window, and the run outlives it. Split the queue into
 milestones instead:
 
 1. Queue the whole roadmap, pick the task that ends the first milestone, and
-   run `lemming run --until <task-id>`. It blocks, runs anything the roadmap
-   hook inserts ahead of that task, follows the task through any split, and
-   exits printing `Reached milestone <id>; M pending.` or
-   `All tasks completed!`. A non-zero exit means a task failed, the queue is
-   blocked, or the milestone task was deleted; `lemming status --brief` shows
-   which. Add `--max-tasks N` as a budget cap when a runaway roadmap hook
-   would be expensive.
+   run `lemming run --detach --until <task-id>`. It returns at once with the
+   loop's PID and log file; the loop runs anything the roadmap hook inserts
+   ahead of that task, follows the task through any split, and stops once the
+   milestone settles, logging `Reached milestone <id>; M pending.` or
+   `All tasks completed!`. Check in with `lemming status --brief`, which reads
+   `Idle` once the loop has stopped and flags failed and abandoned tasks. If it
+   is `Idle` with the milestone still pending, read the tail of the printed
+   `loop.log`: a detached loop's errors, such as a missing runner binary or a
+   blocked queue, appear only there. Add `--max-tasks N` as a budget cap when
+   a runaway roadmap hook would be expensive.
 2. Between milestones, judge direction: `lemming status --brief`, then
    `lemming status <id>` for the tasks that matter. Inspect a task's changes
    with `lemming diff [<id>] [--stat] [--hook <name>]`, or undo them with
@@ -221,10 +224,13 @@ lemming logs <id> | tail -n 30   # never the whole log
 A task is stuck when its run time approaches the limit with no new progress
 entries and the log tail shows the same step repeating. Otherwise leave it.
 
-If your harness backgrounds long commands and sleeps until they exit, a
-backgrounded `run --until` hides a stuck task until it exhausts its retries.
-Pair it with a wake-up near each task's time limit that runs the checks above;
-if the task is stuck, `lemming cancel <id>` and `add` smaller tasks in its place.
+Never hold a shell open on a foreground or backgrounded `lemming run`: the loop
+dies with the shell or harness that started it, leaving its task abandoned.
+`--detach` keeps it alive; if a loop died anyway, `lemming run --detach`
+reclaims the abandoned task. A detached loop hides a stuck task until it
+exhausts its retries, so schedule a wake-up near each task's time limit that
+runs the checks above; if the task is stuck, `lemming cancel <id>` and `add`
+smaller tasks in its place.
 
 Adjust the queue while it runs — new tasks are picked up automatically:
 

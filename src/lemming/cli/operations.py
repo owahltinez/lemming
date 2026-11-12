@@ -80,6 +80,14 @@ def quiet_poll_log_config() -> dict:
         "has completed or failed. Accepts an unambiguous ID prefix."
     ),
 )
+@click.option(
+    "--detach",
+    is_flag=True,
+    help=(
+        "Start the loop in the background, detached from this shell, and "
+        "return. Check on it with `status` and end it with `stop`."
+    ),
+)
 @click.pass_context
 def run(
     ctx: click.Context,
@@ -89,6 +97,7 @@ def run(
     no_defaults: bool,
     max_tasks: int | None,
     until_id: str | None,
+    detach: bool,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks."""
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -119,6 +128,19 @@ def run(
     # After the overrides, which may move LEMMING_HOME; an explicit -C wins.
     working_dir = ctx.obj["PROJECT_DIR"] or paths.get_working_dir(tasks_file)
 
+    if detach:
+        _detach_loop(
+            ctx,
+            working_dir,
+            retry_delay=retry_delay,
+            yolo=yolo,
+            no_defaults=no_defaults,
+            max_tasks=max_tasks,
+            until=until,
+            runner_args=ctx.meta["runner_args"],
+        )
+        return
+
     # Handle stop requests before claiming work, so a SIGTERM arriving mid-task
     # takes the runner down instead of orphaning it.
     shutdown.clear_drain()
@@ -146,6 +168,57 @@ def run(
         persistence.release_loop_lock(tasks_file)
     if not completed:
         ctx.exit(1)
+
+
+def _detach_loop(
+    ctx: click.Context,
+    working_dir: pathlib.Path,
+    retry_delay: int,
+    yolo: bool,
+    no_defaults: bool,
+    max_tasks: int | None,
+    until: str | None,
+    runner_args: tuple,
+) -> None:
+    """Starts the loop in its own session, logging to the project state dir.
+
+    The child inherits the environment, so --env overrides already applied
+    here carry over without being forwarded.
+    """
+    # Lazy import: the api package pulls in FastAPI, kept out of CLI startup.
+    from ..api import loop  # noqa: PLC0415
+
+    tasks_file = ctx.obj["TASKS_FILE"]
+    if lifecycle.is_loop_running(tasks_file):
+        pid = persistence.get_loop_pid(tasks_file)
+        click.echo(f"Error: Another loop is already running (pid {pid}).")
+        ctx.exit(1)
+
+    run_args = [
+        f"--retry-delay={retry_delay}",
+        "--yolo" if yolo else "--no-yolo",
+    ]
+    if no_defaults:
+        run_args.append("--no-defaults")
+    if max_tasks is not None:
+        run_args.append(f"--max-tasks={max_tasks}")
+    if until is not None:
+        run_args.append(f"--until={until}")
+    if runner_args:
+        run_args.extend(["--", *runner_args])
+
+    log_file = paths.get_project_dir(tasks_file) / "loop.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    with log_file.open("a") as log:
+        pid = loop.spawn_loop(
+            tasks_file,
+            working_dir,
+            project_dir=ctx.obj["PROJECT_DIR"],
+            verbose=ctx.obj["VERBOSE"],
+            run_args=run_args,
+            log=log,
+        )
+    click.echo(f"Started orchestrator loop {pid}; logging to {log_file}")
 
 
 def _wait_for_loop_exit(pid: int, timeout: float = LOOP_EXIT_TIMEOUT) -> bool:

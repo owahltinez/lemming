@@ -220,6 +220,64 @@ class TestCLITasks(unittest.TestCase):
             )
             self.assertIn("Loop Status: Running", result.output)
 
+    def test_status_flags_task_abandoned_by_dead_loop(self):
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].pid = 999999
+            data.tasks[0].last_heartbeat = 0
+            persistence.save_tasks(self.test_tasks_file, data)
+
+        overview = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", "--brief"]
+        )
+        detail = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", "12345678"]
+        )
+
+        for result in (overview, detail):
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertIn("abandoned", result.output.lower())
+            self.assertIn("lemming run --detach", result.output)
+
+    def test_status_names_runner_that_outlived_its_loop(self):
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].pid = os.getpid()
+            data.tasks[0].last_heartbeat = 0
+            persistence.save_tasks(self.test_tasks_file, data)
+
+        overview = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", "--brief"]
+        )
+        detail = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["status", "12345678"]
+        )
+
+        for result in (overview, detail):
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertIn(f"runner pid {os.getpid()}", result.output)
+            self.assertNotIn("lemming run", result.output)
+
+    def test_status_does_not_flag_live_task(self):
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].pid = 1234
+            data.tasks[0].last_heartbeat = time.time()
+            persistence.save_tasks(self.test_tasks_file, data)
+
+        with mock.patch(
+            "lemming.tasks.lifecycle.is_pid_alive", return_value=True
+        ):
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["status"]
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertNotIn("abandoned", result.output.lower())
+
     def test_status_command_shows_execution_time_breakdown(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
