@@ -8,6 +8,7 @@ import pathlib
 import fastapi
 import fastapi.responses
 import fastapi.staticfiles
+import starlette.exceptions
 
 from .. import paths, persistence
 from . import auth, config, directories, files, hooks, tasks
@@ -53,6 +54,16 @@ app.include_router(files.router)
 app.include_router(directories.router)
 app.include_router(hooks.router)
 app.include_router(config.router)
+
+
+@app.exception_handler(starlette.exceptions.HTTPException)
+def handle_http_exception(
+    request: fastapi.Request, exc: starlette.exceptions.HTTPException
+) -> fastapi.responses.JSONResponse:
+    """Renders HTTP errors like the default handler, but surrogate-safe."""
+    return AsciiJSONResponse(
+        {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+    )
 
 
 @app.exception_handler(persistence.CorruptedTasksError)

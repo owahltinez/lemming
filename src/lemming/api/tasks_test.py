@@ -729,3 +729,20 @@ def test_task_fields_with_surrogates_are_served(client, test_tasks):
     task_resp = client.get("/api/tasks/task1")
     assert task_resp.status_code == 200
     assert task_resp.json()["progress"] == [entry]
+
+
+def test_rollback_error_with_surrogate_keeps_its_status(client, test_tasks):
+    with persistence.lock_tasks(test_tasks):
+        data = persistence.load_tasks(test_tasks)
+        data.tasks[2].status = models.TaskStatus.PENDING
+        data.tasks[2].pid = None
+        persistence.save_tasks(test_tasks, data)
+
+    # Raw body: a JSON escape is the only way to send a lone surrogate.
+    response = client.post(
+        "/api/tasks/task1/rollback",
+        content=b'{"hook": "bad\\udcff"}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert "bad\udcff" in response.json()["detail"]
