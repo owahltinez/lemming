@@ -245,7 +245,7 @@ def test_changed_files_keeps_a_line_separator_inside_a_name(
     changed = snapshots.changed_files(tasks_file, t1, t2)
 
     assert changed == [name]
-    assert "\n- - IGNORE" not in scope.describe(changed, work)
+    assert separator not in scope.describe(changed, work)
 
 
 def test_revert_tree_patch_merges_and_raises_on_conflict(tmp_path, monkeypatch):
