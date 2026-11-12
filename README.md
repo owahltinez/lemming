@@ -129,9 +129,10 @@ lemming exec "Add pagination to the tasks API" --review '*'
 
 `--scope` takes a path or glob, and each must match something; repeat it for
 several, or pass `-` to read them from stdin. It only applies with `--review`
-and no description: a task's reviews look at what the task changed. Without
-`--scope`, reviews cover uncommitted work, or the whole tree outside a git
-repository. Arguments for the agent CLI go after `--`.
+and is an error with a description: a task's reviews look at what the task
+changed. Without `--scope`, reviews cover uncommitted work, or the whole tree
+outside a git repository; a clean tree reviews nothing. Arguments for the agent
+CLI go after `--`.
 
 Reviews may edit the working directory. The built-in readability review
 intentionally applies fixes, and testing may repair production code or tests.
@@ -192,8 +193,7 @@ lemming skill status
 
 `lemming skill uninstall` reverses the default installation sweep. Both refuse
 to touch a directory that does not hold this skill, so a mistyped `--to` fails
-instead of deleting work. Use `--link` on a durable installation to track
-package upgrades without reinstalling.
+instead of deleting work.
 
 ---
 
@@ -242,8 +242,8 @@ loops through each pending task:
     to the next task.
 5.  **Orchestration**: After each task, Lemming can run one or more
     **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the
-    results and adapt the roadmap if needed. Hooks are enabled by default but
-    can be disabled via configuration.
+    results and adapt the roadmap if needed. Only `roadmap` runs by default;
+    reviews are opt-in.
 
 ---
 
@@ -399,11 +399,8 @@ These come before the subcommand and apply to all of them.
   `--completed` for bulk cleanup, including logs.
 - **`supersede <id> --reason <text>`**: Retire a replaced or split task without
   losing its progress, timings, log, or links to replacement tasks.
-- **`progress`**: Manage progress entries and findings for specific tasks.
-  - `list <id>`: List all progress for a task.
-  - `add <id> <finding>`: Record a new technical detail.
-  - `edit <id> <index> <text>`: Modify an existing progress entry.
-  - `delete <id> <index>`: Remove a progress entry.
+- **`progress <id> [text]`**: Record a progress entry or finding for a task;
+  `status <id>` lists them. Supports `-f/--file`.
 - **`config`**: Manage project configuration (runner, model, retries, time
   limit).
   - `list`: View current configuration.
@@ -417,20 +414,22 @@ These come before the subcommand and apply to all of them.
   [readability](https://github.com/owahltinez/readability) package. Ruff and
   Pyrefly run with bundled Google-style defaults unless the target project
   defines its own configuration.
-  - `check <paths>...`: Run formatters and linters.
+  - `check <paths>...`: Run formatters and linters; exits non-zero on any
+    finding. `--fix` applies safe fixes, `--unsafe` also behavior-changing ones.
   - `guide <language>`: Fetch and view style guides.
-  - `languages`: List all supported languages.
-  - `sync`: Synchronize style guides from the web.
+  - `sync`: Refetch style guides from the web.
 
 ### Task Status
 
-- **`complete <id>`**: Mark a task as successful.
+- **`complete <id>`**: Mark a task as successful; requires recorded progress.
+  `--force` finalizes an in-progress task at once, without running hooks.
+- **`uncomplete <id>`**: Move a completed task back to pending.
 - **`fail <id>`**: Mark a task as a terminal failure (will not be retried).
 - **`reject <id> <reason>`**: Reject a finalizing task's completion from a
   review hook, sending it back for a retry.
-- **`cancel <id>`**: Stop an in-progress task (kills the runner process and
-  restores its pre-run workspace snapshot).
-- **`reset <id>`**: Clear attempts and progress to start a task fresh.
+- **`cancel <id>`**: Cancel a pending or in-progress task (an active one's
+  runner is killed and its pre-run workspace snapshot restored).
+- **`reset <id>`**: Clear attempts, progress, and logs to start a task fresh.
 - **`diff [<id>]`**: Print the workspace diff captured for a task (defaults to
   the active or most recent snapshotted task).
   - `--stat`: Show diffstat summary instead of the full patch.
@@ -483,9 +482,10 @@ These come before the subcommand and apply to all of them.
     run. Reviews may edit the working directory. Hooks that revise the roadmap
     cannot be selected.
   - `--scope <path>`: With `--review` and no description, a path or glob to
-    review instead of uncommitted work. Each must match something. Repeat it for
-    several, or pass `-` to read them from stdin: NUL-separated if it holds any
-    NUL, as from `git diff -z`, or else one per line.
+    review instead of uncommitted work; an error with a description. Each must
+    match something. Repeat it for several, or pass `-` to read them from
+    stdin: NUL-separated if it holds any NUL, as from `git diff -z`, or else
+    one per line.
   - `--runner`, `--model`: Which agent CLI and model to use.
   - `--retries`: Maximum total task-runner attempts, including the first
     (default 1). Does not retry review-only runs.
@@ -499,7 +499,6 @@ These come before the subcommand and apply to all of them.
   Lemming. Writes to `~/.agents/skills` and every detected tool-specific
   directory by default. Re-running it refreshes existing Lemming copies.
   - `--to <dir>`: Install into a specific skills directory.
-  - `--link`: Symlink instead of copying, so upgrades take effect immediately.
   - `--dry-run`: Print what would happen, refusals included.
 - **`skill uninstall`**: Remove it again. Supports `--to` and `--dry-run`.
 - **`skill status`**: Show every supported location and installation state.

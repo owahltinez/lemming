@@ -135,7 +135,7 @@ git -C /tmp/pr-123 diff -z --name-only --diff-filter=d main... |
 ```
 
 `--scope` takes a path or glob, each of which must match something; repeat it,
-or pass `-` to read paths from stdin. It only applies with no description: a
+or pass `-` to read paths from stdin. It is an error with a description: a
 task's reviews look at what the task changed. Without `--scope`, reviews cover
 uncommitted work, and a clean tree stops the run rather than reviewing
 everything. Arguments for the agent CLI go after `--`; any other extra argument

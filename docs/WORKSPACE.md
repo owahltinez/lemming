@@ -123,10 +123,10 @@ git -C "$repo" branch -d "$branch"
 Runners are instructed to leave a coherent workspace, to back out their own
 half-applied edits before failing, and never to restore files from version
 control history; the rules live in the "Workspace Hygiene" directive of
-`src/lemming/taskrunner.md`, not in a copy here. Shadow Git snapshots back that
-guidance up mechanically: when an attempt fails, times out, crashes, or is
-cancelled, or when a post-run hook fails, Lemming restores the workspace to the
-pre-attempt or pre-hook tree automatically.
+`src/lemming/prompts/taskrunner.md`, not in a copy here. Shadow Git snapshots
+back that guidance up mechanically: when an attempt fails, times out, crashes,
+or is cancelled, or when a post-run hook fails, Lemming restores the workspace
+to the pre-attempt or pre-hook tree automatically.
 
 ## Workspaces Not Under Version Control
 

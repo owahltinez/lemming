@@ -52,6 +52,9 @@ uv run python -m lemming.evals run \
 
 # Machine-readable results and a non-default pass threshold
 uv run python -m lemming.evals run --json-report report.json --min-pass-rate 0.67
+
+# Compare two reports, e.g. before and after a prompt change
+uv run python -m lemming.evals compare before.json after.json
 ```
 
 The command prints per-scenario pass rates (agents are stochastic, so think in
