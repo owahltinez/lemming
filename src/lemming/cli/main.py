@@ -23,6 +23,29 @@ class CorruptionAwareGroup(click.Group):
             raise click.ClickException(str(e)) from e
 
 
+class PassthroughCommand(click.Command):
+    """Click command whose arguments after '--' go to the agent CLI.
+
+    Click drops the separator and merges what follows into the positionals,
+    so a stray word would reach the agent unnoticed. Splitting first keeps
+    runner arguments behind '--' and lets click reject any other extra word.
+    The runner arguments are left in ``ctx.meta["runner_args"]``.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        """Sets aside everything after '--', then parses the rest."""
+        runner_args: list[str] = []
+        if "--" in args:
+            split = args.index("--")
+            args, runner_args = args[:split], args[split + 1 :]
+        ctx.meta["runner_args"] = tuple(runner_args)
+        return super().parse_args(ctx, args)
+
+    def collect_usage_pieces(self, ctx: click.Context) -> list[str]:
+        """Shows where runner arguments go in the usage line."""
+        return [*super().collect_usage_pieces(ctx), "[-- RUNNER_ARGS...]"]
+
+
 def _enter_project_dir(ctx: click.Context, project_dir: pathlib.Path) -> None:
     """Runs the command as if invoked from *project_dir*.
 

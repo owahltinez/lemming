@@ -14,7 +14,7 @@ import click
 from .. import models, paths, persistence, providers, shutdown
 from ..orchestrator import parse_timeout, run_loop
 from ..tasks import lifecycle, queries
-from .main import cli
+from .main import PassthroughCommand, cli
 
 # How long `lemming stop` waits for the loop to shut down before giving up.
 LOOP_EXIT_TIMEOUT = 30.0
@@ -40,6 +40,7 @@ def quiet_poll_log_config() -> dict:
 
 
 @cli.command(
+    cls=PassthroughCommand,
     short_help="Run the autonomous task execution loop",
 )
 @click.option(
@@ -79,7 +80,6 @@ def quiet_poll_log_config() -> dict:
         "has completed or failed. Accepts an unambiguous ID prefix."
     ),
 )
-@click.argument("runner_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run(
     ctx: click.Context,
@@ -89,7 +89,6 @@ def run(
     no_defaults: bool,
     max_tasks: int | None,
     until_id: str | None,
-    runner_args: tuple,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks."""
     tasks_file = ctx.obj["TASKS_FILE"]
@@ -138,7 +137,7 @@ def run(
             retry_delay,
             yolo,
             no_defaults,
-            runner_args,
+            ctx.meta["runner_args"],
             working_dir=working_dir,
             max_tasks=max_tasks,
             until=until,

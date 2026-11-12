@@ -21,7 +21,7 @@ import click
 from .. import hooks, models, paths, persistence, runner, scope, shutdown
 from ..orchestrator import run_loop
 from ..tasks import lifecycle, limits, operations
-from .main import cli
+from .main import PassthroughCommand, cli
 
 # Ceiling on how much of the runner log is scanned for the closing message.
 # The message is at the end, and a log carrying every tool call can be
@@ -36,29 +36,6 @@ STDIN_SCOPE = "-"
 
 # Separates paths read from stdin without NULs, as from 'git diff' without -z.
 LINE_SEPARATOR = re.compile(r"\r?\n")
-
-
-class _PassthroughCommand(click.Command):
-    """Click command whose arguments after '--' go to the agent CLI.
-
-    Click drops the separator and merges what follows into the positionals,
-    so a stray word would reach the agent unnoticed. Splitting first keeps
-    runner arguments behind '--' and lets click reject any other extra word.
-    The runner arguments are left in ``ctx.meta["runner_args"]``.
-    """
-
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
-        """Sets aside everything after '--', then parses the rest."""
-        runner_args: list[str] = []
-        if "--" in args:
-            split = args.index("--")
-            args, runner_args = args[:split], args[split + 1 :]
-        ctx.meta["runner_args"] = tuple(runner_args)
-        return super().parse_args(ctx, args)
-
-    def collect_usage_pieces(self, ctx: click.Context) -> list[str]:
-        """Shows where runner arguments go in the usage line."""
-        return [*super().collect_usage_pieces(ctx), "[-- RUNNER_ARGS...]"]
 
 
 def _read_log_tail(
@@ -253,7 +230,7 @@ def _task_status(
 
 @cli.command(
     "exec",
-    cls=_PassthroughCommand,
+    cls=PassthroughCommand,
     short_help="[description] Run a single task and exit",
 )
 @click.argument("description", required=False)

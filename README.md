@@ -75,7 +75,7 @@ Start the autonomous loop.
 # claude, or codex)
 lemming run
 
-# Flags passed after -- are sent directly to the underlying runner
+# Arguments after -- are sent directly to the underlying runner
 lemming run -- --model claude-3-5-sonnet
 ```
 
@@ -460,8 +460,9 @@ These come before the subcommand and apply to all of them.
   - `--max-tasks N`: Stop between tasks once `N` have completed or failed,
     printing `Stopped after N tasks; M pending.` Attempts that leave a task
     pending do not count. Combine with `--until` as a budget cap.
-  - `--`: Use `--` to pass any flag directly to the underlying runner. A
-    per-task `--runner`/`--model` overrides anything passed here.
+  - `--`: Arguments after `--` go directly to the underlying runner; any other
+    extra argument is an error. A per-task `--runner`/`--model` overrides
+    anything passed here.
 - **`exec [<description>]`**: Run one task, or one set of reviews, outside any
   roadmap. Prints the agent's closing message to stdout and everything else to
   stderr, including its tasks file and task ID at startup. Use

@@ -169,6 +169,29 @@ class TestCLIOperations(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("not in the range", result.output)
 
+    def test_run_rejects_a_stray_argument(self):
+        """A bare word must not reach the agent CLI."""
+        with mock.patch.object(operations, "run_loop") as run_loop:
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "stray"]
+            )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("unexpected extra argument (stray)", result.output)
+        run_loop.assert_not_called()
+
+    def test_run_passes_arguments_after_a_separator_to_the_runner(self):
+        with mock.patch.object(
+            operations, "run_loop", return_value=True
+        ) as run_loop:
+            result = self.cli_runner.invoke(
+                cli.cli,
+                self.base_args + ["run", "--", "--model", "--", "x"],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(run_loop.call_args.args[5], ("--model", "--", "x"))
+
     def test_serve_help(self):
         result = self.cli_runner.invoke(cli.cli, ["serve", "--help"])
         self.assertEqual(result.exit_code, 0)
