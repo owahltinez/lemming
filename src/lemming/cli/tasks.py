@@ -389,6 +389,26 @@ def supersede(ctx: click.Context, task_id: str, reason: str):
         ctx.exit(1)
 
 
+def _abandoned_hint(task: models.Task, loop_running: bool) -> str | None:
+    """Returns how to recover an in_progress task that no loop is running.
+
+    With no loop running, no task has a fresh heartbeat, but a runner started
+    in its own session can outlive the loop that was watching it.
+
+    Args:
+        task: The task to check.
+        loop_running: Whether a loop owns the roadmap or a task is active.
+
+    Returns:
+        A recovery hint, or None if the task is not abandoned.
+    """
+    if task.status != models.TaskStatus.IN_PROGRESS or loop_running:
+        return None
+    if task.pid and lifecycle.is_pid_alive(task.pid):
+        return f"runner pid {task.pid} is still running; kill it first"
+    return "`lemming run --detach` reclaims it"
+
+
 def _task_payload(task: models.Task, brief: bool) -> dict:
     """Serialises a task for machine consumption.
 
@@ -486,15 +506,9 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
         if queue:
             for task in queue:
                 _echo_task_summary(task, project_data.tasks, brief)
-                # No loop and no live runner: nothing will finish this task.
-                if (
-                    task.status == models.TaskStatus.IN_PROGRESS
-                    and not project_data.loop_running
-                ):
-                    click.echo(
-                        "    Abandoned: no loop is running; "
-                        "`lemming run` reclaims it."
-                    )
+                hint = _abandoned_hint(task, project_data.loop_running)
+                if hint:
+                    click.echo(f"    Abandoned: {hint}.")
         else:
             click.echo("No active tasks.")
 
@@ -553,11 +567,9 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
         and target.requested_status
     ):
         status_str += f" ({target.requested_status} requested, hooks running)"
-    if (
-        target.status == models.TaskStatus.IN_PROGRESS
-        and not project_data.loop_running
-    ):
-        status_str += " (abandoned; `lemming run` reclaims it)"
+    hint = _abandoned_hint(target, project_data.loop_running)
+    if hint:
+        status_str += f" (abandoned; {hint})"
     click.echo(f"Status:        {status_str}")
     click.echo(f"Description:   {target.description}")
     if target.parent:

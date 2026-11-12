@@ -12,6 +12,8 @@ def test_run_loop(client, test_tasks):
 
         args = mock_popen.call_args[0][0]
         assert "run" in args
+        # Without -C the loop runs where its tasks file lives, as `run` does.
+        assert "-C" not in args
         # Check that we didn't pass redundant flags
         assert "--runner" not in args
         assert "--retries" not in args

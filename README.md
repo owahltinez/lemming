@@ -371,8 +371,10 @@ These come before the subcommand and apply to all of them.
   - `--json`: Emit machine-readable JSON instead of formatted text, so scripts
     never have to parse the internal state file.
   - `--brief`: Omit task descriptions, which otherwise dominate the output.
-  - An `in_progress` task with no loop running is flagged as abandoned; the
-    next `lemming run` reclaims it.
+  - An `in_progress` task with no loop running is flagged as abandoned;
+    `lemming run --detach` reclaims it. If its runner outlived the loop,
+    `status` names the runner's pid to kill first, and `run` refuses to start
+    a second runner until it is gone.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index`, `--runner`,

@@ -115,15 +115,31 @@ class TestCLIOperations(unittest.TestCase):
         )
 
         with (
+            tempfile.TemporaryDirectory() as repo,
+            mock.patch.dict(os.environ),
             mock.patch("subprocess.Popen") as popen,
             mock.patch.object(operations, "run_loop") as run_loop,
         ):
             popen.return_value.pid = 4242
             result = self.cli_runner.invoke(
                 cli.cli,
-                self.base_args
-                + ["run", "--detach", "--until", "abcd", "--max-tasks", "2"],
+                ["-C", repo]
+                + self.base_args
+                + [
+                    "run",
+                    "--detach",
+                    "--until",
+                    "abcd",
+                    "--max-tasks",
+                    "2",
+                    "--env",
+                    "LEMMING_TEST_VAR=1",
+                    "--",
+                    "--model",
+                    "m1",
+                ],
             )
+            repo_dir = str(pathlib.Path(repo).resolve())
 
         self.assertEqual(result.exit_code, 0, result.output)
         run_loop.assert_not_called()
@@ -132,17 +148,70 @@ class TestCLIOperations(unittest.TestCase):
         self.assertIn(str(log_file), result.output)
         cmd = popen.call_args.args[0]
         kwargs = popen.call_args.kwargs
+        global_args = cmd[: cmd.index("run")]
+        self.assertEqual(global_args[global_args.index("-C") + 1], repo_dir)
         self.assertEqual(
-            cmd[cmd.index("--tasks-file") + 1],
+            global_args[global_args.index("--tasks-file") + 1],
             str(self.test_tasks_file.resolve()),
         )
         run_args = cmd[cmd.index("run") + 1 :]
         self.assertNotIn("--detach", run_args)
         self.assertIn("--until=abcd1234", run_args)
         self.assertIn("--max-tasks=2", run_args)
+        self.assertEqual(
+            run_args[run_args.index("--") + 1 :], ["--model", "m1"]
+        )
+        self.assertEqual(kwargs["env"]["LEMMING_TEST_VAR"], "1")
         self.assertTrue(kwargs["start_new_session"])
         self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
         self.assertEqual(kwargs["stdout"].name, str(log_file))
+
+    def test_run_detach_without_project_dir_omits_it(self):
+        with mock.patch("subprocess.Popen") as popen:
+            popen.return_value.pid = 4242
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--detach"]
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertNotIn("-C", popen.call_args.args[0])
+
+    def test_run_refuses_to_reclaim_task_with_live_runner(self):
+        runner = subprocess.Popen(["sleep", "60"])
+        try:
+            persistence.save_tasks(
+                self.test_tasks_file,
+                models.Roadmap(
+                    tasks=[
+                        models.Task(
+                            id="orphan12",
+                            description="Orphaned task",
+                            status=models.TaskStatus.IN_PROGRESS,
+                            attempts=1,
+                            pid=runner.pid,
+                            last_heartbeat=time.time() - 3600,
+                        )
+                    ],
+                    config=models.RoadmapConfig(
+                        retries=2, runner="true", hooks=[]
+                    ),
+                ),
+            )
+
+            with mock.patch("time.sleep"):
+                result = self.cli_runner.invoke(
+                    cli.cli, ["--tasks-file", str(self.test_tasks_file), "run"]
+                )
+        finally:
+            runner.kill()
+            runner.wait()
+
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn(f"pid {runner.pid}", result.output)
+        self.assertNotIn("Reclaiming", result.output)
+        task = persistence.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertEqual(task.attempts, 1)
+        self.assertEqual(task.pid, runner.pid)
 
     def test_run_detach_refuses_when_loop_is_running(self):
         persistence.acquire_loop_lock(self.test_tasks_file)

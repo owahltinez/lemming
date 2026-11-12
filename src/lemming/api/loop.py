@@ -14,6 +14,7 @@ from ..tasks import lifecycle
 def spawn_loop(
     tasks_file: pathlib.Path,
     cwd: pathlib.Path | None = None,
+    project_dir: pathlib.Path | None = None,
     verbose: bool = False,
     env: dict[str, str] | None = None,
     run_args: typing.Sequence[str] = (),
@@ -23,7 +24,8 @@ def spawn_loop(
 
     Args:
         tasks_file: Tasks file the loop works through.
-        cwd: Project directory to run the loop from.
+        cwd: Directory to start the loop in.
+        project_dir: Passed as -C, overriding the tasks file's working dir.
         verbose: Whether the loop prints verbose output.
         env: Environment for the loop; defaults to the current one.
         run_args: Extra arguments for the `run` command.
@@ -37,8 +39,8 @@ def spawn_loop(
     cmd = [sys.executable, "-m", "lemming.main"]
     if verbose:
         cmd.append("--verbose")
-    if cwd is not None:
-        cmd.extend(["-C", str(cwd)])
+    if project_dir is not None:
+        cmd.extend(["-C", str(project_dir)])
     cmd.extend(["--tasks-file", str(tasks_file), "run", *run_args])
 
     process = subprocess.Popen(

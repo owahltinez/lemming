@@ -213,6 +213,7 @@ def _detach_loop(
         pid = loop.spawn_loop(
             tasks_file,
             working_dir,
+            project_dir=ctx.obj["PROJECT_DIR"],
             verbose=ctx.obj["VERBOSE"],
             run_args=run_args,
             log=log,
