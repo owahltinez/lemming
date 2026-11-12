@@ -1,27 +1,22 @@
 """Resolution of the file scope a review agent should look at.
 
-A review needs to be told what to read. Paths are already an instruction an
-agent can act on, so they pass through untouched; only a revision range
-needs translating, because reading one means running exactly the right git
-command and that is not worth delegating.
+A review needs to be told what to read. Paths and globs are already an
+instruction an agent can act on, so they pass through untouched once each
+is known to match something; only the default, uncommitted work, needs
+translating into the files it covers.
 """
 
-import logging
+import glob
 import pathlib
+import re
 import subprocess
-
-logger = logging.getLogger(__name__)
-
-# Most entries worth rendering into a prompt. Past this the list stops
-# being useful context and the range that produced it is the better
-# instruction, since the agent can take the diff itself.
-MAX_SCOPE_ENTRIES = 100
 
 # Scope used when there is no git repository to diff against.
 WHOLE_TREE = "."
 
-# How git spells a revision range, and so how one is told from a path.
-RANGE_MARKER = ".."
+# Control characters and line separators; in a path, they would add lines
+# to the review prompt that the agent reads as instructions.
+_UNSAFE_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 
 
 class ScopeError(ValueError):
@@ -47,9 +42,9 @@ def _git(working_dir: pathlib.Path, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-def _lines(result: subprocess.CompletedProcess) -> list[str]:
-    """Returns the non-empty output lines of a completed git command."""
-    return [line for line in result.stdout.splitlines() if line.strip()]
+def _names(result: subprocess.CompletedProcess) -> list[str]:
+    """Returns the paths a git command listed with -z, unquoted."""
+    return [name for name in result.stdout.split("\0") if name]
 
 
 def _in_git_repo(working_dir: pathlib.Path) -> bool:
@@ -61,112 +56,116 @@ def _in_git_repo(working_dir: pathlib.Path) -> bool:
 def _uncommitted_paths(working_dir: pathlib.Path) -> list[str]:
     """Returns tracked edits and new files, excluding what git ignores.
 
-    Args:
-        working_dir: Root of the repository to inspect.
-
-    Returns:
-        Deduplicated paths, in a stable order.
-    """
-    tracked = _git(working_dir, "diff", "--name-only", "HEAD")
-    untracked = _git(working_dir, "ls-files", "--others", "--exclude-standard")
-    return sorted(set(_lines(tracked) + _lines(untracked)))
-
-
-def _range_paths(spec: str, working_dir: pathlib.Path) -> list[str]:
-    """Returns the files a revision range touches.
+    Both commands report paths relative to working_dir and only under it,
+    so every entry is readable from where the agent runs.
 
     Args:
-        spec: A git revision or revision range.
-        working_dir: Root of the repository to inspect.
+        working_dir: Directory inside the repository to inspect.
 
     Returns:
-        The changed paths, in git's order.
-
-    Raises:
-        ScopeError: If git cannot read the range.
+        Deduplicated paths, in a stable order. Deleted files are left out,
+        since there is nothing left of them to review.
     """
-    if spec.startswith("-"):
-        raise ScopeError(
-            f"Could not resolve '{spec}' as a path or a revision range."
-        )
-    result = _git(working_dir, "diff", "--name-only", spec)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip().splitlines()
-        raise ScopeError(
-            f"Could not resolve '{spec}' as a path or a revision range"
-            + (f": {detail[-1]}" if detail else ".")
-        )
-    return _lines(result)
+    # Without -z, git quotes unusual names, which then name no real file.
+    tracked = _git(
+        working_dir,
+        "diff",
+        "-z",
+        "--name-only",
+        "--relative",
+        "--diff-filter=d",
+        "HEAD",
+    )
+    untracked = _git(
+        working_dir, "ls-files", "-z", "--others", "--exclude-standard"
+    )
+    return sorted(set(_names(tracked) + _names(untracked)))
+
+
+def _matches(pattern: str, working_dir: pathlib.Path) -> bool:
+    """Returns whether a path exists, or a glob matches at least one path.
+
+    An existing path wins, so brackets in a real file name are not read as
+    a pattern. An empty pattern matches nothing, although joining it to
+    working_dir would name the directory itself.
+    """
+    if not pattern:
+        return False
+    try:
+        if (working_dir / pattern).exists():
+            return True
+    except OSError:
+        return False
+    matches = glob.iglob(pattern, root_dir=working_dir, recursive=True)
+    return next(matches, None) is not None
 
 
 def resolve_scope(
-    values: tuple[str, ...] | list[str],
-    working_dir: pathlib.Path,
-    max_entries: int = MAX_SCOPE_ENTRIES,
+    patterns: tuple[str, ...], working_dir: pathlib.Path
 ) -> list[str]:
     """Returns the entries a review should be pointed at.
 
     Args:
-        values: Requested scopes: paths, or git revision ranges. Empty
-            means the default, which is whatever is uncommitted.
+        patterns: Requested paths or globs. Empty means the default, which
+            is whatever is uncommitted.
         working_dir: Directory the review runs in.
-        max_entries: Most paths to expand a range into before falling back
-            to naming the range itself.
 
     Returns:
-        Paths relative to working_dir, or a revision range when expanding
-        it would produce a list too long to be useful. Empty when there is
-        nothing to review.
+        The patterns as given, or the uncommitted paths relative to
+        working_dir. Empty when there is nothing to review.
 
     Raises:
-        ScopeError: If a requested scope is neither a path nor a range.
+        ScopeError: If a pattern matches nothing, or an entry holds a
+            control character.
     """
-    if not values:
+    missing = [p for p in patterns if not _matches(p, working_dir)]
+    if missing:
+        raise ScopeError(
+            "Nothing matches " + ", ".join(repr(p) for p in missing) + "."
+        )
+    if patterns:
+        entries = list(patterns)
+    elif not _in_git_repo(working_dir):
         # Without git there is no notion of a change, so the only honest
         # default is the tree the caller is standing in.
-        if not _in_git_repo(working_dir):
-            return [WHOLE_TREE]
-        return _uncommitted_paths(working_dir)
+        entries = [WHOLE_TREE]
+    else:
+        entries = _uncommitted_paths(working_dir)
 
-    resolved: list[str] = []
-    for value in values:
-        # Only a range is translated, and ".." is how git spells one. A
-        # path is left alone without checking that it exists: requiring
-        # that would reject globs, and an agent reports a missing path
-        # more usefully than a guess here would.
-        if RANGE_MARKER not in value:
-            resolved.append(value)
-            continue
-
-        paths = _range_paths(value, working_dir)
-        if len(paths) > max_entries:
-            logger.info(
-                "Scope '%s' covers %d files; naming the range instead.",
-                value,
-                len(paths),
-            )
-            resolved.append(value)
-            continue
-        resolved.extend(paths)
-
-    return resolved
+    unsafe = [entry for entry in entries if _UNSAFE_CHARS.search(entry)]
+    if unsafe:
+        raise ScopeError(
+            "Refusing paths with control characters: "
+            + ", ".join(repr(entry) for entry in unsafe)
+        )
+    return entries
 
 
-def describe(entries: list[str]) -> str:
+def _one_line(text: str) -> str:
+    """Returns text as is, or escaped when it could break a prompt line."""
+    return repr(text) if _UNSAFE_CHARS.search(text) else text
+
+
+def describe(entries: list[str], working_dir: pathlib.Path) -> str:
     """Renders resolved scope entries for a review prompt.
 
     Args:
         entries: Resolved scope entries.
+        working_dir: Directory the entries are relative to. It is named in
+            full because some runners run their tools somewhere else.
 
     Returns:
-        A block naming what to review, or saying there is nothing to.
+        A block naming what to review, or saying there is nothing to. A
+        path that could break a line, as one a task created might, is
+        escaped onto its own line rather than refused, since a hook cannot
+        stop the run.
     """
     if not entries:
         return "There are no changes to review."
 
-    listed = "\n".join(f"- {entry}" for entry in entries)
+    listed = "\n".join(f"- {_one_line(entry)}" for entry in entries)
     return (
-        "ONLY the following, relative to the project root:\n"
+        f"ONLY the following, relative to {_one_line(str(working_dir))}:\n"
         f"{listed}\n"
         "Do not touch any other file, and do not leave new ones behind: "
         "write scratch output outside the workspace, never into it."

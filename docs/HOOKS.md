@@ -231,7 +231,8 @@ Your hook template can use the following placeholders:
 - `{{finished_task_id}}`: The ID of the task that just finished.
 - `{{scope}}`: What the hook should look at, and how broadly. Under
   `lemming run` this names the work the finished task left behind; under
-  `lemming exec --review` it is whatever `--scope` resolved to.
+  `lemming exec --review` with no description it is the `--scope` paths, or the
+  uncommitted work; with a description, the work the task left behind.
 - `{{tasks_file_name}}`: The filename of the tasks YAML file.
 - `{{tasks_file_path}}`: The full path to the tasks YAML file.
 
