@@ -11,7 +11,7 @@ import subprocess
 import threading
 from collections.abc import Iterable, Iterator
 
-from . import models, paths
+from . import models, paths, scope
 
 logger = logging.getLogger(__name__)
 
@@ -358,8 +358,12 @@ def diff_trees(
     repo_dir = get_snapshots_dir(tasks_file)
     if not (repo_dir / "HEAD").is_file():
         return ""
-    flag = "--name-only" if name_only else ("--stat" if stat else "--binary")
-    res = _run_git([*_DIFF_BASE_ARGS, flag, pre_tree, post_tree], repo_dir)
+    flags = (
+        ["-z", "--name-only"]
+        if name_only
+        else ["--stat" if stat else "--binary"]
+    )
+    res = _run_git([*_DIFF_BASE_ARGS, *flags, pre_tree, post_tree], repo_dir)
     return res.stdout if res.returncode == 0 else ""
 
 
@@ -368,9 +372,7 @@ def changed_files(
 ) -> list[str]:
     """Returns the list of file paths that changed between two trees."""
     output = diff_trees(tasks_file, pre_tree, post_tree, name_only=True)
-    # Git separates names with \n alone; splitlines() would also split a
-    # name at U+2028 or NEL, which git leaves unquoted.
-    return [line for line in output.split("\n") if line.strip()]
+    return [name for name in output.split("\0") if name]
 
 
 def summarize_diff(
@@ -382,20 +384,20 @@ def summarize_diff(
     repo_dir = get_snapshots_dir(tasks_file)
     if not (repo_dir / "HEAD").is_file():
         return None
-    cmd = [*_DIFF_BASE_ARGS, "--numstat", pre_tree, post_tree]
+    cmd = [*_DIFF_BASE_ARGS, "-z", "--numstat", pre_tree, post_tree]
     res = _run_git(cmd, repo_dir)
     if res.returncode != 0 or not res.stdout.strip():
         return None
     added_sum = deleted_sum = 0
     entries: list[str] = []
-    for line in res.stdout.splitlines():
-        parts = line.split("\t", 2)
+    for record in res.stdout.split("\0"):
+        parts = record.split("\t", 2)
         if len(parts) == 3:
             add = int(parts[0]) if parts[0].isdigit() else 0
             rem = int(parts[1]) if parts[1].isdigit() else 0
             added_sum += add
             deleted_sum += rem
-            entries.append(f"{parts[2]} (+{add}/-{rem})")
+            entries.append(f"{scope.one_line(parts[2])} (+{add}/-{rem})")
     if not entries:
         return None
     noun = "file" if len(entries) == 1 else "files"

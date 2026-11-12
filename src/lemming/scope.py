@@ -141,7 +141,7 @@ def resolve_scope(
     return entries
 
 
-def _one_line(text: str) -> str:
+def one_line(text: str) -> str:
     """Returns text as is, or escaped when it could break a prompt line."""
     return repr(text) if _UNSAFE_CHARS.search(text) else text
 
@@ -163,9 +163,9 @@ def describe(entries: list[str], working_dir: pathlib.Path) -> str:
     if not entries:
         return "There are no changes to review."
 
-    listed = "\n".join(f"- {_one_line(entry)}" for entry in entries)
+    listed = "\n".join(f"- {one_line(entry)}" for entry in entries)
     return (
-        f"ONLY the following, relative to {_one_line(str(working_dir))}:\n"
+        f"ONLY the following, relative to {one_line(str(working_dir))}:\n"
         f"{listed}\n"
         "Do not touch any other file, and do not leave new ones behind: "
         "write scratch output outside the workspace, never into it."
