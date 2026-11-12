@@ -694,3 +694,38 @@ def test_get_task_diff_and_rollback_endpoints(client, test_tasks, monkeypatch):
         cancelled_diff = client.get("/api/tasks/task1/diff")
         assert cancelled_diff.status_code == 200
         assert cancelled_diff.json() == {"diff": "", "summary": None}
+
+
+def test_get_task_diff_serves_non_utf8_content(client, test_tasks, monkeypatch):
+    root = main.app.state.root
+    monkeypatch.setenv("LEMMING_HOME", str(root / "lemming_home"))
+    pre_tree = snapshots.snapshot_tree(test_tasks, root)
+    (root / "notes.txt").write_bytes(b"caf\xe9\n")
+    post_tree = snapshots.snapshot_tree(test_tasks, root)
+
+    with persistence.lock_tasks(test_tasks):
+        data = persistence.load_tasks(test_tasks)
+        data.tasks[0].pre_tree = pre_tree
+        data.tasks[0].post_tree = post_tree
+        persistence.save_tasks(test_tasks, data)
+
+    response = client.get("/api/tasks/task1/diff")
+    assert response.status_code == 200
+    assert "+caf\udce9" in response.json()["diff"]
+
+
+def test_task_fields_with_surrogates_are_served(client, test_tasks):
+    entry = "saw bad\udcff.txt"
+    with persistence.lock_tasks(test_tasks):
+        data = persistence.load_tasks(test_tasks)
+        data.tasks[0].progress = [entry]
+        persistence.save_tasks(test_tasks, data)
+
+    data_resp = client.get("/api/data")
+    assert data_resp.status_code == 200
+    task1 = next(t for t in data_resp.json()["tasks"] if t["id"] == "task1")
+    assert task1["progress"] == [entry]
+
+    task_resp = client.get("/api/tasks/task1")
+    assert task_resp.status_code == 200
+    assert task_resp.json()["progress"] == [entry]

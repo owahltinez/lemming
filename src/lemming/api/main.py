@@ -1,6 +1,7 @@
 """FastAPI application setup: middleware, routers, and static files."""
 
 import importlib.resources
+import json
 import logging
 import pathlib
 
@@ -24,7 +25,21 @@ class FilteredStaticFiles(fastapi.staticfiles.StaticFiles):
         return super().lookup_path(path)
 
 
-app = fastapi.FastAPI()
+class AsciiJSONResponse(fastapi.responses.JSONResponse):
+    """JSON response that escapes the lone surrogates of non-UTF-8 git output.
+
+    Being a custom class also keeps FastAPI off pydantic's JSON serializer,
+    which rejects surrogates before render() sees them.
+    """
+
+    def render(self, content: object) -> bytes:
+        """Serializes content with every non-ASCII character escaped."""
+        return json.dumps(
+            content, allow_nan=False, separators=(",", ":")
+        ).encode()
+
+
+app = fastapi.FastAPI(default_response_class=AsciiJSONResponse)
 app.state.tasks_file = paths.get_default_tasks_file()
 app.state.root = pathlib.Path.cwd().resolve()
 app.state.disable_auto_start = False

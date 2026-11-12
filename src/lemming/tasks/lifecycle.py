@@ -435,7 +435,9 @@ def write_patch_artifact(
         return
     artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    (artifacts_dir / filename).write_text(patch_text, encoding="utf-8")
+    (artifacts_dir / filename).write_text(
+        patch_text, encoding="utf-8", errors="surrogateescape"
+    )
 
 
 def _kill_pid_tree(pid: int) -> None:
