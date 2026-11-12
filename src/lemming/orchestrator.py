@@ -1216,6 +1216,9 @@ def run_loop(
         # multiple instances
         time.sleep(random.uniform(0.1, 0.5))
 
+        # Claiming an in_progress task succeeds only once its runner is gone.
+        abandoned = current_task.status == models.TaskStatus.IN_PROGRESS
+
         # Try to claim the task
         current_task = lifecycle.claim_task(
             tasks_file, task_id, pid=os.getpid()
@@ -1227,6 +1230,10 @@ def run_loop(
                     "Skipping."
                 )
             continue
+        if abandoned:
+            click.echo(
+                f"Reclaiming abandoned task {task_id}; its runner is gone."
+            )
 
         if verbose:
             click.echo(

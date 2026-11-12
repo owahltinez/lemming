@@ -52,6 +52,8 @@ def test_start_loop_if_needed_starts_process(tmp_path):
                 "-m",
                 "lemming.main",
                 "--verbose",
+                "-C",
+                str(cwd),
                 "--tasks-file",
                 str(tasks_file),
                 "run",

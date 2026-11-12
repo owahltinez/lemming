@@ -486,6 +486,15 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
         if queue:
             for task in queue:
                 _echo_task_summary(task, project_data.tasks, brief)
+                # No loop and no live runner: nothing will finish this task.
+                if (
+                    task.status == models.TaskStatus.IN_PROGRESS
+                    and not project_data.loop_running
+                ):
+                    click.echo(
+                        "    Abandoned: no loop is running; "
+                        "`lemming run` reclaims it."
+                    )
         else:
             click.echo("No active tasks.")
 
@@ -544,6 +553,11 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
         and target.requested_status
     ):
         status_str += f" ({target.requested_status} requested, hooks running)"
+    if (
+        target.status == models.TaskStatus.IN_PROGRESS
+        and not project_data.loop_running
+    ):
+        status_str += " (abandoned; `lemming run` reclaims it)"
     click.echo(f"Status:        {status_str}")
     click.echo(f"Description:   {target.description}")
     if target.parent:

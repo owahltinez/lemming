@@ -1,15 +1,13 @@
 """API routes for runner discovery, project configuration, and loop runs."""
 
 import os
-import subprocess
-import sys
 
 import fastapi
 import pydantic
 
 from .. import models, persistence
 from ..tasks import operations
-from . import context
+from . import context, loop
 
 router = fastapi.APIRouter()
 
@@ -85,26 +83,14 @@ def run_loop(
     tasks_file = context.resolve_tasks_file(request.app.state, project)
     project_dir = context.resolve_project_dir(request.app.state, project)
 
-    # Use sys.executable -m lemming.main to ensure we use the same environment
-    # and pass the explicit tasks file.
-    cmd = [
-        sys.executable,
-        "-m",
-        "lemming.main",
-    ]
-    if getattr(request.app.state, "verbose", False):
-        cmd.append("--verbose")
-    cmd.extend(
-        [
-            "--tasks-file",
-            str(tasks_file),
-            "run",
-        ]
-    )
-
     env = os.environ.copy()
     if run_request.env:
         env.update(run_request.env)
 
-    subprocess.Popen(cmd, start_new_session=True, env=env, cwd=project_dir)
+    loop.spawn_loop(
+        tasks_file,
+        project_dir,
+        verbose=getattr(request.app.state, "verbose", False),
+        env=env,
+    )
     return {"status": "started"}
