@@ -368,7 +368,9 @@ def changed_files(
 ) -> list[str]:
     """Returns the list of file paths that changed between two trees."""
     output = diff_trees(tasks_file, pre_tree, post_tree, name_only=True)
-    return [line for line in output.splitlines() if line.strip()]
+    # Git separates names with \n alone; splitlines() would also split a
+    # name at U+2028 or NEL, which git leaves unquoted.
+    return [line for line in output.split("\n") if line.strip()]
 
 
 def summarize_diff(

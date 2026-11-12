@@ -475,7 +475,8 @@ These come before the subcommand and apply to all of them.
     cannot be selected.
   - `--scope <path>`: With `--review` and no description, a path or glob to
     review instead of uncommitted work. Each must match something. Repeat it for
-    several, or pass `-` to read them from stdin, one per line or NUL-separated.
+    several, or pass `-` to read them from stdin: NUL-separated if it holds any
+    NUL, as from `git diff -z`, or else one per line.
   - `--runner`, `--model`: Which agent CLI and model to use.
   - `--retries`: Maximum total task-runner attempts, including the first
     (default 1). Does not retry review-only runs.

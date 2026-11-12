@@ -281,7 +281,8 @@ def _task_status(
     help=(
         "With --review and no description, a path or glob to review "
         "instead of uncommitted work. Repeat for several, or pass '-' to "
-        "read them from stdin, one per line or NUL-separated."
+        "read them from stdin: NUL-separated if it holds any NUL, or else "
+        "one per line."
     ),
 )
 @click.option("--runner", "runner_name", help="Agent CLI to run the task.")
