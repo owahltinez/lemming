@@ -584,20 +584,50 @@ def test_review_reads_nul_separated_scopes_from_stdin(repo):
     assert "- src/a.py\n- src/é n.py" in calls[0][1][-1]
 
 
-def test_review_reads_crlf_scopes_from_stdin(repo):
+def test_stdin_scope_strips_crlf_line_endings(monkeypatch):
     """A carriage return ends a line; it is not part of the name."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO("a\r\nb\r\n", newline=""))
+
+    assert _scope_patterns(("-",)) == ("a", "b")
+
+
+def test_stdin_scope_splits_only_on_nul_when_present(monkeypatch):
+    """With 'git diff -z' a newline is part of a name, not a separator."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO("sub\ntop.py\0a.py\0"))
+
+    assert _scope_patterns(("-",)) == ("sub\ntop.py", "a.py")
+
+
+def test_stdin_scope_refuses_a_closed_stdin(monkeypatch):
+    """With stdin closed there is nothing to read, and no traceback."""
+    monkeypatch.setattr(sys, "stdin", None)
+
+    with pytest.raises(click.UsageError):
+        _scope_patterns(("-",))
+
+
+def test_review_keeps_stdin_scopes_in_place(repo):
+    """'-' expands where it was given, among the other --scope values."""
     _commit_src(repo)
     calls = []
 
     with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
         result = CliRunner().invoke(
             main.cli,
-            ["exec", "--review", "readability", "--scope", "-"],
-            input="src/a.py\r\nsrc/b.py\r\n",
+            [
+                "exec",
+                "--review",
+                "readability",
+                "--scope",
+                "src/b.py",
+                "--scope",
+                "-",
+            ],
+            input="src/a.py\n",
         )
 
     assert result.exit_code == 0, result.stderr
-    assert "- src/a.py\n- src/b.py" in calls[0][1][-1]
+    assert "- src/b.py\n- src/a.py" in calls[0][1][-1]
 
 
 def test_review_refuses_stdin_scope_twice(repo):

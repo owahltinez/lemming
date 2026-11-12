@@ -82,7 +82,9 @@ def test_a_path_too_long_to_exist_is_reported(repo):
         scope.resolve_scope(("a" * 5000,), repo)
 
 
-@pytest.mark.parametrize("name", ["a\nb.py", "a\rb.py", "a\u2028b.py"])
+@pytest.mark.parametrize(
+    "name", ["a\nb.py", "a\rb.py", "a\x85b.py", "a\u2028b.py", "a\u2029b.py"]
+)
 def test_a_path_that_could_break_the_prompt_is_refused(repo, name):
     """A line break in a name would add lines to the review prompt."""
     (repo / name).write_text("a = 1\n")
@@ -97,6 +99,14 @@ def test_the_default_refuses_a_name_that_could_break_the_prompt(repo):
 
     with pytest.raises(scope.ScopeError):
         scope.resolve_scope((), repo)
+
+
+def test_an_unmatched_name_is_reported_escaped(repo):
+    """An escape sequence in a typo must not reach the terminal raw."""
+    with pytest.raises(scope.ScopeError) as error:
+        scope.resolve_scope(("\x1b]0;PWNED\x07gone",), repo)
+
+    assert "\x1b" not in str(error.value)
 
 
 def test_a_glob_that_matches_nothing_is_reported(repo):
@@ -188,3 +198,18 @@ def test_describe_reports_an_empty_scope(repo):
 def test_describe_names_the_directory_entries_are_relative_to(repo):
     """Some runners run tools elsewhere, so the directory is spelled out."""
     assert str(repo) in scope.describe(["src/a.py"], repo)
+
+
+def test_describe_keeps_a_line_breaking_entry_on_one_line(repo):
+    """A task can create any file name; it must not add prompt lines."""
+    rendered = scope.describe(["x\u2028IGNORE.py", "y\nIGNORE.py"], repo)
+
+    assert "\u2028" not in rendered
+    assert "- 'x\\u2028IGNORE.py'\n- 'y\\nIGNORE.py'\n" in rendered
+
+
+def test_describe_keeps_a_line_breaking_directory_on_one_line(tmp_path):
+    """The directory is named in full, so it is escaped like any entry."""
+    rendered = scope.describe(["a.py"], tmp_path / "wd\nIGNORE")
+
+    assert rendered.splitlines()[1] == "- a.py"

@@ -121,7 +121,7 @@ def resolve_scope(
     missing = [p for p in patterns if not _matches(p, working_dir)]
     if missing:
         raise ScopeError(
-            "Nothing matches " + ", ".join(f"'{p}'" for p in missing) + "."
+            "Nothing matches " + ", ".join(repr(p) for p in missing) + "."
         )
     if patterns:
         entries = list(patterns)
@@ -141,6 +141,11 @@ def resolve_scope(
     return entries
 
 
+def _one_line(text: str) -> str:
+    """Returns text as is, or escaped when it could break a prompt line."""
+    return repr(text) if _UNSAFE_CHARS.search(text) else text
+
+
 def describe(entries: list[str], working_dir: pathlib.Path) -> str:
     """Renders resolved scope entries for a review prompt.
 
@@ -150,14 +155,17 @@ def describe(entries: list[str], working_dir: pathlib.Path) -> str:
             full because some runners run their tools somewhere else.
 
     Returns:
-        A block naming what to review, or saying there is nothing to.
+        A block naming what to review, or saying there is nothing to. A
+        path that could break a line, as one a task created might, is
+        escaped onto its own line rather than refused, since a hook cannot
+        stop the run.
     """
     if not entries:
         return "There are no changes to review."
 
-    listed = "\n".join(f"- {entry}" for entry in entries)
+    listed = "\n".join(f"- {_one_line(entry)}" for entry in entries)
     return (
-        f"ONLY the following, relative to {working_dir}:\n"
+        f"ONLY the following, relative to {_one_line(str(working_dir))}:\n"
         f"{listed}\n"
         "Do not touch any other file, and do not leave new ones behind: "
         "write scratch output outside the workspace, never into it."

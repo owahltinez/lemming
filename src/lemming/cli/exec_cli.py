@@ -34,8 +34,8 @@ ATTEMPT_HEADER = "--- Attempt started at "
 # --scope value that reads the scope from stdin.
 STDIN_SCOPE = "-"
 
-# Separates paths read from stdin: NUL, as from 'git diff -z', or a line.
-STDIN_SEPARATOR = re.compile(r"\0|\r?\n")
+# Separates paths read from stdin without NULs, as from 'git diff' without -z.
+LINE_SEPARATOR = re.compile(r"\r?\n")
 
 
 class _PassthroughCommand(click.Command):
@@ -200,13 +200,14 @@ def _scope_patterns(values: tuple[str, ...]) -> tuple[str, ...]:
         values: --scope values as given.
 
     Returns:
-        Paths and globs, in order. Paths on stdin are separated by NULs or
-        line breaks, and empty ones are skipped.
+        Paths and globs, in order. Paths on stdin are separated by NULs if
+        it holds any, as from 'git diff -z', or else by line breaks. Empty
+        ones are skipped.
 
     Raises:
-        click.UsageError: If '-' is given more than once, stdin is a
-            terminal, or it held no paths, which would otherwise fall back
-            to reviewing uncommitted work.
+        click.UsageError: If '-' is given more than once, stdin is closed
+            or a terminal, or it held no paths, which would otherwise fall
+            back to reviewing uncommitted work.
     """
     if values.count(STDIN_SCOPE) > 1:
         raise click.UsageError("--scope - can only be given once.")
@@ -215,12 +216,16 @@ def _scope_patterns(values: tuple[str, ...]) -> tuple[str, ...]:
         if value != STDIN_SCOPE:
             patterns.append(value)
             continue
-        if sys.stdin.isatty():
+        if sys.stdin is None or sys.stdin.isatty():
             raise click.UsageError(
-                "--scope - reads paths from stdin, which is a terminal; "
-                "pipe them in."
+                "--scope - reads paths from stdin, which is closed or a "
+                "terminal; pipe them in."
             )
-        paths = [p for p in STDIN_SEPARATOR.split(sys.stdin.read()) if p]
+        text = sys.stdin.read()
+        pieces = (
+            text.split("\0") if "\0" in text else LINE_SEPARATOR.split(text)
+        )
+        paths = [p for p in pieces if p]
         if not paths:
             raise click.UsageError("--scope - read no paths from stdin.")
         patterns.extend(paths)
