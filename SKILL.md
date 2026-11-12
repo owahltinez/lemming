@@ -124,13 +124,13 @@ reviews run — against work that already exists.
 ```sh
 lemming exec --review readability            # uncommitted work
 lemming exec --review '*' --scope src/api --scope 'src/**/*.ts'
-git diff --name-only --relative --diff-filter=d main... |
+git diff -z --name-only --relative --diff-filter=d main... |
   lemming exec --review testing --scope -     # what a branch changed
 lemming exec "Add pagination" --review '*'   # do the work, then gate it
 
 # Someone else's branch, in a worktree so your own tree is untouched
 git worktree add /tmp/pr-123 && (cd /tmp/pr-123 && gh pr checkout 123)
-git -C /tmp/pr-123 diff --name-only --diff-filter=d main... |
+git -C /tmp/pr-123 diff -z --name-only --diff-filter=d main... |
   lemming -C /tmp/pr-123 exec --review testing --scope -
 ```
 

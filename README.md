@@ -119,8 +119,8 @@ lemming exec --review readability
 # Review specific paths, or globs the shell should leave alone
 lemming exec --review readability --scope src/api --scope 'src/**/*.ts'
 
-# Review what a branch changed, one path per line on stdin
-git diff --name-only --relative --diff-filter=d main... |
+# Review what a branch changed, with paths on stdin
+git diff -z --name-only --relative --diff-filter=d main... |
   lemming exec --review testing --scope -
 
 # Do the work, then gate it
@@ -475,7 +475,7 @@ These come before the subcommand and apply to all of them.
     cannot be selected.
   - `--scope <path>`: With `--review` and no description, a path or glob to
     review instead of uncommitted work. Each must match something. Repeat it for
-    several, or pass `-` to read them from stdin, one per line.
+    several, or pass `-` to read them from stdin, one per line or NUL-separated.
   - `--runner`, `--model`: Which agent CLI and model to use.
   - `--retries`: Maximum total task-runner attempts, including the first
     (default 1). Does not retry review-only runs.

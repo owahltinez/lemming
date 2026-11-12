@@ -11,6 +11,7 @@ does keep lives in a directory removed when the run succeeds.
 
 import contextlib
 import pathlib
+import re
 import shutil
 import sys
 import typing
@@ -30,8 +31,11 @@ MAX_LOG_TAIL_BYTES = 256 * 1024
 # Log header used to isolate the final runner or review output.
 ATTEMPT_HEADER = "--- Attempt started at "
 
-# --scope value that reads the scope from stdin, one path per line.
+# --scope value that reads the scope from stdin.
 STDIN_SCOPE = "-"
+
+# Separates paths read from stdin: NUL, as from 'git diff -z', or a line.
+STDIN_SEPARATOR = re.compile(r"\0|\r?\n")
 
 
 class _PassthroughCommand(click.Command):
@@ -190,27 +194,36 @@ def _resolve_reviews(values: tuple[str, ...]) -> list[str]:
 
 
 def _scope_patterns(values: tuple[str, ...]) -> tuple[str, ...]:
-    """Returns the requested scopes, with '-' replaced by stdin's lines.
+    """Returns the requested scopes, with '-' replaced by stdin's paths.
 
     Args:
         values: --scope values as given.
 
     Returns:
-        Paths and globs, in order. Blank stdin lines are skipped.
+        Paths and globs, in order. Paths on stdin are separated by NULs or
+        line breaks, and empty ones are skipped.
 
     Raises:
-        click.UsageError: If '-' read no paths, which would otherwise fall
-            back to reviewing uncommitted work.
+        click.UsageError: If '-' is given more than once, stdin is a
+            terminal, or it held no paths, which would otherwise fall back
+            to reviewing uncommitted work.
     """
+    if values.count(STDIN_SCOPE) > 1:
+        raise click.UsageError("--scope - can only be given once.")
     patterns: list[str] = []
     for value in values:
         if value != STDIN_SCOPE:
             patterns.append(value)
             continue
-        lines = [line for line in sys.stdin.read().splitlines() if line]
-        if not lines:
+        if sys.stdin.isatty():
+            raise click.UsageError(
+                "--scope - reads paths from stdin, which is a terminal; "
+                "pipe them in."
+            )
+        paths = [p for p in STDIN_SEPARATOR.split(sys.stdin.read()) if p]
+        if not paths:
             raise click.UsageError("--scope - read no paths from stdin.")
-        patterns.extend(lines)
+        patterns.extend(paths)
     return tuple(patterns)
 
 
@@ -263,7 +276,7 @@ def _task_status(
     help=(
         "With --review and no description, a path or glob to review "
         "instead of uncommitted work. Repeat for several, or pass '-' to "
-        "read them from stdin, one per line."
+        "read them from stdin, one per line or NUL-separated."
     ),
 )
 @click.option("--runner", "runner_name", help="Agent CLI to run the task.")

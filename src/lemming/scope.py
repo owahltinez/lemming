@@ -8,10 +8,15 @@ translating into the files it covers.
 
 import glob
 import pathlib
+import re
 import subprocess
 
 # Scope used when there is no git repository to diff against.
 WHOLE_TREE = "."
+
+# Control characters and line separators; in a path, they would add lines
+# to the review prompt that the agent reads as instructions.
+_UNSAFE_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 
 
 class ScopeError(ValueError):
@@ -110,7 +115,8 @@ def resolve_scope(
         working_dir. Empty when there is nothing to review.
 
     Raises:
-        ScopeError: If a pattern matches nothing.
+        ScopeError: If a pattern matches nothing, or an entry holds a
+            control character.
     """
     missing = [p for p in patterns if not _matches(p, working_dir)]
     if missing:
@@ -118,13 +124,21 @@ def resolve_scope(
             "Nothing matches " + ", ".join(f"'{p}'" for p in missing) + "."
         )
     if patterns:
-        return list(patterns)
+        entries = list(patterns)
+    elif not _in_git_repo(working_dir):
+        # Without git there is no notion of a change, so the only honest
+        # default is the tree the caller is standing in.
+        entries = [WHOLE_TREE]
+    else:
+        entries = _uncommitted_paths(working_dir)
 
-    # Without git there is no notion of a change, so the only honest
-    # default is the tree the caller is standing in.
-    if not _in_git_repo(working_dir):
-        return [WHOLE_TREE]
-    return _uncommitted_paths(working_dir)
+    unsafe = [entry for entry in entries if _UNSAFE_CHARS.search(entry)]
+    if unsafe:
+        raise ScopeError(
+            "Refusing paths with control characters: "
+            + ", ".join(repr(entry) for entry in unsafe)
+        )
+    return entries
 
 
 def describe(entries: list[str], working_dir: pathlib.Path) -> str:
