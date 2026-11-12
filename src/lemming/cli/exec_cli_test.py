@@ -502,21 +502,158 @@ def test_review_tells_the_agent_what_changed(repo):
     assert "- committed.py" in prompts_seen[0]
 
 
-def test_review_accepts_an_explicit_scope(repo):
-    """A path is passed through for the agent to act on."""
-    prompts_seen = []
+def _recorder(calls, message="Reviewed."):
+    """Builds a run_with_heartbeat fake that records each command."""
 
     def record(cmd, tasks_file, task_id, *args, **kwargs):
-        prompts_seen.append(cmd[-1])
-        return _finish("Reviewed.")(cmd, tasks_file, task_id, *args, **kwargs)
+        calls.append((kwargs.get("header"), cmd))
+        return _finish(message)(cmd, tasks_file, task_id, *args, **kwargs)
 
-    with mock.patch("lemming.runner.run_with_heartbeat", record):
+    return record
+
+
+def _commit_src(repo):
+    """Commits src/a.py and src/b.py, then leaves committed.py modified."""
+    (repo / "src").mkdir()
+    (repo / "src" / "a.py").write_text("a = 1\n")
+    (repo / "src" / "b.py").write_text("b = 1\n")
+    _git(repo, "add", "src")
+    _git(repo, "commit", "-qm", "add src")
+    (repo / "committed.py").write_text("x = 2\n")
+
+
+def test_review_accepts_several_scopes(repo):
+    """Each --scope is listed, and uncommitted work is no longer the default."""
+    _commit_src(repo)
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
         result = CliRunner().invoke(
-            main.cli, ["exec", "--review", "readability", "--scope", "src/api/"]
+            main.cli,
+            [
+                "exec",
+                "--review",
+                "readability",
+                "--scope",
+                "src/a.py",
+                "--scope",
+                "src/b.py",
+            ],
         )
 
     assert result.exit_code == 0, result.stderr
-    assert "- src/api/" in prompts_seen[0]
+    prompt = calls[0][1][-1]
+    assert "- src/a.py\n- src/b.py" in prompt
+    assert "- committed.py" not in prompt
+
+
+def test_review_reads_scopes_from_stdin(repo):
+    """'--scope -' takes a shell-built list, such as a branch's changes."""
+    _commit_src(repo)
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(
+            main.cli,
+            ["exec", "--review", "readability", "--scope", "-"],
+            input="src/a.py\n\nsrc/b.py\n",
+        )
+
+    assert result.exit_code == 0, result.stderr
+    prompt = calls[0][1][-1]
+    assert "- src/a.py\n- src/b.py" in prompt
+    assert "- committed.py" not in prompt
+
+
+def test_review_refuses_empty_stdin(repo):
+    """An empty list must not quietly fall back to uncommitted work."""
+    (repo / "committed.py").write_text("x = 2\n")
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(
+            main.cli,
+            ["exec", "--review", "readability", "--scope", "-"],
+            input="",
+        )
+
+    assert result.exit_code != 0
+    assert calls == []
+
+
+def test_review_accepts_a_quoted_glob(repo):
+    """A glob the shell left alone is checked here and expanded by the agent."""
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(
+            main.cli, ["exec", "--review", "readability", "--scope", "*.py"]
+        )
+
+    assert result.exit_code == 0, result.stderr
+    assert "- *.py" in calls[0][1][-1]
+
+
+def test_review_refuses_a_task_alongside_scope(repo):
+    """Paths after one --scope land in the description, which is refused."""
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(
+            main.cli,
+            [
+                "exec",
+                "--review",
+                "readability",
+                "--scope",
+                "committed.py",
+                "committed.py",
+            ],
+        )
+
+    assert result.exit_code != 0
+    assert "--scope" in result.stderr
+    assert calls == []
+
+
+def test_exec_refuses_scope_without_review(workspace):
+    """A scope nothing reads means the caller forgot --review."""
+    (workspace / "a.py").write_text("a = 1\n")
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(main.cli, ["exec", "--scope", "a.py"])
+
+    assert result.exit_code != 0
+    assert "--review" in result.stderr
+    assert calls == []
+
+
+def test_exec_rejects_a_stray_argument(workspace):
+    """A bare word after the description must not reach the agent CLI."""
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(main.cli, ["exec", "Fix it", "stray"])
+
+    assert result.exit_code != 0
+    assert "stray" in result.stderr
+    assert calls == []
+
+
+def test_exec_passes_arguments_after_a_separator_to_the_runner(workspace):
+    """'--' is the one way to hand arguments to the agent CLI."""
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(
+            main.cli, ["exec", "Fix it", "--", "--flag", "--", "value"]
+        )
+
+    assert result.exit_code == 0, result.stderr
+    _, cmd = calls[0]
+    start = cmd.index("--flag")
+    assert cmd[start : start + 3] == ["--flag", "--", "value"]
 
 
 def test_review_refuses_the_orchestration_hook(repo):
@@ -560,14 +697,19 @@ def test_review_stops_when_nothing_changed(repo):
     assert "no changes" in result.stderr.lower()
 
 
-def test_review_rejects_an_unresolvable_scope(repo):
+def test_review_rejects_an_unmatched_scope(repo):
     """A typo must fail loudly rather than review the wrong thing."""
-    result = CliRunner().invoke(
-        main.cli,
-        ["exec", "--review", "readability", "--scope", "no-branch...HEAD"],
-    )
+    calls = []
+
+    with mock.patch("lemming.runner.run_with_heartbeat", _recorder(calls)):
+        result = CliRunner().invoke(
+            main.cli,
+            ["exec", "--review", "readability", "--scope", "src/gone.py"],
+        )
 
     assert result.exit_code != 0
+    assert "src/gone.py" in result.stderr
+    assert calls == []
 
 
 def test_a_task_can_be_followed_by_reviews(repo):

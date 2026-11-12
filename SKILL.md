@@ -123,18 +123,23 @@ reviews run — against work that already exists.
 
 ```sh
 lemming exec --review readability            # uncommitted work
-lemming exec --review testing --scope main...HEAD
-lemming exec --review '*' --scope src/api/
+lemming exec --review '*' --scope src/api --scope 'src/**/*.ts'
+git diff --name-only --relative --diff-filter=d main... |
+  lemming exec --review testing --scope -     # what a branch changed
 lemming exec "Add pagination" --review '*'   # do the work, then gate it
 
 # Someone else's branch, in a worktree so your own tree is untouched
 git worktree add /tmp/pr-123 && (cd /tmp/pr-123 && gh pr checkout 123)
-lemming -C /tmp/pr-123 exec --review testing --scope main...HEAD
+git -C /tmp/pr-123 diff --name-only --diff-filter=d main... |
+  lemming -C /tmp/pr-123 exec --review testing --scope -
 ```
 
-`--scope` takes paths, which pass through untouched, or a git revision range,
-which is resolved to the files it changed. It defaults to uncommitted work, and
-a clean tree stops the run rather than reviewing everything.
+`--scope` takes a path or glob, each of which must match something; repeat it,
+or pass `-` to read paths from stdin. It only applies with no description: a
+task's reviews look at what the task changed. Without `--scope`, reviews cover
+uncommitted work, and a clean tree stops the run rather than reviewing
+everything. Arguments for the agent CLI go after `--`; any other extra argument
+is an error.
 
 Reviews may edit the working directory. Readability intentionally applies fixes,
 and testing may repair production code or tests. UX is instructed to remain

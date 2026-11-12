@@ -30,6 +30,32 @@ MAX_LOG_TAIL_BYTES = 256 * 1024
 # Log header used to isolate the final runner or review output.
 ATTEMPT_HEADER = "--- Attempt started at "
 
+# --scope value that reads the scope from stdin, one path per line.
+STDIN_SCOPE = "-"
+
+
+class _PassthroughCommand(click.Command):
+    """Click command whose arguments after '--' go to the agent CLI.
+
+    Click drops the separator and merges what follows into the positionals,
+    so a stray word would reach the agent unnoticed. Splitting first keeps
+    runner arguments behind '--' and lets click reject any other extra word.
+    The runner arguments are left in ``ctx.meta["runner_args"]``.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        """Sets aside everything after '--', then parses the rest."""
+        runner_args: list[str] = []
+        if "--" in args:
+            split = args.index("--")
+            args, runner_args = args[:split], args[split + 1 :]
+        ctx.meta["runner_args"] = tuple(runner_args)
+        return super().parse_args(ctx, args)
+
+    def collect_usage_pieces(self, ctx: click.Context) -> list[str]:
+        """Shows where runner arguments go in the usage line."""
+        return [*super().collect_usage_pieces(ctx), "[-- RUNNER_ARGS...]"]
+
 
 def _read_log_tail(
     log_file: pathlib.Path, max_bytes: int = MAX_LOG_TAIL_BYTES
@@ -163,6 +189,31 @@ def _resolve_reviews(values: tuple[str, ...]) -> list[str]:
         raise click.UsageError(str(e)) from e
 
 
+def _scope_patterns(values: tuple[str, ...]) -> tuple[str, ...]:
+    """Returns the requested scopes, with '-' replaced by stdin's lines.
+
+    Args:
+        values: --scope values as given.
+
+    Returns:
+        Paths and globs, in order. Blank stdin lines are skipped.
+
+    Raises:
+        click.UsageError: If '-' read no paths, which would otherwise fall
+            back to reviewing uncommitted work.
+    """
+    patterns: list[str] = []
+    for value in values:
+        if value != STDIN_SCOPE:
+            patterns.append(value)
+            continue
+        lines = [line for line in sys.stdin.read().splitlines() if line]
+        if not lines:
+            raise click.UsageError("--scope - read no paths from stdin.")
+        patterns.extend(lines)
+    return tuple(patterns)
+
+
 def _task_status(
     tasks_file: pathlib.Path, task_id: str
 ) -> models.TaskStatus | None:
@@ -182,7 +233,11 @@ def _task_status(
     return next((t.status for t in data.tasks if t.id == task_id), None)
 
 
-@cli.command("exec", short_help="[description] Run a single task and exit")
+@cli.command(
+    "exec",
+    cls=_PassthroughCommand,
+    short_help="[description] Run a single task and exit",
+)
 @click.argument("description", required=False)
 @click.option(
     "--file",
@@ -195,19 +250,20 @@ def _task_status(
     "review_values",
     multiple=True,
     help=(
-        "Reviews to run after the task, comma-separated or repeated. "
-        "Use '*' for every review. With no description, only the "
-        "reviews run. Reviews may edit the working directory."
+        "Reviews to run on the task's changes, comma-separated or "
+        "repeated. Use '*' for every review. With no description, only "
+        "the reviews run. Reviews may edit the working directory."
     ),
 )
 @click.option(
     "--scope",
     "scope_values",
     multiple=True,
+    metavar="PATH",
     help=(
-        "What the reviews look at: a path, or a git revision range. "
-        "Defaults to uncommitted work, or the whole tree outside a "
-        "repository."
+        "With --review and no description, a path or glob to review "
+        "instead of uncommitted work. Repeat for several, or pass '-' to "
+        "read them from stdin, one per line."
     ),
 )
 @click.option("--runner", "runner_name", help="Agent CLI to run the task.")
@@ -234,7 +290,6 @@ def _task_status(
     is_flag=True,
     help="Keep the run's state directory even when it succeeds.",
 )
-@click.argument("runner_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def exec_command(
     ctx: click.Context,
@@ -248,7 +303,6 @@ def exec_command(
     retries: int,
     yolo: bool,
     keep: bool,
-    runner_args: tuple,
 ) -> None:
     """Runs one task with an agent CLI and prints what it reported.
 
@@ -257,21 +311,32 @@ def exec_command(
 
     With reviews but no description there is nothing for a task runner to
     do, so only the reviews run against work that already exists.
+    Arguments after '--' are passed to the agent CLI.
 
     Examples:
       lemming exec "Fix the flaky test in runner_test.py" --runner codex
-      lemming exec --review readability
-      lemming exec --review testing --scope main...HEAD
       lemming exec "Add pagination" --review '*'
+      lemming exec --review readability
+      lemming exec --review readability --scope src/api --scope '*.md'
+      lemming exec --review readability --scope - < paths.txt
     """
     verbose = ctx.obj["VERBOSE"]
     reviews = _resolve_reviews(review_values)
+    has_task = bool(description or file)
+    if scope_values and not reviews:
+        raise click.UsageError("--scope only applies with --review.")
+    # A task's reviews read its own changes, so a scope only names what to
+    # review when there is no task. Extra --scope values land here too.
+    if scope_values and has_task:
+        raise click.UsageError(
+            "--scope cannot be combined with a task description. Repeat "
+            "--scope for each path, or pass '--scope -' to read them from "
+            "stdin."
+        )
 
     # A description means work to do; without one, only reviews can run.
     prompt = (
-        _resolve_prompt(description, file)
-        if description or file or not reviews
-        else None
+        _resolve_prompt(description, file) if has_task or not reviews else None
     )
     if prompt is None and retries > 1:
         raise click.UsageError(
@@ -283,18 +348,20 @@ def exec_command(
     working_dir = pathlib.Path.cwd().resolve()
 
     scope_text = None
-    if reviews and (prompt is None or scope_values):
+    if prompt is None:
         try:
-            entries = scope.resolve_scope(scope_values, working_dir)
+            entries = scope.resolve_scope(
+                _scope_patterns(scope_values), working_dir
+            )
         except scope.ScopeError as e:
             raise click.UsageError(str(e)) from e
 
         # Nothing changed means nothing to review. Falling back to the
         # whole tree would spend an agent run the caller did not ask for.
-        if not entries and prompt is None:
+        if not entries:
             click.echo("There are no changes to review.", err=True)
             return
-        scope_text = scope.describe(entries)
+        scope_text = scope.describe(entries, working_dir)
 
     # Extra attempts require opt-in because each can incur runner cost.
     config = models.RoadmapConfig(retries=retries, time_limit=time_limit)
@@ -335,7 +402,7 @@ def exec_command(
                 retry_delay=0,
                 yolo=yolo,
                 no_defaults=False,
-                runner_args=runner_args,
+                runner_args=ctx.meta["runner_args"],
                 working_dir=working_dir,
                 hooks=reviews,
                 scope=scope_text,

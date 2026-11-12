@@ -116,16 +116,22 @@ reviews run — against work that already exists.
 # Review uncommitted work before opening a pull request
 lemming exec --review readability
 
-# Review someone else's branch, checked out in a worktree
-lemming -C ../review-worktree exec --review testing --scope main...HEAD
+# Review specific paths, or globs the shell should leave alone
+lemming exec --review readability --scope src/api --scope 'src/**/*.ts'
+
+# Review what a branch changed, one path per line on stdin
+git diff --name-only --relative --diff-filter=d main... |
+  lemming exec --review testing --scope -
 
 # Do the work, then gate it
 lemming exec "Add pagination to the tasks API" --review '*'
 ```
 
-`--scope` takes paths, which pass through untouched, or a git revision range,
-which is resolved to the files it changed. It defaults to uncommitted work, or
-to the whole tree outside a git repository.
+`--scope` takes a path or glob, and each must match something; repeat it for
+several, or pass `-` to read them from stdin. It only applies with `--review`
+and no description: a task's reviews look at what the task changed. Without
+`--scope`, reviews cover uncommitted work, or the whole tree outside a git
+repository. Arguments for the agent CLI go after `--`.
 
 Reviews may edit the working directory. The built-in readability review
 intentionally applies fixes, and testing may repair production code or tests.
@@ -467,9 +473,9 @@ These come before the subcommand and apply to all of them.
     repeated; `'*'` selects every one. With no description, only the reviews
     run. Reviews may edit the working directory. Hooks that revise the roadmap
     cannot be selected.
-  - `--scope <path|range>`: What the reviews look at. Paths pass through; a git
-    revision range is resolved to the files it changed. Defaults to uncommitted
-    work, or the whole tree outside a repository.
+  - `--scope <path>`: With `--review` and no description, a path or glob to
+    review instead of uncommitted work. Each must match something. Repeat it for
+    several, or pass `-` to read them from stdin, one per line.
   - `--runner`, `--model`: Which agent CLI and model to use.
   - `--retries`: Maximum total task-runner attempts, including the first
     (default 1). Does not retry review-only runs.
@@ -477,6 +483,8 @@ These come before the subcommand and apply to all of them.
     limit).
   - `--yolo/--no-yolo`: Run the agent unattended (default: True).
   - `--keep`: Keep the run's state directory even when it succeeds.
+  - `--`: Everything after it goes to the agent CLI; any other extra argument is
+    an error.
 - **`skill install`**: Install the packaged Agent Skill so agents discover
   Lemming. Writes to `~/.agents/skills` and every detected tool-specific
   directory by default. Re-running it refreshes existing Lemming copies.

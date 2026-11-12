@@ -28,6 +28,8 @@ def repo(tmp_path):
 
 def test_explicit_paths_pass_through_verbatim(repo):
     """A path is already a scope the agent can act on."""
+    (repo / "src" / "api").mkdir(parents=True)
+
     assert scope.resolve_scope(("src/api/",), repo) == ["src/api/"]
 
 
@@ -38,19 +40,59 @@ def test_the_whole_repository_needs_no_enumeration(repo):
 
 def test_several_paths_are_kept_in_order(repo):
     """An explicit list is the caller's own ordering."""
-    values = ("src/a.py", "src/b.py")
+    (repo / "b.py").write_text("b = 1\n")
 
-    assert scope.resolve_scope(values, repo) == ["src/a.py", "src/b.py"]
+    assert scope.resolve_scope(("committed.py", "b.py"), repo) == [
+        "committed.py",
+        "b.py",
+    ]
 
 
-def test_a_revision_range_resolves_to_changed_files(repo):
-    """Only a range needs translating, because git alone can read it."""
-    (repo / "feature.py").write_text("y = 2\n")
-    _git(repo, "checkout", "-qb", "feature")
-    _git(repo, "add", "feature.py")
-    _git(repo, "commit", "-qm", "add feature")
+def test_a_missing_path_is_reported(repo):
+    """A typo must fail loudly rather than review the wrong thing."""
+    with pytest.raises(scope.ScopeError, match="gone.py"):
+        scope.resolve_scope(("gone.py",), repo)
 
-    assert scope.resolve_scope(("main...HEAD",), repo) == ["feature.py"]
+
+def test_a_glob_passes_through_when_it_matches(repo):
+    """The agent expands the glob; listing every match could be huge."""
+    (repo / "src" / "deep").mkdir(parents=True)
+    (repo / "src" / "deep" / "a.py").write_text("a = 1\n")
+
+    assert scope.resolve_scope(("src/**/*.py",), repo) == ["src/**/*.py"]
+
+
+def test_a_glob_matches_at_any_depth(repo):
+    """'**' spans directories even where the shell would not expand it."""
+    (repo / "src" / "x" / "y").mkdir(parents=True)
+    (repo / "src" / "x" / "y" / "a.py").write_text("a = 1\n")
+
+    assert scope.resolve_scope(("src/**/a.py",), repo) == ["src/**/a.py"]
+
+
+def test_an_empty_path_is_reported(repo):
+    """An empty $(...) must not quietly stand for the whole directory."""
+    with pytest.raises(scope.ScopeError):
+        scope.resolve_scope(("",), repo)
+
+
+def test_a_path_too_long_to_exist_is_reported(repo):
+    """A name the filesystem rejects matches nothing; it is not a crash."""
+    with pytest.raises(scope.ScopeError):
+        scope.resolve_scope(("a" * 5000,), repo)
+
+
+def test_a_glob_that_matches_nothing_is_reported(repo):
+    """An empty match is as much a typo as a missing path."""
+    with pytest.raises(scope.ScopeError, match=r"src/\*\.py"):
+        scope.resolve_scope(("src/*.py",), repo)
+
+
+def test_an_existing_path_is_not_read_as_a_glob(repo):
+    """Brackets in a real file name must not turn it into a pattern."""
+    (repo / "a[1].py").write_text("a = 1\n")
+
+    assert scope.resolve_scope(("a[1].py",), repo) == ["a[1].py"]
 
 
 def test_the_default_is_uncommitted_work(repo):
@@ -61,6 +103,32 @@ def test_the_default_is_uncommitted_work(repo):
     assert scope.resolve_scope((), repo) == ["committed.py", "untracked.py"]
 
 
+def test_the_default_is_relative_to_the_working_directory(repo):
+    """Every entry must be readable from where the agent runs."""
+    (repo / "sub").mkdir()
+    (repo / "sub" / "tracked.py").write_text("t = 1\n")
+    _git(repo, "add", "sub/tracked.py")
+    _git(repo, "commit", "-qm", "add sub")
+    (repo / "sub" / "tracked.py").write_text("t = 2\n")
+    (repo / "sub" / "untracked.py").write_text("u = 1\n")
+    (repo / "committed.py").write_text("x = 2\n")
+
+    resolved = scope.resolve_scope((), repo / "sub")
+
+    assert resolved == ["tracked.py", "untracked.py"]
+
+
+def test_the_default_lists_unusual_names_verbatim(repo):
+    """Git's quoting would hand the agent names that do not exist."""
+    (repo / "café.py").write_text("c = 1\n")
+    (repo / 'q"uote.py').write_text("q = 1\n")
+    _git(repo, "add", "café.py")
+    _git(repo, "commit", "-qm", "add café")
+    (repo / "café.py").write_text("c = 2\n")
+
+    assert scope.resolve_scope((), repo) == ["café.py", 'q"uote.py']
+
+
 def test_the_default_ignores_files_git_ignores(repo):
     """Reviewing a dependency directory would burn the run for nothing."""
     (repo / ".gitignore").write_text("vendor/\n")
@@ -68,6 +136,13 @@ def test_the_default_ignores_files_git_ignores(repo):
     (repo / "vendor" / "big.py").write_text("noise = True\n")
 
     assert "vendor/big.py" not in scope.resolve_scope((), repo)
+
+
+def test_the_default_leaves_out_deleted_files(repo):
+    """A file that no longer exists has nothing left to review."""
+    (repo / "committed.py").unlink()
+
+    assert scope.resolve_scope((), repo) == []
 
 
 def test_a_clean_tree_resolves_to_nothing(repo):
@@ -80,41 +155,9 @@ def test_the_default_outside_a_repository_is_the_whole_tree(tmp_path):
     assert scope.resolve_scope((), tmp_path) == ["."]
 
 
-def test_an_oversized_range_yields_the_range_itself(repo):
-    """A list too long to read stops being useful context."""
-    _git(repo, "checkout", "-qb", "wide")
-    for index in range(12):
-        (repo / f"file{index}.py").write_text(f"n = {index}\n")
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "many files")
-
-    resolved = scope.resolve_scope(("main...HEAD",), repo, max_entries=5)
-
-    assert resolved == ["main...HEAD"]
-
-
-def test_an_unresolvable_range_is_reported(repo):
-    """A typo must fail loudly rather than review the wrong thing."""
-    with pytest.raises(scope.ScopeError):
-        scope.resolve_scope(("no-such-branch...HEAD",), repo)
-
-
-def test_a_leading_dash_range_is_rejected(repo, tmp_path):
-    """A range starting with '-' must not be passed as a flag to git diff."""
-    out_file = tmp_path / "pwn..HEAD"
-    with pytest.raises(scope.ScopeError):
-        scope.resolve_scope((f"--output={out_file}",), repo)
-    assert not out_file.exists()
-
-
-def test_a_path_that_does_not_exist_is_still_a_path(repo):
-    """Requiring existence would reject globs the agent can expand."""
-    assert scope.resolve_scope(("src/**/*.py",), repo) == ["src/**/*.py"]
-
-
 def test_describe_renders_one_entry_per_line(repo):
     """The prompt block is a list, whatever produced the entries."""
-    rendered = scope.describe(["src/a.py", "src/b.py"])
+    rendered = scope.describe(["src/a.py", "src/b.py"], repo)
 
     assert "- src/a.py" in rendered
     assert "- src/b.py" in rendered
@@ -122,4 +165,9 @@ def test_describe_renders_one_entry_per_line(repo):
 
 def test_describe_reports_an_empty_scope(repo):
     """An agent told to review nothing must be told so explicitly."""
-    assert "no changes" in scope.describe([]).lower()
+    assert "no changes" in scope.describe([], repo).lower()
+
+
+def test_describe_names_the_directory_entries_are_relative_to(repo):
+    """Some runners run tools elsewhere, so the directory is spelled out."""
+    assert str(repo) in scope.describe(["src/a.py"], repo)

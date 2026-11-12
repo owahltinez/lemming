@@ -676,7 +676,7 @@ def _process_finalizing_task(
                 changed = snapshots.changed_files(
                     tasks_file, current_task.pre_tree, current_task.runner_tree
                 )
-                hook_scope = scope_mod.describe(changed)
+                hook_scope = scope_mod.describe(changed, resolved_dir)
 
     run_hooks(
         tasks_file,
@@ -859,7 +859,7 @@ def _handle_runner_exit(
         changed = snapshots.changed_files(
             tasks_file, post_task.pre_tree, runner_tree
         )
-        hook_scope = scope_mod.describe(changed)
+        hook_scope = scope_mod.describe(changed, working_dir)
 
     if requested_status:
         run_hooks(
