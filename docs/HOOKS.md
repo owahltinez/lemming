@@ -19,8 +19,8 @@ more **orchestrator hooks**. Each hook:
     execution log, and any commands it runs (e.g. `lemming add`, `lemming edit`)
     are executed against the roadmap.
 
-Each hook run is killed after 15 minutes, or after the task's time limit if
-that is shorter. A time limit of 0 disables both.
+Each hook run is killed after 15 minutes, or after the task's time limit if that
+is shorter. A time limit of 0 disables both.
 
 ## Naming Convention
 
@@ -85,21 +85,21 @@ sandbox-enforced. It runs after `testing` and before `roadmap`.
 
 ### Rejecting Completion
 
-A hook that finds a real defect it cannot fix should not exit 0 and let the
-task be marked completed. It rejects the completion instead:
+A hook that finds a real defect it cannot fix should not exit 0 and let the task
+be marked completed. It rejects the completion instead:
 
 ```bash
 lemming --tasks-file <path> reject <taskid> '<reason>'
 ```
 
-A rejection only applies to a task that is finalizing as completed, and it
-does not change the task's status on the spot. The remaining hooks still run
-and see the task as `REJECTED` with the reason, so the roadmap hook can tell
-a rejected task from a finished one. Once every hook has run, Lemming saves the
-rejected attempt's diff as an `attempt-<N>.patch` artifact, restores the
-workspace to the task's `pre_tree`, and reverts the task to pending with its
-attempt count intact — just as it does when a hook process fails. The rejection
-reason stays in `progress` so the next attempt starts with the diagnosis.
+A rejection only applies to a task that is finalizing as completed, and it does
+not change the task's status on the spot. The remaining hooks still run and see
+the task as `REJECTED` with the reason, so the roadmap hook can tell a rejected
+task from a finished one. Once every hook has run, Lemming saves the rejected
+attempt's diff as an `attempt-<N>.patch` artifact, restores the workspace to the
+task's `pre_tree`, and reverts the task to pending with its attempt count intact
+— just as it does when a hook process fails. The rejection reason stays in
+`progress` so the next attempt starts with the diagnosis.
 
 Each hook that runs is also bracketed by its own shadow Git snapshot pair in
 `hook_trees`. If an individual hook process crashes or exits non-zero, its own
@@ -108,14 +108,14 @@ completed task, you can inspect or undo a single hook's edits with
 `lemming diff <id> --hook <name>` and `lemming rollback <id> --hook <name>`.
 
 Under `lemming exec` there is no second attempt: the run ends on the first
-rejection, and under `lemming run` a rejection on the task's final attempt
-sends it straight to the exhausted-retries path, where the failure hooks get
-their chance to repair it.
+rejection, and under `lemming run` a rejection on the task's final attempt sends
+it straight to the exhausted-retries path, where the failure hooks get their
+chance to repair it.
 
 Reject only for an objective, reproducible failure the hook could not repair
-itself, such as a failing test suite or a `lemming readability check` that
-still fails. Advisory findings, and anything the hook already fixed, belong
-in `lemming progress`.
+itself, such as a failing test suite or a `lemming readability check` that still
+fails. Advisory findings, and anything the hook already fixed, belong in
+`lemming progress`.
 
 ### Reviews Are Not Read-Only
 

@@ -28,7 +28,7 @@ def test_load_builtin_readability_prompt_includes_simplification():
 
     assert "Challenge the Shape" in prompt
     assert "Duplication and drift" in prompt
-    assert "source of truth" in prompt
+    assert "source of truth" in " ".join(prompt.split())
     assert "False reuse" in prompt
 
 
@@ -59,7 +59,7 @@ def test_prepare_prompt(tmp_path, monkeypatch):
     assert str(paths.get_project_dir(tasks_file)) in prompt
     assert "{{tasks_dir}}" not in prompt
     assert "no more than 2,000 characters" in prompt
-    assert "280 characters" in prompt
+    assert "280 characters" in " ".join(prompt.split())
 
 
 def test_prepare_prompt_with_parent_context(tmp_path):

@@ -1,5 +1,10 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.6.7/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
     "ignoreUnknown": true,
     "includes": [
@@ -40,13 +45,18 @@
     }
   },
   "markdown": {
+    "parser": {
+      "frontmatter": true
+    },
     "formatter": {
-      "enabled": false
+      "enabled": true,
+      "proseWrap": "always"
     }
   },
   "yaml": {
     "formatter": {
-      "enabled": false
+      "enabled": true,
+      "quoteStyle": "single"
     }
   },
   "overrides": [

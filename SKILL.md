@@ -172,10 +172,10 @@ before tasks install dependencies or run builds so workspace snapshots skip
 `node_modules/`, `.venv/`, and build outputs.
 
 **Mark mechanical tasks `--oneshot`.** After every other task, a roadmap hook
-may revise the queue and any enabled reviews run; each hook is a full agent
-run, so a typo fix, rename, version bump, or cleanup without `--oneshot` takes
-several times longer than the work itself. Reviews are opt-in: pick them for
-one task with `lemming add ... --hooks testing,ux`, or for every task with
+may revise the queue and any enabled reviews run; each hook is a full agent run,
+so a typo fix, rename, version bump, or cleanup without `--oneshot` takes
+several times longer than the work itself. Reviews are opt-in: pick them for one
+task with `lemming add ... --hooks testing,ux`, or for every task with
 `lemming hooks enable <name>`. `lemming hooks list` shows which are enabled.
 
 ### Supervise in milestones
@@ -184,17 +184,17 @@ Never run the whole roadmap and poll it from one context. Every `status` call
 lands in your context window, and the run outlives it. Split the queue into
 milestones instead:
 
-1. Queue the whole roadmap, pick the task that ends the first milestone, and
-   run `lemming run --detach --until <task-id>`. It returns at once with the
-   loop's PID and log file; the loop runs anything the roadmap hook inserts
-   ahead of that task, follows the task through any split, and stops once the
-   milestone settles, logging `Reached milestone <id>; M pending.` or
+1. Queue the whole roadmap, pick the task that ends the first milestone, and run
+   `lemming run --detach --until <task-id>`. It returns at once with the loop's
+   PID and log file; the loop runs anything the roadmap hook inserts ahead of
+   that task, follows the task through any split, and stops once the milestone
+   settles, logging `Reached milestone <id>; M pending.` or
    `All tasks completed!`. Check in with `lemming status --brief`, which reads
    `Idle` once the loop has stopped and flags failed and abandoned tasks. If it
    is `Idle` with the milestone still pending, read the tail of the printed
    `loop.log`: a detached loop's errors, such as a missing runner binary or a
-   blocked queue, appear only there. Add `--max-tasks N` as a budget cap when
-   a runaway roadmap hook would be expensive.
+   blocked queue, appear only there. Add `--max-tasks N` as a budget cap when a
+   runaway roadmap hook would be expensive.
 2. Between milestones, judge direction: `lemming status --brief`, then
    `lemming status <id>` for the tasks that matter. Inspect a task's changes
    with `lemming diff [<id>] [--stat] [--hook <name>]`, or undo them with
@@ -203,13 +203,13 @@ milestones instead:
    `lemming rollback <id> --hook <name>` (reverts only one hook's edits).
    Re-plan with `add`, `edit`, `supersede`, or `delete`, then run the next
    milestone.
-3. Delegate each milestone to a subagent when one exists, so the polling and
-   the log reading stay out of your context. The subagent reports back in the
-   fixed shape below, nothing more.
+3. Delegate each milestone to a subagent when one exists, so the polling and the
+   log reading stay out of your context. The subagent reports back in the fixed
+   shape below, nothing more.
 
 This is how a stronger model directs cheaper ones: `lemming config set runner`
-and `config set model` pick the worker; the supervising agent only reads
-status between milestones and decides what happens next.
+and `config set model` pick the worker; the supervising agent only reads status
+between milestones and decides what happens next.
 
 Checking on a running milestone is fine when a task might be stuck, but poll
 sparingly and read the smallest thing that answers the question:
@@ -272,8 +272,8 @@ work done adds tasks with `lemming add`; the running loop picks them up.
   out, crashes, or is cancelled, its diff is saved under `<id>-artifacts/` and
   the workspace (and host Git `HEAD`) is restored to the task's `pre_tree`.
   Completed tasks (or individual hook edits) can be inspected with
-  `lemming diff [<id>] [--stat] [--hook <name>]` or rolled back when the loop
-  is idle via `lemming rollback <id> [--only] [--hook <name>]`.
+  `lemming diff [<id>] [--stat] [--hook <name>]` or rolled back when the loop is
+  idle via `lemming rollback <id> [--only] [--hook <name>]`.
 - **Concurrent runs in one checkout interleave their edits.** Give each writing
   run its own VCS-managed working copy and address it with `-C`; retain the copy
   until its result is recovered.
