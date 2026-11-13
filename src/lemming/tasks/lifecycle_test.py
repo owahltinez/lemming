@@ -817,3 +817,22 @@ def test_write_patch_artifact_keeps_non_utf8_bytes(tmp_path, monkeypatch):
     )
     subprocess.run(["git", "apply", str(patch_file)], cwd=work, check=True)
     assert notes.read_bytes() == b"caf\xe9\n"
+
+
+def test_write_patch_artifact_never_overwrites(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    for change in ("first", "second", "third"):
+        (work / "file.txt").write_text(f"{change}\n", encoding="utf-8")
+        post_tree = snapshots.snapshot_tree(tasks_file, work)
+        lifecycle.write_patch_artifact(
+            tasks_file, "t1", "attempt-1.patch", pre_tree, post_tree
+        )
+
+    artifacts = paths.get_artifacts_dir(tasks_file, "t1")
+    assert "+first" in (artifacts / "attempt-1.patch").read_text()
+    assert "+second" in (artifacts / "attempt-1-2.patch").read_text()
+    assert "+third" in (artifacts / "attempt-1-3.patch").read_text()

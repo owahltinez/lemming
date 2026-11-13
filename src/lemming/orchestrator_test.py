@@ -2178,6 +2178,51 @@ def test_run_loop_interrupted_attempt_does_not_charge_a_retry(
     assert "[task1] Attempt 1/3" in capsys.readouterr().out
 
 
+def test_run_loop_interrupted_after_agent_failed_keeps_the_attempt(setup_env):
+    test_tasks_file, _ = setup_env
+
+    def fake_run(cmd, t_file, t_id, *_args, **_kwargs):
+        progress.add_progress(t_file, t_id, "cannot be done")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.FAILED)
+        raise KeyboardInterrupt
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(test_tasks_file, False, 0, True, False, ())
+
+    assert persistence.load_tasks(test_tasks_file).tasks[0].attempts == 1
+
+
+def test_run_loop_interrupted_reclaimed_task_refunds_its_attempt(
+    setup_env, capsys
+):
+    test_tasks_file, initial_data = setup_env
+    task = initial_data.tasks[0]
+    task.status = models.TaskStatus.IN_PROGRESS
+    task.attempts = 1
+    task.pid = 999999
+    task.last_heartbeat = time.time() - 3600
+    persistence.save_tasks(test_tasks_file, initial_data)
+
+    with (
+        mock.patch(
+            "lemming.runner.run_with_heartbeat", side_effect=KeyboardInterrupt
+        ),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(test_tasks_file, False, 0, True, False, ())
+
+    assert "[task1] Attempt 1/3" in capsys.readouterr().out
+    task = persistence.load_tasks(test_tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.PENDING
+    # Neither the abandoned run nor its interrupted resumption failed.
+    assert task.attempts == 0
+
+
 def test_finalizing_task_snapshots_runner_tree_and_once_restores_on_reject(
     tmp_path, monkeypatch
 ):

@@ -443,9 +443,13 @@ def write_patch_artifact(
         return
     artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    (artifacts_dir / filename).write_text(
-        patch_text, encoding="utf-8", errors="surrogateescape"
-    )
+    # A patch may be the only copy of reverted work, so never overwrite one.
+    base = target = artifacts_dir / filename
+    n = 1
+    while target.exists():
+        n += 1
+        target = base.with_name(f"{base.stem}-{n}{base.suffix}")
+    target.write_text(patch_text, encoding="utf-8", errors="surrogateescape")
 
 
 def escaped_descendants(pid: int, pgid: int) -> list[int]:
