@@ -464,9 +464,9 @@ These come before the subcommand and apply to all of them.
     printing `Stopped after N tasks; M pending.` Attempts that leave a task
     pending do not count. Combine with `--until` as a budget cap.
   - `--detach`: Start the loop in its own session and return, printing its PID
-    and log file (`loop.log` in the project's state directory). The loop
-    outlives the shell or agent harness that started it; check on it with
-    `status --brief` and end it with `stop`.
+    and log file (`loop.log` in the project's state directory; one over 1 MB
+    moves to `loop.log.1` first). The loop outlives the shell or agent harness
+    that started it; check on it with `status --brief` and end it with `stop`.
   - `--`: Arguments after `--` go directly to the underlying runner; any other
     extra argument is an error. A per-task `--runner`/`--model` overrides
     anything passed here.
