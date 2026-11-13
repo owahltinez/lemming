@@ -1191,7 +1191,13 @@ def run_loop(
             one_task_runner = current_task.runner or runner_name
             one_task_model = current_task.model or model_name
 
-        if current_task.attempts >= retries:
+        abandoned = current_task.status == models.TaskStatus.IN_PROGRESS
+        # Reclaiming resumes the attempt (see claim_task) unless it was failing.
+        resumable = (
+            abandoned
+            and current_task.requested_status != models.TaskStatus.FAILED
+        )
+        if current_task.attempts >= retries and not resumable:
             should_abort = _process_exhausted_retries(
                 tasks_file=tasks_file,
                 task_id=task_id,
@@ -1216,7 +1222,6 @@ def run_loop(
         # multiple instances
         time.sleep(random.uniform(0.1, 0.5))
 
-        abandoned = current_task.status == models.TaskStatus.IN_PROGRESS
         orphan_pid = current_task.pid
         # A runner in its own session can outlive its loop; never run two.
         if (
