@@ -899,10 +899,14 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
     assert time.monotonic() - start < 10
 
 
-def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_run_with_heartbeat_timeout_kills_detached_grandchild(
+    tmp_path, interrupted
+):
     """Verifies a time limit kills a SIGTERM-immune child that left the group.
 
-    The attempt must not return until it is dead, or a retry races it.
+    The attempt must not return until it is dead, or a retry races it; nor
+    may a stop that lands while the kill is still in progress.
     """
     tasks_file = tmp_path / "tasks.yml"
     task_id = "detached_timeout"
@@ -936,12 +940,26 @@ def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
     def fast_monotonic():
         return real_monotonic() + (120 if pid_file.exists() else 0)
 
+    real_join = runner._join_heartbeat
+    joins = []
+
+    def join_heartbeat(*args):
+        joins.append(args)
+        if interrupted and len(joins) == 1:
+            raise KeyboardInterrupt
+        real_join(*args)
+
+    returncode = None
     try:
         with (
             unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
             unittest.mock.patch.object(persistence, "STALE_THRESHOLD", 2),
             unittest.mock.patch.object(runner, "KILL_GRACE_SECONDS", 1),
             unittest.mock.patch.object(lifecycle, "KILL_GRACE_SECONDS", 1),
+            unittest.mock.patch.object(
+                runner, "_join_heartbeat", side_effect=join_heartbeat
+            ),
+            contextlib.suppress(KeyboardInterrupt),
         ):
             returncode, _, _ = runner.run_with_heartbeat(
                 [sys.executable, "-c", child_code],
@@ -950,12 +968,63 @@ def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
                 verbose=False,
                 time_limit=1,
             )
-        assert returncode == runner.RETURNCODE_TIMEOUT
+        assert returncode == (
+            None if interrupted else runner.RETURNCODE_TIMEOUT
+        )
         assert not persistence.is_pid_alive(int(pid_file.read_text()))
     finally:
         if pid_file.exists():
             with contextlib.suppress(OSError):
                 os.kill(int(pid_file.read_text()), signal.SIGKILL)
+
+
+def test_run_with_heartbeat_returns_when_kill_hangs(tmp_path, caplog):
+    """Verifies a stuck kill on the heartbeat thread cannot wedge a run."""
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "stuck_kill"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id=task_id, description="d")]),
+    )
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
+
+    release = threading.Event()
+
+    def stuck_kill(process):
+        process.kill()
+        release.wait()
+
+    real_monotonic = time.monotonic
+    start = real_monotonic()
+    calls = iter(range(1_000_000))
+
+    def fast_monotonic():
+        # Jump past the time limit after start_time is read.
+        return real_monotonic() + (120 if next(calls) else 0)
+
+    try:
+        with (
+            unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
+            unittest.mock.patch.object(persistence, "STALE_THRESHOLD", 2),
+            unittest.mock.patch.object(persistence, "PS_PROBE_TIMEOUT", 0),
+            unittest.mock.patch.object(runner, "KILL_GRACE_SECONDS", 0),
+            unittest.mock.patch.object(
+                runner, "_kill_process_tree", side_effect=stuck_kill
+            ),
+        ):
+            returncode, _, _ = runner.run_with_heartbeat(
+                ["sleep", "60"],
+                tasks_file,
+                task_id,
+                verbose=False,
+                time_limit=1,
+            )
+    finally:
+        release.set()
+
+    assert returncode == runner.RETURNCODE_TIMEOUT
+    assert real_monotonic() - start < 10
+    assert "still killing" in caplog.text
 
 
 def _run_interrupted_at(tmp_path, patched: str) -> subprocess.Popen:

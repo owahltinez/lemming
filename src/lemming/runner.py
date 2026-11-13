@@ -590,6 +590,23 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
     lifecycle.kill_survivors(escaped, deadline)
 
 
+def _join_heartbeat(
+    thread: threading.Thread | None, pid: int, task_id: str
+) -> None:
+    """Waits, bounded, for a kill in progress on the heartbeat thread."""
+    if thread is None or not thread.is_alive():
+        return
+    # Bounded by the kill's worst case: one ps probe plus the grace.
+    thread.join(timeout=persistence.PS_PROBE_TIMEOUT + KILL_GRACE_SECONDS + 1)
+    if thread.is_alive():
+        logger.warning(
+            "Heartbeat thread still killing pid %d for task %s; "
+            "returning anyway.",
+            pid,
+            task_id,
+        )
+
+
 def _runner_environment(
     cmd: list[str], tasks_file: pathlib.Path, task_id: str
 ) -> dict[str, str]:
@@ -699,6 +716,7 @@ def run_with_heartbeat(
 
     timed_out = False
     exited = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
 
     def stream_output():
         """Streams runner output to the log file and optionally the console."""
@@ -792,8 +810,7 @@ def run_with_heartbeat(
         process.wait()
         # A kill in progress must finish off escaped descendants first.
         exited.set()
-        if is_claimed:
-            heartbeat_thread.join()
+        _join_heartbeat(heartbeat_thread, process.pid, task_id)
 
         # Drain remaining output, but don't wait forever: an escaped child
         # holding the pipe open must not wedge the attempt.
@@ -815,6 +832,9 @@ def run_with_heartbeat(
         # the heartbeat bookkeeping above. The child runs in its own session
         # and would otherwise survive as an orphan.
         _kill_process_tree(process)
+        # The daemon heartbeat thread may still be mid-kill; let it finish.
+        exited.set()
+        _join_heartbeat(heartbeat_thread, process.pid, task_id)
         raise
     finally:
         try:
