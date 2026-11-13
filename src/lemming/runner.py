@@ -550,12 +550,12 @@ def describe_command(cmd: list[str], prompt: str) -> str:
 
 
 def _kill_process_tree(process: subprocess.Popen) -> None:
-    """Kills a process and its entire process group.
+    """Kills a process, its entire process group, and escaped descendants.
 
     Sends SIGTERM to the process group first so the runner can clean up,
     then escalates to SIGKILL if the process is still alive after a grace
-    period. Falls back to killing the process directly if the group signal
-    fails.
+    period. Descendants that left the group are terminated the same way.
+    Falls back to killing the process directly if the group signal fails.
 
     Args:
         process: The subprocess to kill.
@@ -563,6 +563,7 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
     # Ask the whole group to terminate gracefully.
     try:
         pgid = os.getpgid(process.pid)
+        escaped = lifecycle.escaped_descendants(process.pid, pgid)
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
         try:
@@ -584,6 +585,7 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
             os.killpg(pgid, signal.SIGKILL)
         except OSError:
             pass
+    lifecycle.terminate_pids(escaped)
 
 
 def _runner_environment(

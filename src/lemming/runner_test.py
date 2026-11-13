@@ -1,4 +1,6 @@
+import contextlib
 import json
+import os
 import pathlib
 import shutil
 import signal
@@ -612,6 +614,9 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
         unittest.mock.patch("subprocess.Popen", return_value=mock_process),
         unittest.mock.patch("os.killpg") as mock_killpg,
         unittest.mock.patch("os.getpgid", return_value=54321),
+        unittest.mock.patch.object(
+            lifecycle, "escaped_descendants", return_value=[]
+        ),
     ):
         # 3. Call run_with_heartbeat and expect it to re-raise KeyboardInterrupt
         try:
@@ -892,6 +897,57 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
     assert returncode == 0
     assert "runner done" in stdout
     assert time.monotonic() - start < 10
+
+
+def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
+    """Verifies a time limit also kills a child that left the group."""
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "detached_timeout"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id=task_id, description="d")]),
+    )
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
+
+    pid_file = tmp_path / "grandchild.pid"
+    child_code = (
+        "import os, pathlib, subprocess, sys, time\n"
+        "p = subprocess.Popen(\n"
+        "    [sys.executable, '-c', 'import time; time.sleep(300)'],\n"
+        "    start_new_session=True,\n"
+        ")\n"
+        f"pathlib.Path({str(pid_file)!r} + '.tmp').write_text(str(p.pid))\n"
+        f"os.replace({str(pid_file)!r} + '.tmp', {str(pid_file)!r})\n"
+        "time.sleep(300)\n"
+    )
+    real_monotonic = time.monotonic
+
+    def fast_monotonic():
+        return real_monotonic() + (120 if pid_file.exists() else 0)
+
+    try:
+        with (
+            unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
+            unittest.mock.patch.object(persistence, "STALE_THRESHOLD", 2),
+        ):
+            returncode, _, _ = runner.run_with_heartbeat(
+                [sys.executable, "-c", child_code],
+                tasks_file,
+                task_id,
+                verbose=False,
+                time_limit=1,
+            )
+        assert returncode == runner.RETURNCODE_TIMEOUT
+
+        grandchild = int(pid_file.read_text())
+        deadline = real_monotonic() + 10
+        while persistence.is_pid_alive(grandchild):
+            assert real_monotonic() < deadline, "Grandchild survived"
+            time.sleep(0.1)
+    finally:
+        if pid_file.exists():
+            with contextlib.suppress(OSError):
+                os.kill(int(pid_file.read_text()), signal.SIGKILL)
 
 
 def _run_interrupted_at(tmp_path, patched: str) -> subprocess.Popen:

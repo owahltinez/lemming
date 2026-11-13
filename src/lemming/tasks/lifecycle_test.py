@@ -1,6 +1,8 @@
+import contextlib
 import os
 import signal
 import subprocess
+import sys
 import time
 from unittest.mock import patch
 
@@ -373,6 +375,57 @@ def test_cancel_task_escalates_sigterm_immune_process(tmp_path):
         ((54321, signal.SIGKILL),),
     ]
     assert status_at_first_signal[0] == models.TaskStatus.CANCELLED
+
+
+def test_cancel_task_kills_detached_grandchild(tmp_path):
+    """Verifies cancel kills a runner's child that left its process group."""
+    pid_file = tmp_path / "grandchild.pid"
+    child_code = (
+        "import os, pathlib, subprocess, sys, time\n"
+        "p = subprocess.Popen(\n"
+        "    [sys.executable, '-c', 'import time; time.sleep(300)'],\n"
+        "    start_new_session=True,\n"
+        ")\n"
+        f"pathlib.Path({str(pid_file)!r} + '.tmp').write_text(str(p.pid))\n"
+        f"os.replace({str(pid_file)!r} + '.tmp', {str(pid_file)!r})\n"
+        "time.sleep(300)\n"
+    )
+    runner_process = subprocess.Popen(
+        [sys.executable, "-c", child_code], start_new_session=True
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while not pid_file.exists():
+            assert time.monotonic() < deadline, "Grandchild never started"
+            time.sleep(0.1)
+        grandchild = int(pid_file.read_text())
+
+        tasks_file = tmp_path / "tasks.yml"
+        persistence.save_tasks(
+            tasks_file,
+            models.Roadmap(
+                tasks=[
+                    models.Task(
+                        id="1",
+                        description="d",
+                        status=models.TaskStatus.IN_PROGRESS,
+                        pid=runner_process.pid,
+                    )
+                ],
+            ),
+        )
+        assert lifecycle.cancel_task(tasks_file, "1")
+
+        deadline = time.monotonic() + 10
+        while persistence.is_pid_alive(grandchild):
+            assert time.monotonic() < deadline, "Grandchild survived"
+            time.sleep(0.1)
+    finally:
+        runner_process.kill()
+        runner_process.wait()
+        if pid_file.exists():
+            with contextlib.suppress(OSError):
+                os.kill(int(pid_file.read_text()), signal.SIGKILL)
 
 
 def test_reject_task_blocks_only_a_requested_completion(tmp_path):
