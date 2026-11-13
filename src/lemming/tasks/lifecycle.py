@@ -237,6 +237,9 @@ def claim_task(
 ) -> models.Task | None:
     """Claims a task for execution: marks in_progress and increments attempts.
 
+    Reclaiming a stale in_progress task resumes its cut-off attempt, which
+    was already counted, so attempts stay put.
+
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task to claim.
@@ -247,11 +250,15 @@ def claim_task(
     """
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
+        resumed = any(
+            t.id == task_id and t.status == models.TaskStatus.IN_PROGRESS
+            for t in data.tasks
+        )
         if not _mark_task_in_progress(data, task_id, pid=pid):
             return None
 
         task = next(t for t in data.tasks if t.id == task_id)
-        if not task.requested_status:
+        if not task.requested_status and not (resumed and task.attempts):
             task.attempts += 1
         persistence.save_tasks(tasks_file, data)
         return task

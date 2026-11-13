@@ -157,6 +157,34 @@ def test_claim_already_in_progress(tmp_path):
     )  # 0 + 1 because we manually created it with 0
 
 
+def test_claim_task_reclaim_does_not_count_cut_off_attempt(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    data = models.Roadmap(
+        tasks=[
+            models.Task(
+                id="1",
+                description="Abandoned",
+                status=models.TaskStatus.IN_PROGRESS,
+                attempts=1,
+                pid=999999,
+                last_heartbeat=time.time() - (persistence.STALE_THRESHOLD + 1),
+            ),
+            models.Task(
+                id="2",
+                description="Retried",
+                status=models.TaskStatus.PENDING,
+                attempts=1,
+            ),
+        ]
+    )
+    persistence.save_tasks(tasks_file, data)
+
+    reclaimed = lifecycle.claim_task(tasks_file, "1", pid=123)
+    retried = lifecycle.claim_task(tasks_file, "2", pid=123)
+    assert reclaimed is not None and reclaimed.attempts == 1
+    assert retried is not None and retried.attempts == 2
+
+
 def test_finish_task_attempt(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(

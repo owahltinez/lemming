@@ -103,6 +103,37 @@ class TestCLIOperations(unittest.TestCase):
             )
 
         self.assertIn("Reclaiming abandoned task orphan12", result.output)
+        # The cut-off attempt is rerun, not charged; the next retry still is.
+        self.assertIn("[orphan12] Attempt 1/2", result.output)
+        self.assertIn("[orphan12] Attempt 2/2", result.output)
+        task = persistence.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertEqual(task.attempts, 2)
+
+    def test_run_reclaims_task_abandoned_on_its_last_attempt(self):
+        persistence.save_tasks(
+            self.test_tasks_file,
+            models.Roadmap(
+                tasks=[
+                    models.Task(
+                        id="orphan12",
+                        description="Orphaned task",
+                        status=models.TaskStatus.IN_PROGRESS,
+                        attempts=2,
+                        pid=999999,
+                        last_heartbeat=time.time() - 3600,
+                    )
+                ],
+                config=models.RoadmapConfig(retries=2, runner="true", hooks=[]),
+            ),
+        )
+
+        with mock.patch("time.sleep"):
+            result = self.cli_runner.invoke(
+                cli.cli, ["--tasks-file", str(self.test_tasks_file), "run"]
+            )
+
+        self.assertIn("Reclaiming abandoned task orphan12", result.output)
+        self.assertIn("[orphan12] Attempt 2/2", result.output)
         task = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertEqual(task.attempts, 2)
 
