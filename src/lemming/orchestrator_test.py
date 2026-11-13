@@ -2172,22 +2172,59 @@ def test_run_loop_interrupted_attempt_does_not_charge_a_retry(
     assert "[task1] Attempt 1/3" in capsys.readouterr().out
 
 
-def test_run_loop_interrupted_after_agent_failed_keeps_the_attempt(setup_env):
-    test_tasks_file, _ = setup_env
+@pytest.mark.parametrize(
+    "requested", [models.TaskStatus.FAILED, models.TaskStatus.CANCELLED]
+)
+def test_recover_abandoned_tasks_keeps_other_requests_for_the_next_run(
+    setup_env, requested
+):
+    test_tasks_file, data = setup_env
+    task = data.tasks[0]
+    task.status = models.TaskStatus.IN_PROGRESS
+    task.requested_status = requested
+    task.attempts = 1
+    task.pid = DEAD_PID
+    persistence.save_tasks(test_tasks_file, data)
 
-    def fake_run(cmd, t_file, t_id, *_args, **_kwargs):
-        progress.add_progress(t_file, t_id, "cannot be done")
-        operations.update_task(t_file, t_id, status=models.TaskStatus.FAILED)
-        raise KeyboardInterrupt
+    recover_abandoned_tasks(test_tasks_file)
 
-    with (
-        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
-        mock.patch("time.sleep", return_value=None),
-        pytest.raises(KeyboardInterrupt),
-    ):
-        run_loop(test_tasks_file, False, 0, True, False, ())
+    task = persistence.load_tasks(test_tasks_file).tasks[0]
+    assert task.requested_status == requested
+    assert task.attempts == 1
+    assert task.pid is None
 
-    assert persistence.load_tasks(test_tasks_file).tasks[0].attempts == 1
+
+def test_recover_abandoned_tasks_leaves_unowned_tasks_alone(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("agent work\n", encoding="utf-8")
+    runner_tree = snapshots.snapshot_tree(tasks_file, work)
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Recovered once already",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    requested_status=models.TaskStatus.COMPLETED,
+                    runner_tree=runner_tree,
+                )
+            ],
+        ),
+    )
+    # The user carries on while the loop is stopped.
+    (work / "other.py").write_text("user work\n", encoding="utf-8")
+
+    recover_abandoned_tasks(tasks_file, work)
+
+    assert (work / "other.py").read_text(encoding="utf-8") == "user work\n"
 
 
 def test_run_loop_interrupted_after_agent_completed_keeps_the_work(
@@ -2302,6 +2339,20 @@ def test_recover_abandoned_tasks_counts_run_time_until_the_last_heartbeat(
     task = persistence.load_tasks(test_tasks_file).tasks[0]
     assert task.run_time == run_time
     assert task.last_started_at is None
+
+
+def test_recover_abandoned_tasks_on_exit_counts_run_time_until_now(setup_env):
+    test_tasks_file, data = setup_env
+    task = data.tasks[0]
+    task.status = models.TaskStatus.IN_PROGRESS
+    task.pid = DEAD_PID
+    task.last_started_at = time.time() - 60
+    task.last_heartbeat = time.time() - 50
+    persistence.save_tasks(test_tasks_file, data)
+
+    recover_abandoned_tasks(test_tasks_file, exiting=True)
+
+    assert persistence.load_tasks(test_tasks_file).tasks[0].run_time >= 60
 
 
 def test_finalizing_task_snapshots_runner_tree_and_once_restores_on_reject(

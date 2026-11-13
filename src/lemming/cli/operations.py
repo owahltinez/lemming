@@ -171,7 +171,9 @@ def run(
     except BaseException:
         # An unreadable roadmap cannot be recovered; the next run will retry.
         with contextlib.suppress(persistence.CorruptedTasksError):
-            orchestrator.recover_abandoned_tasks(tasks_file, working_dir)
+            orchestrator.recover_abandoned_tasks(
+                tasks_file, working_dir, exiting=True
+            )
         raise
     finally:
         persistence.release_loop_lock(tasks_file)

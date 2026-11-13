@@ -431,8 +431,13 @@ def exec_command(
             click.echo("The agent produced no closing message.", err=True)
     except BaseException:
         # Nothing resumes an interrupted exec, so roll its work back.
-        with contextlib.suppress(persistence.CorruptedTasksError):
-            orchestrator.recover_abandoned_tasks(tasks_file, working_dir)
+        with (
+            contextlib.suppress(persistence.CorruptedTasksError),
+            contextlib.redirect_stdout(sys.stderr),
+        ):
+            orchestrator.recover_abandoned_tasks(
+                tasks_file, working_dir, exiting=True
+            )
             if _task_status(tasks_file, task_id) in (
                 models.TaskStatus.PENDING,
                 models.TaskStatus.IN_PROGRESS,

@@ -541,6 +541,29 @@ def test_exec_review_interrupt_restores_user_work(repo):
     assert (repo / "committed.py").read_text() == "x = 2  # uncommitted\n"
 
 
+def test_exec_interrupt_keeps_stdout_for_the_agent(workspace):
+    """Recovery chatter must not pose as the agent's closing message."""
+
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    with mock.patch("lemming.runner.run_with_heartbeat", interrupt):
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
+
+    assert "rewinding" not in result.stdout
+
+
+def test_review_has_nothing_to_recover(repo):
+    """A review task is created in progress, but nothing abandoned it."""
+    (repo / "committed.py").write_text("x = 2\n")
+    with mock.patch("lemming.runner.run_with_heartbeat", _finish("Reviewed.")):
+        result = CliRunner().invoke(
+            main.cli, ["exec", "--review", "readability"]
+        )
+
+    assert "cut off" not in result.stderr
+
+
 def test_review_runs_the_hook_without_a_task_runner(repo):
     """A review of existing work has nothing for a runner to do."""
     (repo / "committed.py").write_text("x = 2\n")

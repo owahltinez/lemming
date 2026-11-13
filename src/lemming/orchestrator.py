@@ -443,29 +443,33 @@ def _restore_cancelled_task(
 
 
 def recover_abandoned_tasks(
-    tasks_file: pathlib.Path, working_dir: pathlib.Path | None = None
+    tasks_file: pathlib.Path,
+    working_dir: pathlib.Path | None = None,
+    *,
+    exiting: bool = False,
 ) -> None:
-    """Rewinds in-progress tasks whose runner is gone to their last checkpoint.
+    """Rewinds in-progress tasks whose owner died to their last checkpoint.
 
-    A loop runs this on its way out, and the next loop on startup in case the
-    last one was killed before it could.
+    The loop that owned them runs this on its way out, and the next loop on
+    startup in case the last one was killed before it could. A task with no
+    recorded owner was released cleanly and is left alone.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         working_dir: Workspace to rewind; defaults to the tasks file's.
+        exiting: Whether the caller is the owning loop, alive until now
+            rather than only until its last heartbeat.
     """
     working_dir = working_dir or paths.get_working_dir(tasks_file)
     for task in persistence.load_tasks(tasks_file).tasks:
-        if task.status != models.TaskStatus.IN_PROGRESS or (
-            task.pid is not None
-            and task.pid != os.getpid()
-            and lifecycle.is_pid_alive(task.pid)
+        if (
+            task.status != models.TaskStatus.IN_PROGRESS
+            or task.pid is None
+            or (task.pid != os.getpid() and lifecycle.is_pid_alive(task.pid))
         ):
             continue
         click.echo(f"Task {task.id} was cut off; rewinding it to a checkpoint.")
-        # Completed work survives; only the reviews of it start over.
-        reviewing = task.requested_status == models.TaskStatus.COMPLETED
-        if not reviewing:
+        if task.requested_status != models.TaskStatus.COMPLETED:
             _rewind_to_pre_tree(
                 tasks_file,
                 task.id,
@@ -473,6 +477,7 @@ def recover_abandoned_tasks(
                 f"attempt-{max(1, task.attempts)}.patch",
             )
         elif task.runner_tree is not None:
+            # Completed work survives; only the reviews of it start over.
             current = snapshots.snapshot_tree(tasks_file, working_dir)
             if current is not None and current != task.runner_tree:
                 lifecycle.write_patch_artifact(
@@ -493,18 +498,19 @@ def recover_abandoned_tasks(
             target = next((t for t in latest.tasks if t.id == task.id), None)
             if target is None or target.status != models.TaskStatus.IN_PROGRESS:
                 continue
-            # The run last proved it was alive at its heartbeat.
             lifecycle.update_run_time(
                 target,
-                max(target.last_heartbeat or 0, target.last_started_at or 0),
+                time.time()
+                if exiting
+                else max(
+                    target.last_heartbeat or 0, target.last_started_at or 0
+                ),
             )
-            if not reviewing:
+            # A cut-off attempt is retried uncharged; the next run finalizes
+            # any outcome the agent had already requested.
+            if target.requested_status is None:
                 target.status = models.TaskStatus.PENDING
-                # A cut-off attempt is not a failed one, unless the agent
-                # had already given up.
-                if target.requested_status != models.TaskStatus.FAILED:
-                    target.attempts = max(0, target.attempts - 1)
-                target.requested_status = None
+                target.attempts = max(0, target.attempts - 1)
                 target.rejection = None
             target.pid = None
             target.last_heartbeat = None
