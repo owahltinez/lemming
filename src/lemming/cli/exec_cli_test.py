@@ -171,6 +171,23 @@ def test_exec_reads_the_prompt_from_stdin(workspace):
     assert result.stdout.strip() == "Done."
 
 
+def test_exec_keeps_non_utf8_bytes_from_stdin(workspace):
+    """Piped bytes reach the runner as surrogates, like argv bytes."""
+    seen = []
+
+    def finish(cmd, *args, **kwargs):
+        seen.extend(cmd)
+        return _finish("Done.")(cmd, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", finish):
+        result = CliRunner().invoke(
+            main.cli, ["exec", "-f", "-"], input=b"Fix caf\xe9\n"
+        )
+
+    assert result.exit_code == 0, result.stderr
+    assert any("Fix caf\udce9" in arg for arg in seen)
+
+
 def test_exec_requires_a_prompt(workspace):
     """With no description and no reviews there is nothing to run."""
     result = CliRunner().invoke(main.cli, ["exec"])

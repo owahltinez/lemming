@@ -45,6 +45,26 @@ class TestCLIGoal(unittest.TestCase):
         data = persistence.load_tasks(self.test_tasks_file)
         self.assertEqual(data.goal, "Updated goal via CLI")
 
+    def test_set_goal_from_file_keeps_non_utf8_bytes(self):
+        latin1 = pathlib.Path(self.test_dir) / "latin1.txt"
+        latin1.write_bytes(b"caf\xe9")
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["goal", "--file", str(latin1)]
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.goal, "caf\udce9")
+
+    def test_set_goal_from_stdin(self):
+        result = self.cli_runner.invoke(
+            cli.cli, self.base_args + ["goal", "--file", "-"], input=b"caf\xe9"
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.goal, "caf\udce9")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@ import click
 
 from .. import hooks, models, paths, persistence, snapshots
 from ..tasks import lifecycle, operations, queries
-from .main import cli
+from .main import TEXT_FILE, cli
 
 
 def _format_elapsed_time(seconds: float) -> str:
@@ -84,7 +84,7 @@ def _parse_task_hooks(
 @click.option(
     "--file",
     "-f",
-    type=click.File("r"),
+    type=TEXT_FILE,
     help="Read description from a file (or - for stdin).",
 )
 @click.option(
@@ -190,7 +190,7 @@ def add(
 @click.option(
     "--file",
     "-f",
-    type=click.File("r"),
+    type=TEXT_FILE,
     help="Read new description from a file (or - for stdin).",
 )
 @click.option("--runner", "runner_name", help="New custom runner for the task.")

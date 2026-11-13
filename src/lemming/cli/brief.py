@@ -6,7 +6,7 @@ import click
 
 from .. import models, paths, persistence
 from ..tasks import queries
-from .main import cli
+from .main import TEXT_FILE, cli
 
 
 @cli.command(short_help="<taskid> [text] View or set a task's long-form brief")
@@ -15,7 +15,7 @@ from .main import cli
 @click.option(
     "--file",
     "-f",
-    type=click.File("r"),
+    type=TEXT_FILE,
     help="Read the brief from a file (or - for stdin).",
 )
 @click.pass_context
