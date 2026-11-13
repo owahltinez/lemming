@@ -5,6 +5,7 @@ import os
 import pathlib
 import secrets
 import signal
+import subprocess
 import time
 
 from .. import models, paths, persistence, snapshots
@@ -447,32 +448,108 @@ def write_patch_artifact(
     )
 
 
+def escaped_descendants(pid: int, pgid: int) -> list[int]:
+    """Returns the descendants of a process that left its process group.
+
+    Killing the group misses them, and once their parent dies they reparent
+    to init and can no longer be found, so collect them before killing.
+
+    Args:
+        pid: The process whose descendants to list.
+        pgid: The process group the descendants left.
+
+    Returns:
+        The PIDs of descendants outside ``pgid``; empty if ``ps`` fails.
+    """
+    try:
+        result = subprocess.run(
+            ["ps", "-A", "-o", "pid=,ppid="],
+            capture_output=True,
+            text=True,
+            timeout=persistence.PS_PROBE_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    children: dict[int, list[int]] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
+            children.setdefault(int(fields[1]), []).append(int(fields[0]))
+
+    descendants: set[int] = set()
+    stack = [pid]
+    while stack:
+        for child in children.get(stack.pop(), []):
+            if child not in descendants and child not in (0, 1, os.getpid()):
+                descendants.add(child)
+                stack.append(child)
+
+    escaped = []
+    for child in descendants:
+        try:
+            if os.getpgid(child) != pgid:
+                escaped.append(child)
+        except OSError:
+            pass
+    return escaped
+
+
+def signal_pids(pids: list[int], sig: int) -> None:
+    """Sends a signal to each process, skipping any that are gone."""
+    for pid in pids:
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            pass
+
+
+def kill_survivors(pids: list[int], deadline: float) -> None:
+    """Waits for processes to exit, SIGKILLing any alive at the deadline.
+
+    Args:
+        pids: The processes already sent SIGTERM.
+        deadline: The ``time.monotonic()`` value ending the grace period.
+    """
+    pids = [pid for pid in pids if is_pid_alive(pid)]
+    while pids and time.monotonic() < deadline:
+        time.sleep(0.1)
+        pids = [pid for pid in pids if is_pid_alive(pid)]
+    signal_pids(pids, signal.SIGKILL)
+
+
 def _kill_pid_tree(pid: int) -> None:
-    """Kills a process and its entire process group by PID.
+    """Kills a process, its entire process group, and escaped descendants.
 
     Sends SIGTERM to the process group first so it can clean up, then
     escalates to SIGKILL if the process is still alive after a grace
-    period. Unlike runner._kill_process_tree, this works from a bare PID
-    (no subprocess handle), so exit is detected by polling.
+    period. Descendants that left the group are terminated the same way.
+    Unlike runner._kill_process_tree, this works from a bare PID (no
+    subprocess handle), so exit is detected by polling.
 
     Args:
         pid: The process ID to kill.
     """
     # Ask the whole group to terminate gracefully.
     pgid = None
+    escaped: list[int] = []
     try:
         pgid = os.getpgid(pid)
+        escaped = escaped_descendants(pid, pgid)
         os.killpg(pgid, signal.SIGTERM)
     except OSError:
         try:
             os.kill(pid, signal.SIGTERM)
         except OSError:
             return
+    signal_pids(escaped, signal.SIGTERM)
 
     # Poll for exit, then escalate to SIGKILL if SIGTERM was ignored.
     deadline = time.monotonic() + KILL_GRACE_SECONDS
     while time.monotonic() < deadline:
         if not is_pid_alive(pid):
+            kill_survivors(escaped, deadline)
             return
         time.sleep(0.1)
 
@@ -488,6 +565,7 @@ def _kill_pid_tree(pid: int) -> None:
             os.kill(pid, signal.SIGKILL)
     except OSError:
         pass
+    kill_survivors(escaped, deadline)
 
 
 def cancel_task(

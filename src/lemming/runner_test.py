@@ -1,4 +1,6 @@
+import contextlib
 import json
+import os
 import pathlib
 import shutil
 import signal
@@ -612,6 +614,9 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
         unittest.mock.patch("subprocess.Popen", return_value=mock_process),
         unittest.mock.patch("os.killpg") as mock_killpg,
         unittest.mock.patch("os.getpgid", return_value=54321),
+        unittest.mock.patch.object(
+            lifecycle, "escaped_descendants", return_value=[]
+        ),
     ):
         # 3. Call run_with_heartbeat and expect it to re-raise KeyboardInterrupt
         try:
@@ -892,6 +897,134 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
     assert returncode == 0
     assert "runner done" in stdout
     assert time.monotonic() - start < 10
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_run_with_heartbeat_timeout_kills_detached_grandchild(
+    tmp_path, interrupted
+):
+    """Verifies a time limit kills a SIGTERM-immune child that left the group.
+
+    The attempt must not return until it is dead, or a retry races it; nor
+    may a stop that lands while the kill is still in progress.
+    """
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "detached_timeout"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id=task_id, description="d")]),
+    )
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
+
+    pid_file = tmp_path / "grandchild.pid"
+    grandchild_code = (
+        "import os, pathlib, signal, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"pathlib.Path({str(pid_file)!r} + '.tmp')"
+        ".write_text(str(os.getpid()))\n"
+        f"os.replace({str(pid_file)!r} + '.tmp', {str(pid_file)!r})\n"
+        "time.sleep(300)\n"
+    )
+    child_code = (
+        "import subprocess, sys, time\n"
+        "subprocess.Popen(\n"
+        f"    [sys.executable, '-c', {grandchild_code!r}],\n"
+        "    start_new_session=True,\n"
+        "    stdout=subprocess.DEVNULL,\n"
+        "    stderr=subprocess.DEVNULL,\n"
+        ")\n"
+        "time.sleep(300)\n"
+    )
+    real_monotonic = time.monotonic
+
+    def fast_monotonic():
+        return real_monotonic() + (120 if pid_file.exists() else 0)
+
+    real_join = runner._join_heartbeat
+    joins = []
+
+    def join_heartbeat(*args):
+        joins.append(args)
+        if interrupted and len(joins) == 1:
+            raise KeyboardInterrupt
+        real_join(*args)
+
+    returncode = None
+    try:
+        with (
+            unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
+            unittest.mock.patch.object(persistence, "STALE_THRESHOLD", 2),
+            unittest.mock.patch.object(runner, "KILL_GRACE_SECONDS", 1),
+            unittest.mock.patch.object(lifecycle, "KILL_GRACE_SECONDS", 1),
+            unittest.mock.patch.object(
+                runner, "_join_heartbeat", side_effect=join_heartbeat
+            ),
+            contextlib.suppress(KeyboardInterrupt),
+        ):
+            returncode, _, _ = runner.run_with_heartbeat(
+                [sys.executable, "-c", child_code],
+                tasks_file,
+                task_id,
+                verbose=False,
+                time_limit=1,
+            )
+        assert returncode == (
+            None if interrupted else runner.RETURNCODE_TIMEOUT
+        )
+        assert not persistence.is_pid_alive(int(pid_file.read_text()))
+    finally:
+        if pid_file.exists():
+            with contextlib.suppress(OSError):
+                os.kill(int(pid_file.read_text()), signal.SIGKILL)
+
+
+def test_run_with_heartbeat_returns_when_kill_hangs(tmp_path, caplog):
+    """Verifies a stuck kill on the heartbeat thread cannot wedge a run."""
+    tasks_file = tmp_path / "tasks.yml"
+    task_id = "stuck_kill"
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id=task_id, description="d")]),
+    )
+    lifecycle.mark_task_in_progress(tasks_file, task_id)
+
+    release = threading.Event()
+
+    def stuck_kill(process):
+        process.kill()
+        release.wait()
+
+    real_monotonic = time.monotonic
+    start = real_monotonic()
+    calls = iter(range(1_000_000))
+
+    def fast_monotonic():
+        # Jump past the time limit after start_time is read.
+        return real_monotonic() + (120 if next(calls) else 0)
+
+    try:
+        with (
+            unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
+            unittest.mock.patch.object(persistence, "STALE_THRESHOLD", 2),
+            unittest.mock.patch.object(persistence, "PS_PROBE_TIMEOUT", 0),
+            unittest.mock.patch.object(runner, "KILL_GRACE_SECONDS", 0),
+            unittest.mock.patch.object(
+                runner, "_kill_process_tree", side_effect=stuck_kill
+            ),
+        ):
+            returncode, _, _ = runner.run_with_heartbeat(
+                ["sleep", "60"],
+                tasks_file,
+                task_id,
+                verbose=False,
+                time_limit=1,
+            )
+    finally:
+        release.set()
+
+    assert returncode == runner.RETURNCODE_TIMEOUT
+    assert real_monotonic() - start < 10
+    assert "still killing" in caplog.text
 
 
 def _run_interrupted_at(tmp_path, patched: str) -> subprocess.Popen:
