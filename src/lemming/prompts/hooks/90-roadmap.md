@@ -30,39 +30,38 @@ the plan up-to-date with minimal friction.
       description to be more efficient, or just reset it if you think it was a
       transient issue, but be aware that if it reached the max attempts, you
       MUST change something or the project will abort.
-3.  **Rejections Are Not Follow-Up Work**: A task shown as REJECTED returns
-    to pending and will be retried with the rejection recorded in its
-    progress. Do NOT add, reset, or supersede anything over that feedback:
-    the next attempt addresses it.
+3.  **Rejections Are Not Follow-Up Work**: A task shown as REJECTED returns to
+    pending and will be retried with the rejection recorded in its progress. Do
+    NOT add, reset, or supersede anything over that feedback: the next attempt
+    addresses it.
 4.  **Refine**: If any pending, unstarted tasks are now redundant, overly broad,
     or based on invalidated assumptions, edit or delete them immediately. Never
     delete a task with attempts or execution history; supersede it so its log,
     progress, and relationship to replacement tasks remain inspectable.
-5.  **Queue-Drain Goal Audit (Mandatory)**: If the roadmap contains no
-    `PENDING` or `IN PROGRESS` tasks, do not infer that the long-term goal is
-    achieved from task descriptions, progress notes, or execution logs. Before
-    exiting, inspect the workspace and check each concrete clause of the goal
-    against the implementation. Trace whether relevant code is reachable from
-    an entry point and whether the user-facing path actually exercises it. Read
-    source files and run targeted existing builds, tests, or commands when they
-    provide useful evidence. If the workspace does not fully achieve the goal,
-    add concrete, self-contained tasks that close the discovered gaps.
-6.  **Extend**: Whenever your review finds that a concrete clause of the
-    project goal is not yet achieved, add the fewest, smallest self-contained
-    tasks that close the gap, each stating the minimal acceptable change and
-    what is out of scope. A vague clause gets the smallest version that does
-    its core job; polish, generality, and features the goal does not ask for
-    are not gaps.
+5.  **Queue-Drain Goal Audit (Mandatory)**: If the roadmap contains no `PENDING`
+    or `IN PROGRESS` tasks, do not infer that the long-term goal is achieved
+    from task descriptions, progress notes, or execution logs. Before exiting,
+    inspect the workspace and check each concrete clause of the goal against the
+    implementation. Trace whether relevant code is reachable from an entry point
+    and whether the user-facing path actually exercises it. Read source files
+    and run targeted existing builds, tests, or commands when they provide
+    useful evidence. If the workspace does not fully achieve the goal, add
+    concrete, self-contained tasks that close the discovered gaps.
+6.  **Extend**: Whenever your review finds that a concrete clause of the project
+    goal is not yet achieved, add the fewest, smallest self-contained tasks that
+    close the gap, each stating the minimal acceptable change and what is out of
+    scope. A vague clause gets the smallest version that does its core job;
+    polish, generality, and features the goal does not ask for are not gaps.
 7.  **Follow-up**: A finding recorded in progress is not automatically a task:
     schedule it only for a defect, an unmet goal clause, or work the previous
-    task left unfinished, never for optional or speculative improvements. If
-    you identify missing work from the previous task (like forgotten
-    teardowns, or formatting issues reported by the readability hook), add new
-    tasks to address them, except where directive 3 applies. If the finished
-    task's `Changes:` summary includes generated directories or dependency
-    trees (e.g. `node_modules/`, `.venv/`, `dist/`, `build/`) because
-    `.gitignore` was missing or incomplete, add a `--oneshot` task to update
-    `.gitignore`.
+    task left unfinished, never for optional or speculative improvements. If you
+    identify missing work from the previous task (like forgotten teardowns, or
+    formatting issues reported by the readability hook), add new tasks to
+    address them, except where directive 3 applies. If the finished task's
+    `Changes:` summary includes generated directories or dependency trees (e.g.
+    `node_modules/`, `.venv/`, `dist/`, `build/`) because `.gitignore` was
+    missing or incomplete, add a `--oneshot` task to update `.gitignore`.
+
     A gap reported by the testing hook earns a task only when it names a
     concrete regression the suite would miss; a bare report of untested code
     does not.
@@ -71,22 +70,23 @@ the plan up-to-date with minimal friction.
     Include the concrete files, symbols, motivation, and acceptance criteria the
     task needs, but do not repeat project-wide rules already present in the
     long-term goal.
-    **Mechanical tasks MUST be added with `--oneshot`**: cleanups, renames,
-    typo fixes, version bumps, deleting scratch files, applying formatter
-    output, and the follow-ups from directive 7. Every hook that runs after
-    such a task costs a full agent run, often longer than the task itself.
-    Reserve hooked tasks for work that changes behavior. Mark existing
-    mechanical tasks with `edit <id> --oneshot` when you notice them.
+
+    **Mechanical tasks MUST be added with `--oneshot`**: cleanups, renames, typo
+    fixes, version bumps, deleting scratch files, applying formatter output, and
+    the follow-ups from directive 7. Every hook that runs after such a task
+    costs a full agent run, often longer than the task itself. Reserve hooked
+    tasks for work that changes behavior. Mark existing mechanical tasks with
+    `edit <id> --oneshot` when you notice them.
 9.  **No Code Changes**: Your only persistent changes may be to the roadmap via
     the `lemming` CLI. Do NOT edit source or configuration files. Reading the
-    workspace and running existing build, test, and entry-point commands for
-    the queue-drain audit is explicitly allowed.
-10. **Fast Exit**: If the roadmap is accurate and well-structured, AND there
-    are no failed tasks that have reached their maximum attempts, you may exit
-    immediately without running any commands. The queue-drain audit in
-    directive 5 must finish before this clause applies. If a task is marked as
-    FAILED and has reached its maximum attempts, a Fast Exit will result in the
-    entire project ABORTING. In that case, you MUST repair it.
+    workspace and running existing build, test, and entry-point commands for the
+    queue-drain audit is explicitly allowed.
+10. **Fast Exit**: If the roadmap is accurate and well-structured, AND there are
+    no failed tasks that have reached their maximum attempts, you may exit
+    immediately without running any commands. The queue-drain audit in directive
+    5 must finish before this clause applies. If a task is marked as FAILED and
+    has reached its maximum attempts, a Fast Exit will result in the entire
+    project ABORTING. In that case, you MUST repair it.
 
 ## Commands
 

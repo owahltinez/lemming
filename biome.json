@@ -69,12 +69,6 @@
           }
         }
       }
-    },
-    {
-      "includes": ["**/src/lemming/prompts/**"],
-      "formatter": {
-        "enabled": false
-      }
     }
   ]
 }
