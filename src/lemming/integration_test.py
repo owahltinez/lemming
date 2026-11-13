@@ -6,7 +6,7 @@ import time
 import unittest
 import unittest.mock
 
-from lemming import models, orchestrator, persistence, runner
+from lemming import models, orchestrator, paths, persistence, runner
 from lemming.tasks import lifecycle
 
 
@@ -282,6 +282,28 @@ class TestIntegration(unittest.TestCase):
                 task, "Task should be reclaimable if PID is dead"
             )
             self.assertEqual(task.pid, 67890)
+
+    def test_latin1_goal_completes_an_attempt(self):
+        """Non-UTF-8 argv bytes arrive as surrogates and must reach the log."""
+        data = persistence.load_tasks(self.test_tasks_file)
+        data.goal = "caf\udce9"
+        data.config.retries = 1
+        persistence.save_tasks(self.test_tasks_file, data)
+
+        with unittest.mock.patch("time.sleep", return_value=None):
+            orchestrator.run_loop(
+                self.test_tasks_file,
+                verbose=False,
+                retry_delay=0,
+                yolo=True,
+                no_defaults=False,
+                runner_args=(),
+            )
+
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(data.tasks[0].attempts, 1)
+        log_file = paths.get_log_file(self.test_tasks_file, "task1")
+        self.assertIn(b"caf\xe9", log_file.read_bytes())
 
 
 if __name__ == "__main__":

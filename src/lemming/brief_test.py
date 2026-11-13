@@ -1,7 +1,10 @@
 """Tests for the long-form task brief delivered alongside the description."""
 
+import os
 import pathlib
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -102,6 +105,34 @@ class TestTaskBrief(unittest.TestCase):
             operations.add_task(self.tasks_file, "z" * 5000)
 
         self.assertIn("lemming brief", str(caught.exception))
+
+    def test_brief_round_trips_non_utf8_argv(self):
+        """Python decodes non-UTF-8 argv bytes as surrogates; keep the bytes."""
+        cmd = [sys.executable, "-m", "lemming.main", *self.base_args, "brief"]
+        env = {**os.environ, "HOME": self.test_dir}
+        # A real process decodes argv bytes; CliRunner's stdout is strict.
+        write = subprocess.run(
+            [*cmd, "task1", b"caf\xe9"],
+            capture_output=True,
+            env=env,
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(write.returncode, 0, write.stdout + write.stderr)
+        read = subprocess.run(
+            [*cmd, "task1"],
+            capture_output=True,
+            env=env,
+            timeout=60,
+            check=False,
+        )
+
+        self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
+        self.assertIn(b"caf\xe9\n", read.stdout)
+        prompt = prompts.prepare_prompt(
+            self.data, self.data.tasks[0], self.tasks_file
+        )
+        self.assertIn("caf\udce9", prompt)
 
 
 if __name__ == "__main__":

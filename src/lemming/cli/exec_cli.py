@@ -139,7 +139,7 @@ def _create_task(exec_dir: pathlib.Path, prompt: str, config) -> str:
     task = operations.add_task(tasks_file, description)
     if not fits:
         paths.get_brief_file(tasks_file, task.id).write_text(
-            prompt, encoding="utf-8"
+            prompt, encoding="utf-8", errors="surrogateescape"
         )
     return task.id
 

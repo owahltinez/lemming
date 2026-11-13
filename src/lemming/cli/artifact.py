@@ -129,7 +129,9 @@ def artifact(
         ctx.exit(1)
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    artifact_file.write_text(content + "\n", encoding="utf-8")
+    artifact_file.write_text(
+        content + "\n", encoding="utf-8", errors="surrogateescape"
+    )
     click.echo(str(artifact_file))
 
     if pointer:

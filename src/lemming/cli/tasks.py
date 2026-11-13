@@ -735,7 +735,7 @@ def logs(ctx: click.Context, task_id: str | None, as_json: bool):
         click.echo(f"No log for task {target.id if target else task_id}.")
         ctx.exit(1)
 
-    content = log_file.read_text(encoding="utf-8")
+    content = log_file.read_text(encoding="utf-8", errors="surrogateescape")
 
     if as_json:
         click.echo(

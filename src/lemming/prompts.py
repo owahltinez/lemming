@@ -557,7 +557,9 @@ def prepare_prompt(
     brief_section = ""
     brief_file = paths.get_brief_file(tasks_file, task.id)
     if brief_file.exists():
-        brief_text = brief_file.read_text(encoding="utf-8").strip()
+        brief_text = brief_file.read_text(
+            encoding="utf-8", errors="surrogateescape"
+        ).strip()
         if brief_text:
             brief_section = f"\n## Task Brief\n\n{brief_text}\n"
 
