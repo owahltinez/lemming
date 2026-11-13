@@ -449,6 +449,7 @@ def _restore_interrupted_attempt(
     attempt_pre_head: str | None,
     *,
     clear_task_trees: bool,
+    keep_completed: bool = False,
 ) -> None:
     """Saves attempt patch and restores workspace when a runner interrupts."""
     if clear_task_trees:
@@ -462,10 +463,22 @@ def _restore_interrupted_attempt(
             return
         # The work is done; leave it for the next run to finalize.
         if (
-            current is not None
+            keep_completed
+            and current is not None
             and current.requested_status == models.TaskStatus.COMPLETED
         ):
-            lifecycle.finish_task_attempt(tasks_file, task.id)
+            with persistence.lock_tasks(tasks_file):
+                latest = persistence.load_tasks(tasks_file)
+                target = next(
+                    (t for t in latest.tasks if t.id == task.id), None
+                )
+                if target is not None:
+                    lifecycle.update_run_time(target)
+                    target.pid = None
+                    target.last_heartbeat = None
+                    target.active_execution_component = None
+                    target.active_execution_started_at = None
+                    persistence.save_tasks(tasks_file, latest)
             return
 
     cur_tree = snapshots.snapshot_tree(tasks_file, working_dir)
@@ -1424,6 +1437,7 @@ def run_loop(
                 attempt_pre_tree,
                 attempt_pre_head,
                 clear_task_trees=True,
+                keep_completed=not once,
             )
             raise
 

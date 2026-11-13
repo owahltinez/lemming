@@ -264,6 +264,9 @@ def _release_stopped_tasks(tasks_file: pathlib.Path) -> list[str]:
             task.status == models.TaskStatus.IN_PROGRESS
             or task.requested_status
         )
+        # A completion request keeps its work for the next run to finalize.
+        if task.requested_status == models.TaskStatus.COMPLETED:
+            continue
         if is_unfinished and not lifecycle.is_task_active(task, now):
             lifecycle.revert_task_to_pending(tasks_file, task.id)
             reverted.append(task.id)

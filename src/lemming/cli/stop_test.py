@@ -108,6 +108,26 @@ class TestCLIStop(unittest.TestCase):
         self.assertEqual(task.status, models.TaskStatus.PENDING)
         self.assertIsNone(task.pid)
 
+    def test_immediate_stop_keeps_a_completion_request(self):
+        """Completed work waits for the next run to finalize it."""
+        data = persistence.load_tasks(self.tasks_file)
+        data.tasks[0].requested_status = models.TaskStatus.COMPLETED
+        data.tasks[0].pid = None
+        persistence.save_tasks(self.tasks_file, data)
+        persistence.acquire_loop_lock(self.tasks_file)
+        try:
+            with (
+                mock.patch("os.kill"),
+                mock.patch(_WAIT_TARGET, return_value=True),
+            ):
+                result = self._invoke()
+        finally:
+            persistence.release_loop_lock(self.tasks_file)
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        task = persistence.load_tasks(self.tasks_file).tasks[0]
+        self.assertEqual(task.requested_status, models.TaskStatus.COMPLETED)
+
 
 if __name__ == "__main__":
     unittest.main()

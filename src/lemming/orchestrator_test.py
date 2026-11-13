@@ -2230,6 +2230,8 @@ def test_run_loop_interrupted_after_agent_completed_keeps_the_work(
     task = persistence.load_tasks(tasks_file).tasks[0]
     assert task.requested_status == models.TaskStatus.COMPLETED
     assert task.pid is None
+    assert task.last_started_at is None
+    assert task.run_time > 0
 
     with (
         mock.patch("lemming.runner.run_with_heartbeat") as rerun,
@@ -2242,6 +2244,45 @@ def test_run_loop_interrupted_after_agent_completed_keeps_the_work(
     task = persistence.load_tasks(tasks_file).tasks[0]
     assert task.status == models.TaskStatus.COMPLETED
     assert task.attempts == 1
+
+
+def test_run_loop_once_interrupted_after_agent_completed_rolls_back(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t1", description="Exec, then lingers")],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
+
+    def fake_run(cmd, t_file, t_id, *_args, **_kwargs):
+        (work / "app.py").write_text("v2\n", encoding="utf-8")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        raise KeyboardInterrupt
+
+    # Nothing finalizes an interrupted exec, so its work must not linger.
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(
+            tasks_file, False, 0, True, False, (), working_dir=work, once=True
+        )
+
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.PENDING
+    assert task.requested_status is None
 
 
 def test_run_loop_interrupted_reclaimed_task_refunds_its_attempt(
