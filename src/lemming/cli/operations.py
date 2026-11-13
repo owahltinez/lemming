@@ -19,6 +19,9 @@ from .main import PassthroughCommand, cli
 # How long `lemming stop` waits for the loop to shut down before giving up.
 LOOP_EXIT_TIMEOUT = 30.0
 
+# A detached loop's log past this size is moved to loop.log.1 on the next start.
+LOOP_LOG_MAX_BYTES = 1024 * 1024
+
 
 def quiet_poll_log_config() -> dict:
     """Builds uvicorn's log config with UI polling endpoints suppressed.
@@ -209,6 +212,8 @@ def _detach_loop(
 
     log_file = paths.get_project_dir(tasks_file) / "loop.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
+    if log_file.exists() and log_file.stat().st_size > LOOP_LOG_MAX_BYTES:
+        log_file.replace(log_file.with_name("loop.log.1"))
     with log_file.open("a") as log:
         pid = loop.spawn_loop(
             tasks_file,

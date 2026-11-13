@@ -176,6 +176,39 @@ class TestCLIOperations(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertNotIn("-C", popen.call_args.args[0])
 
+    def test_run_detach_rotates_oversized_log(self):
+        log_file = paths.get_project_dir(self.test_tasks_file) / "loop.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        old = "x" * (operations.LOOP_LOG_MAX_BYTES + 1)
+        log_file.write_text(old)
+        log_file.with_name("loop.log.1").write_text("older")
+
+        with mock.patch("subprocess.Popen") as popen:
+            popen.return_value.pid = 4242
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--detach"]
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(log_file.read_text(), "")
+        self.assertEqual(log_file.with_name("loop.log.1").read_text(), old)
+        self.assertEqual(popen.call_args.kwargs["stdout"].name, str(log_file))
+
+    def test_run_detach_appends_to_small_log(self):
+        log_file = paths.get_project_dir(self.test_tasks_file) / "loop.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text("previous run\n")
+
+        with mock.patch("subprocess.Popen") as popen:
+            popen.return_value.pid = 4242
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--detach"]
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(log_file.read_text(), "previous run\n")
+        self.assertFalse(log_file.with_name("loop.log.1").exists())
+
     def test_run_refuses_to_reclaim_task_with_live_runner(self):
         runner = subprocess.Popen(["sleep", "60"])
         try:
