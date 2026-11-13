@@ -236,8 +236,9 @@ loops through each pending task:
     with `lemming add`, breaking down complex work into smaller steps that
     Lemming will pick up automatically.
 4.  **Retry or advance**: On failure, timeout, or cancellation, Lemming saves
-    the discarded workspace diff as an `attempt-<N>.patch` artifact, restores
-    the working tree to the task's pre-run snapshot, and retries up to the
+    the discarded workspace diff as an `attempt-<N>.patch` artifact (a repeated
+    number gets `-2`, `-3`, ... rather than overwriting), restores the working
+    tree to the task's pre-run snapshot, and retries up to the
     configured limit with accumulated progress as context. On success, it moves
     to the next task.
 5.  **Orchestration**: After each task, Lemming can run one or more

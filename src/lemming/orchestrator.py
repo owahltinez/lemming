@@ -505,6 +505,9 @@ def _restore_interrupted_attempt(
             ):
                 lifecycle.update_run_time(target)
                 target.status = models.TaskStatus.PENDING
+                # An interrupted attempt was cut off, not failed: refund it.
+                if target.requested_status != models.TaskStatus.FAILED:
+                    target.attempts = max(0, target.attempts - 1)
                 target.requested_status = None
                 target.rejection = None
                 target.pid = None
