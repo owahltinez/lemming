@@ -40,13 +40,18 @@
     }
   },
   "markdown": {
+    "parser": {
+      "frontmatter": true
+    },
     "formatter": {
-      "enabled": false
+      "enabled": true,
+      "proseWrap": "always"
     }
   },
   "yaml": {
     "formatter": {
-      "enabled": false
+      "enabled": true,
+      "quoteStyle": "single"
     }
   },
   "overrides": [
@@ -58,6 +63,12 @@
             "useAnchorContent": "off"
           }
         }
+      }
+    },
+    {
+      "includes": ["**/src/lemming/prompts/**"],
+      "formatter": {
+        "enabled": false
       }
     }
   ]

@@ -103,11 +103,11 @@ lemming exec "Fix the flaky test in runner_test.py" --retries 3
 cat handoff.md | lemming -v exec -f - --runner agy
 ```
 
-The runner receives no conversation history and cannot be steered mid-run.
-Make the handoff self-contained: state the goal, hard constraints, relevant
-findings and evidence, approaches ruled out and why, and the definition of done
-and verification. The installed skill includes a complete here-document
-example for orchestrating agents.
+The runner receives no conversation history and cannot be steered mid-run. Make
+the handoff self-contained: state the goal, hard constraints, relevant findings
+and evidence, approaches ruled out and why, and the definition of done and
+verification. The installed skill includes a complete here-document example for
+orchestrating agents.
 
 With no description there is nothing for a task runner to do, so only the
 reviews run — against work that already exists.
@@ -135,13 +135,13 @@ outside a git repository; a clean tree reviews nothing. Arguments for the agent
 CLI go after `--`.
 
 Reviews may edit the working directory. The built-in readability review
-intentionally applies fixes, and testing may repair production code or tests.
-UX is instructed to remain advisory, but its prompt and `--no-yolo` do not
-enforce filesystem isolation. A global review override may perform any actions
-its prompt requests. There is no read-only review mode: runners keep write
-access, so a prompt-only flag could not be enforced. When isolation is required,
-follow the working-copy guidance below and pass a separate VCS-managed working
-copy with `lemming -C <working-copy> exec --review ...`.
+intentionally applies fixes, and testing may repair production code or tests. UX
+is instructed to remain advisory, but its prompt and `--no-yolo` do not enforce
+filesystem isolation. A global review override may perform any actions its
+prompt requests. There is no read-only review mode: runners keep write access,
+so a prompt-only flag could not be enforced. When isolation is required, follow
+the working-copy guidance below and pass a separate VCS-managed working copy
+with `lemming -C <working-copy> exec --review ...`.
 
 Each run is self-contained: nothing is read from the project's roadmap or its
 local hooks, it runs only the requested task and reviews, and its state
@@ -151,9 +151,8 @@ printed, so the log can be read. Kept directories live in
 recent failure is always still there to inspect. Stdout carries the agent's
 message alone and everything else goes to stderr, so the output can be consumed
 directly. Stderr reports the ephemeral tasks file and task ID at startup; pass
-those to
-`lemming --tasks-file <path> status <id>` or `logs <id>` to inspect an active
-run. Use the global verbose flag (`lemming -v exec ...`) to stream runner
+those to `lemming --tasks-file <path> status <id>` or `logs <id>` to inspect an
+active run. Use the global verbose flag (`lemming -v exec ...`) to stream runner
 activity.
 
 Note that the agent runs unattended (`--yolo` by default), so it does not
@@ -238,9 +237,8 @@ loops through each pending task:
 4.  **Retry or advance**: On failure, timeout, or cancellation, Lemming saves
     the discarded workspace diff as an `attempt-<N>.patch` artifact (a repeated
     number gets `-2`, `-3`, ... rather than overwriting), restores the working
-    tree to the task's pre-run snapshot, and retries up to the
-    configured limit with accumulated progress as context. On success, it moves
-    to the next task.
+    tree to the task's pre-run snapshot, and retries up to the configured limit
+    with accumulated progress as context. On success, it moves to the next task.
 5.  **Orchestration**: After each task, Lemming can run one or more
     **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the
     results and adapt the roadmap if needed. Only `roadmap` runs by default;
@@ -374,26 +372,26 @@ These come before the subcommand and apply to all of them.
   - `--brief`: Omit task descriptions, which otherwise dominate the output.
   - An `in_progress` task with no loop running is flagged as abandoned;
     `lemming run --detach` reclaims it. If its runner outlived the loop,
-    `status` names the runner's pid to kill first, and `run` refuses to start
-    a second runner until it is gone.
+    `status` names the runner's pid to kill first, and `run` refuses to start a
+    second runner until it is gone.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index`, `--runner`,
   `--model`, `--oneshot`, and `--hooks` (the task's reviews, comma-separated;
   inherited from `--parent` when omitted).
-- **`edit <id>`**: Modify a task's description, runner, model, position,
-  oneshot flag (`--oneshot/--no-oneshot`), or reviews (`--hooks`;
-  `--project-hooks` restores the project's).
+- **`edit <id>`**: Modify a task's description, runner, model, position, oneshot
+  flag (`--oneshot/--no-oneshot`), or reviews (`--hooks`; `--project-hooks`
+  restores the project's).
 - **`brief <id> [text]`**: View or set a task's long-form brief. Unlike the
   description it has no length cap, and it is appended to the runner prompt
   automatically — the right home for measured timings, exact failing selectors,
   or why a previous attempt was wrong. Supports `-f/--file`.
-- **`artifact <id> [name] [text]`**: Store or read a task's verbose
-  diagnostics — stack traces, test dumps, long logs — outside `tasks.yml`, so
-  they never bloat the prompts of later attempts. With no name it lists what the
-  task has stored; with `--note` it also records the one-line progress pointer
-  for you. Later attempts see the artifact names in their prompt automatically.
-  Supports `-f/--file`.
+- **`artifact <id> [name] [text]`**: Store or read a task's verbose diagnostics
+  — stack traces, test dumps, long logs — outside `tasks.yml`, so they never
+  bloat the prompts of later attempts. With no name it lists what the task has
+  stored; with `--note` it also records the one-line progress pointer for you.
+  Later attempts see the artifact names in their prompt automatically. Supports
+  `-f/--file`.
 - **`delete <id>`**: Remove an unstarted task while retaining its runner log;
   its artifacts go with it. Tasks with execution history require `--force`;
   autonomous restructuring should use `supersede`. Supports `--all` and
@@ -457,10 +455,10 @@ These come before the subcommand and apply to all of them.
   - `--env`: Set environment variables for the runner (e.g., `--env KEY=VALUE`).
   - `--no-defaults`: Skip default flag injection for known runners.
   - `--until <task-id>`: Stop between tasks once that task has completed or
-    failed, printing `Reached milestone <id>; M pending.` so a supervising
-    agent can review before queueing the next milestone. Tasks inserted ahead
-    of it still run; if the roadmap hook supersedes it, the run continues until
-    every replacement has settled. Deleting it stops the run with exit 1.
+    failed, printing `Reached milestone <id>; M pending.` so a supervising agent
+    can review before queueing the next milestone. Tasks inserted ahead of it
+    still run; if the roadmap hook supersedes it, the run continues until every
+    replacement has settled. Deleting it stops the run with exit 1.
   - `--max-tasks N`: Stop between tasks once `N` have completed or failed,
     printing `Stopped after N tasks; M pending.` Attempts that leave a task
     pending do not count. Combine with `--until` as a budget cap.
@@ -484,9 +482,9 @@ These come before the subcommand and apply to all of them.
     cannot be selected.
   - `--scope <path>`: With `--review` and no description, a path or glob to
     review instead of uncommitted work; an error with a description. Each must
-    match something. Repeat it for several, or pass `-` to read them from
-    stdin: NUL-separated if it holds any NUL, as from `git diff -z`, or else
-    one per line.
+    match something. Repeat it for several, or pass `-` to read them from stdin:
+    NUL-separated if it holds any NUL, as from `git diff -z`, or else one per
+    line.
   - `--runner`, `--model`: Which agent CLI and model to use.
   - `--retries`: Maximum total task-runner attempts, including the first
     (default 1). Does not retry review-only runs.
