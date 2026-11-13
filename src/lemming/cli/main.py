@@ -7,6 +7,9 @@ import click
 
 from .. import paths, persistence
 
+# Undecodable bytes become surrogates, as argv does, and are written back.
+TEXT_FILE = click.File("r", encoding="utf-8", errors="surrogateescape")
+
 
 class CorruptionAwareGroup(click.Group):
     """Click group that turns an unreadable tasks file into a clean error.

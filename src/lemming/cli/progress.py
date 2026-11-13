@@ -5,7 +5,7 @@ import typing
 import click
 
 from ..tasks import progress as task_progress
-from .main import cli
+from .main import TEXT_FILE, cli
 
 
 @cli.command(short_help="<taskid> [text] Add a progress entry")
@@ -14,7 +14,7 @@ from .main import cli
 @click.option(
     "--file",
     "-f",
-    type=click.File("r"),
+    type=TEXT_FILE,
     help="Read progress text from a file (or - for stdin).",
 )
 @click.pass_context

@@ -70,6 +70,29 @@ class TestCLITasks(unittest.TestCase):
             len(persistence.load_tasks(self.test_tasks_file).tasks), 1
         )
 
+    def test_file_options_keep_non_utf8_bytes(self):
+        """File and stdin bytes round-trip as surrogates, like argv bytes."""
+        latin1 = pathlib.Path(self.test_dir) / "latin1.txt"
+        latin1.write_bytes(b"caf\xe9\n")
+        for args, stdin in (
+            (["add", "-f", str(latin1)], None),
+            (["add", "-f", "-"], b"caf\xe9 stdin\n"),
+            (["edit", "12345678", "-f", str(latin1)], None),
+            (["progress", "12345678", "-f", "-"], b"caf\xe9\n"),
+        ):
+            # Not verbose: CliRunner's stdout is strict regardless of main().
+            result = self.cli_runner.invoke(
+                cli.cli, self.base_args[1:] + args, input=stdin
+            )
+            self.assertEqual(result.exit_code, 0, result.output)
+
+        data = persistence.load_tasks(self.test_tasks_file)
+        self.assertEqual(
+            [t.description for t in data.tasks],
+            ["caf\udce9", "caf\udce9", "caf\udce9 stdin"],
+        )
+        self.assertEqual(data.tasks[0].progress, ["caf\udce9"])
+
     def test_edit_task_description(self):
         result = self.cli_runner.invoke(
             cli.cli,

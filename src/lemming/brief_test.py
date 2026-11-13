@@ -79,6 +79,17 @@ class TestTaskBrief(unittest.TestCase):
         stored = paths.get_brief_file(self.tasks_file, "task1").read_text()
         self.assertIn(EVIDENCE, stored)
 
+    def test_brief_command_keeps_non_utf8_bytes_from_stdin(self):
+        result = self.cli_runner.invoke(
+            cli.cli,
+            self.base_args + ["brief", "task1", "--file", "-"],
+            input=b"caf\xe9",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        brief_file = paths.get_brief_file(self.tasks_file, "task1")
+        self.assertEqual(brief_file.read_bytes(), b"caf\xe9\n")
+
     def test_brief_reports_when_missing(self):
         result = self.cli_runner.invoke(
             cli.cli, self.base_args + ["brief", "task1"]

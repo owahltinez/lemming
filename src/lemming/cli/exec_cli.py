@@ -21,7 +21,7 @@ import click
 from .. import hooks, models, paths, persistence, runner, scope, shutdown
 from ..orchestrator import run_loop
 from ..tasks import lifecycle, limits, operations
-from .main import PassthroughCommand, cli
+from .main import TEXT_FILE, PassthroughCommand, cli
 
 # Ceiling on how much of the runner log is scanned for the closing message.
 # The message is at the end, and a log carrying every tool call can be
@@ -237,7 +237,7 @@ def _task_status(
 @click.option(
     "--file",
     "-f",
-    type=click.File("r"),
+    type=TEXT_FILE,
     help="Read the task description from a file (or - for stdin).",
 )
 @click.option(
