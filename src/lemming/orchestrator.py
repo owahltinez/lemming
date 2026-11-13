@@ -1192,8 +1192,12 @@ def run_loop(
             one_task_model = current_task.model or model_name
 
         abandoned = current_task.status == models.TaskStatus.IN_PROGRESS
-        # Reclaiming an abandoned task resumes its attempt; see claim_task.
-        if current_task.attempts >= retries and not abandoned:
+        # Reclaiming resumes the attempt (see claim_task) unless it was failing.
+        resumable = (
+            abandoned
+            and current_task.requested_status != models.TaskStatus.FAILED
+        )
+        if current_task.attempts >= retries and not resumable:
             should_abort = _process_exhausted_retries(
                 tasks_file=tasks_file,
                 task_id=task_id,

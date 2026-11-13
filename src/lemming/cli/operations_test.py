@@ -137,6 +137,65 @@ class TestCLIOperations(unittest.TestCase):
         task = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertEqual(task.attempts, 2)
 
+    def test_run_completes_task_abandoned_during_completion_hooks(self):
+        persistence.save_tasks(
+            self.test_tasks_file,
+            models.Roadmap(
+                tasks=[
+                    models.Task(
+                        id="orphan12",
+                        description="Orphaned task",
+                        status=models.TaskStatus.IN_PROGRESS,
+                        requested_status=models.TaskStatus.COMPLETED,
+                        attempts=1,
+                        pid=999999,
+                        last_heartbeat=time.time() - 3600,
+                    )
+                ],
+                config=models.RoadmapConfig(retries=1, runner="true", hooks=[]),
+            ),
+        )
+
+        with mock.patch("time.sleep"):
+            result = self.cli_runner.invoke(
+                cli.cli, ["--tasks-file", str(self.test_tasks_file), "run"]
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        task = persistence.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertEqual(task.status, models.TaskStatus.COMPLETED)
+
+    def test_run_fails_task_abandoned_during_failure_hooks(self):
+        persistence.save_tasks(
+            self.test_tasks_file,
+            models.Roadmap(
+                tasks=[
+                    models.Task(
+                        id="orphan12",
+                        description="Orphaned task",
+                        status=models.TaskStatus.IN_PROGRESS,
+                        requested_status=models.TaskStatus.FAILED,
+                        attempts=1,
+                        pid=999999,
+                        last_heartbeat=time.time() - 3600,
+                    ),
+                    models.Task(id="next3456", description="Dependent task"),
+                ],
+                config=models.RoadmapConfig(retries=1, runner="true", hooks=[]),
+            ),
+        )
+
+        with mock.patch("time.sleep"):
+            result = self.cli_runner.invoke(
+                cli.cli, ["--tasks-file", str(self.test_tasks_file), "run"]
+            )
+
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn("failed after 1 attempts. Aborting run.", result.output)
+        tasks = persistence.load_tasks(self.test_tasks_file).tasks
+        self.assertEqual(tasks[0].status, models.TaskStatus.FAILED)
+        self.assertEqual(tasks[1].status, models.TaskStatus.PENDING)
+
     def test_run_detach_spawns_loop_and_returns(self):
         persistence.save_tasks(
             self.test_tasks_file,
