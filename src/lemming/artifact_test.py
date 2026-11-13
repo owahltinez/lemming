@@ -100,6 +100,16 @@ class TestTaskArtifacts(unittest.TestCase):
         self.assertIn("boom", read.output)
         self.assertIn("done", read.output)
 
+    def test_keeps_non_utf8_argv_bytes(self):
+        """Python decodes non-UTF-8 argv bytes as surrogates; keep the bytes."""
+        write = self._invoke("artifact", "task1", "note.txt", "caf\udce9")
+
+        self.assertEqual(write.exit_code, 0, write.output)
+        artifacts_dir = paths.get_artifacts_dir(self.tasks_file, "task1")
+        self.assertEqual(
+            (artifacts_dir / "note.txt").read_bytes(), b"caf\xe9\n"
+        )
+
     def test_rejects_names_that_are_paths(self):
         for name in ("../escape.log", "nested/report.txt", "."):
             with self.subTest(name=name):

@@ -237,7 +237,9 @@ def get_task_log(
         return {"log": ""}
     except (ValueError, models.AmbiguousTaskIdError) as e:
         raise fastapi.HTTPException(400, str(e))
-    return {"log": log_file.read_text(encoding="utf-8")}
+    return {
+        "log": log_file.read_text(encoding="utf-8", errors="surrogateescape")
+    }
 
 
 @router.get("/api/tasks/{task_id}/diff")

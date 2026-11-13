@@ -306,6 +306,15 @@ def test_api_log(client, test_tasks):
     assert response.json() == {"log": ""}
 
 
+def test_api_log_serves_non_utf8_argv(client, test_tasks):
+    log_file = paths.get_log_file(test_tasks, "testlogid")
+    log_file.write_bytes(b"Command: true caf\xe9\n")
+
+    response = client.get("/api/tasks/testlogid/log")
+    assert response.status_code == 200
+    assert response.json() == {"log": "Command: true caf\udce9\n"}
+
+
 def test_api_delete_retains_log(client, test_tasks):
     test_tasks_file = test_tasks
     # 1. Add a task

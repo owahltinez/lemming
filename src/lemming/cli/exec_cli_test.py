@@ -144,6 +144,22 @@ def test_exec_accepts_a_prompt_over_the_description_limit(workspace):
     assert result.exit_code == 0, result.stderr
 
 
+def test_exec_keeps_non_utf8_argv_in_an_overflowing_prompt(workspace):
+    """Python decodes non-UTF-8 argv bytes as surrogates; keep the bytes."""
+    prompt = "Fix the flaky test. " + "Context line. " * 500 + "caf\udce9"
+    seen = []
+
+    def finish(cmd, *args, **kwargs):
+        seen.extend(cmd)
+        return _finish("Done.")(cmd, *args, **kwargs)
+
+    with mock.patch("lemming.runner.run_with_heartbeat", finish):
+        result = CliRunner().invoke(main.cli, ["exec", prompt])
+
+    assert result.exit_code == 0, result.stderr
+    assert any("caf\udce9" in arg for arg in seen)
+
+
 def test_exec_reads_the_prompt_from_stdin(workspace):
     """Piping the prompt avoids shell quoting for long handoffs."""
     with mock.patch("lemming.runner.run_with_heartbeat", _finish("Done.")):

@@ -314,6 +314,22 @@ class TestCLITasks(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("No log for task", result.output)
 
+    def test_logs_prints_non_utf8_argv_as_raw_bytes(self):
+        log_file = paths.get_log_file(self.test_tasks_file, "12345678")
+        log_file.write_bytes(b"Command: true caf\xe9\n")
+
+        # A real process: CliRunner's streams are strict regardless of main().
+        result = subprocess.run(
+            [sys.executable, "-m", "lemming.main", *self.base_args]
+            + ["logs", "12345678"],
+            capture_output=True,
+            env={**os.environ, "HOME": self.test_dir},
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(b"Command: true caf\xe9\n", result.stdout)
+
     def test_task_complete(self):
         self.cli_runner.invoke(
             cli.cli, self.base_args + ["progress", "12345678", "Done"]

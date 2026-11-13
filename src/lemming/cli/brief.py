@@ -54,10 +54,15 @@ def brief(
 
     # With no new content, the command reads the brief back.
     if not file and not text:
-        if not brief_file.exists() or not brief_file.read_text().strip():
+        brief_text = (
+            brief_file.read_text(encoding="utf-8", errors="surrogateescape")
+            if brief_file.exists()
+            else ""
+        )
+        if not brief_text.strip():
             click.echo(f"No brief for task {target.id}.")
             return
-        click.echo(brief_file.read_text(encoding="utf-8"))
+        click.echo(brief_text)
         return
 
     content = (file.read() if file else text or "").strip()
@@ -65,7 +70,9 @@ def brief(
         click.echo("Error: Must provide either brief text or --file.")
         ctx.exit(1)
 
-    brief_file.write_text(content + "\n", encoding="utf-8")
+    brief_file.write_text(
+        content + "\n", encoding="utf-8", errors="surrogateescape"
+    )
     click.echo(
         f"Brief for task {target.id} saved ({len(content):,} characters)."
     )

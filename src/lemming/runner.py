@@ -657,7 +657,7 @@ def run_with_heartbeat(
     log_command_str = _shlex_join_pretty(cmd, max_len=200)
     command_str = _shlex_join_pretty(cmd)
 
-    with open(log_file, "a", encoding="utf-8") as f:
+    with open(log_file, "a", encoding="utf-8", errors="surrogateescape") as f:
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S %Z")
         f.write(f"\n--- Attempt started at {timestamp} ---\n")
         if header:
