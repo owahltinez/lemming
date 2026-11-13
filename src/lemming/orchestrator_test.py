@@ -2148,6 +2148,36 @@ def test_run_loop_restores_workspace_on_keyboard_interrupted_runner(
     assert cancelled_task.pre_tree is None
 
 
+def test_run_loop_interrupted_attempt_does_not_charge_a_retry(
+    setup_env, capsys
+):
+    test_tasks_file, _ = setup_env
+
+    def fake_run(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(test_tasks_file, False, 0, True, False, ())
+
+    assert "[task1] Attempt 1/3" in capsys.readouterr().out
+    task = persistence.load_tasks(test_tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.PENDING
+    assert task.attempts == 0
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(test_tasks_file, False, 0, True, False, ())
+
+    assert "[task1] Attempt 1/3" in capsys.readouterr().out
+
+
 def test_finalizing_task_snapshots_runner_tree_and_once_restores_on_reject(
     tmp_path, monkeypatch
 ):
