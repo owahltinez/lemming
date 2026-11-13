@@ -187,56 +187,6 @@ def test_claim_task_reclaim_does_not_count_cut_off_attempt(tmp_path):
     assert retried is not None and retried.attempts == 2
 
 
-def test_claim_task_reclaim_counts_run_time_until_the_last_heartbeat(tmp_path):
-    tasks_file = tmp_path / "tasks.yml"
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            tasks=[
-                models.Task(
-                    id="1",
-                    description="Abandoned",
-                    status=models.TaskStatus.IN_PROGRESS,
-                    attempts=1,
-                    pid=999999,
-                    last_started_at=1000.0,
-                    last_heartbeat=1010.0,
-                )
-            ]
-        ),
-    )
-
-    reclaimed = lifecycle.claim_task(tasks_file, "1", pid=123)
-
-    assert reclaimed is not None and reclaimed.run_time == 10.0
-
-
-def test_claim_task_reclaim_never_counts_negative_run_time(tmp_path):
-    tasks_file = tmp_path / "tasks.yml"
-    # `lemming complete` restarts the clock after the last heartbeat.
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            tasks=[
-                models.Task(
-                    id="1",
-                    description="Abandoned while finalizing",
-                    status=models.TaskStatus.IN_PROGRESS,
-                    requested_status=models.TaskStatus.COMPLETED,
-                    pid=999999,
-                    run_time=5.0,
-                    last_started_at=1010.0,
-                    last_heartbeat=1000.0,
-                )
-            ]
-        ),
-    )
-
-    reclaimed = lifecycle.claim_task(tasks_file, "1", pid=123)
-
-    assert reclaimed is not None and reclaimed.run_time == 5.0
-
-
 def test_finish_task_attempt(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(

@@ -1,5 +1,6 @@
 """CLI commands for the orchestrator loop and the web interface."""
 
+import contextlib
 import copy
 import os
 import pathlib
@@ -11,7 +12,7 @@ import time
 
 import click
 
-from .. import models, paths, persistence, providers, shutdown
+from .. import models, orchestrator, paths, persistence, providers, shutdown
 from ..orchestrator import parse_timeout, run_loop
 from ..tasks import lifecycle, queries
 from .main import PassthroughCommand, cli
@@ -167,6 +168,11 @@ def run(
             max_tasks=max_tasks,
             until=until,
         )
+    except BaseException:
+        # An unreadable roadmap cannot be recovered; the next run will retry.
+        with contextlib.suppress(persistence.CorruptedTasksError):
+            orchestrator.recover_abandoned_tasks(tasks_file, working_dir)
+        raise
     finally:
         persistence.release_loop_lock(tasks_file)
     if not completed:

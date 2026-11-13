@@ -13,6 +13,7 @@ from lemming.orchestrator import (
     _process_finalizing_task,
     format_duration,
     parse_timeout,
+    recover_abandoned_tasks,
     run_hooks,
     run_loop,
 )
@@ -2067,7 +2068,7 @@ def test_run_loop_interrupt_leaves_state_for_the_next_run_to_rewind(
     ):
         run_loop(*args, working_dir=work, hooks=[])
 
-    # Losing the loop is not a transition: nothing is rewound yet.
+    # Killed outright, the loop leaves the rewind to the next run.
     assert (work / "app.py").read_text(encoding="utf-8") == "partial\n"
     task = persistence.load_tasks(tasks_file).tasks[0]
     assert task.status == models.TaskStatus.IN_PROGRESS
@@ -2272,8 +2273,35 @@ def test_run_loop_reclaimed_review_restarts_from_the_runner_tree(
         assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
 
     assert (work / "app.py").read_text(encoding="utf-8") == "v2\n"
+    patch_file = (
+        paths.get_artifacts_dir(tasks_file, "t1") / "interrupted-review.patch"
+    )
+    assert "+half-reviewed" in patch_file.read_text(encoding="utf-8")
     task = persistence.load_tasks(tasks_file).tasks[0]
     assert task.status == models.TaskStatus.COMPLETED
+
+
+@pytest.mark.parametrize(
+    ("last_started_at", "last_heartbeat", "run_time"),
+    [(1000.0, 1010.0, 15.0), (1010.0, 1000.0, 5.0)],
+)
+def test_recover_abandoned_tasks_counts_run_time_until_the_last_heartbeat(
+    setup_env, last_started_at, last_heartbeat, run_time
+):
+    test_tasks_file, data = setup_env
+    task = data.tasks[0]
+    task.status = models.TaskStatus.IN_PROGRESS
+    task.pid = DEAD_PID
+    task.run_time = 5.0
+    task.last_started_at = last_started_at
+    task.last_heartbeat = last_heartbeat
+    persistence.save_tasks(test_tasks_file, data)
+
+    recover_abandoned_tasks(test_tasks_file)
+
+    task = persistence.load_tasks(test_tasks_file).tasks[0]
+    assert task.run_time == run_time
+    assert task.last_started_at is None
 
 
 def test_finalizing_task_snapshots_runner_tree_and_once_restores_on_reject(

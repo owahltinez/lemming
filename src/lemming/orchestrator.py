@@ -225,10 +225,26 @@ def run_hooks(
         except persistence.CorruptedTasksError:
             # Not a hook failure: reporting it as one blames the wrong thing
             # and lets the loop carry on writing to an unreadable roadmap.
+            if hook_pre_tree is not None:
+                snapshots.restore_tree(
+                    tasks_file,
+                    working_dir,
+                    hook_pre_tree,
+                    target_head=hook_pre_head,
+                )
             raise
         except Exception as e:
             exit_codes[hook_name] = runner.RETURNCODE_LAUNCH_FAILED
             click.echo(f"Hook '{hook_name}' error: {e}")
+        except BaseException:
+            if hook_pre_tree is not None:
+                snapshots.restore_tree(
+                    tasks_file,
+                    working_dir,
+                    hook_pre_tree,
+                    target_head=hook_pre_head,
+                )
+            raise
 
         hook_post_tree = None
         if exit_codes[hook_name] != 0:
@@ -426,30 +442,76 @@ def _restore_cancelled_task(
             persistence.save_tasks(tasks_file, data)
 
 
-def _recover_abandoned_task(
-    tasks_file: pathlib.Path, task: models.Task, working_dir: pathlib.Path
+def recover_abandoned_tasks(
+    tasks_file: pathlib.Path, working_dir: pathlib.Path | None = None
 ) -> None:
-    """Rewinds a reclaimed task to the checkpoint of the phase it died in."""
-    if not task.requested_status:
-        _rewind_to_pre_tree(
-            tasks_file,
-            task.id,
-            working_dir,
-            f"attempt-{max(1, task.attempts)}.patch",
-        )
-    elif (
-        task.requested_status == models.TaskStatus.COMPLETED
-        and task.runner_tree is not None
-    ):
-        # Reviews start over from the work the agent completed.
-        if snapshots.snapshot_tree(tasks_file, working_dir) != task.runner_tree:
-            snapshots.restore_tree(tasks_file, working_dir, task.runner_tree)
+    """Rewinds in-progress tasks whose runner is gone to their last checkpoint.
+
+    A loop runs this on its way out, and the next loop on startup in case the
+    last one was killed before it could.
+
+    Args:
+        tasks_file: Path to the tasks YAML file.
+        working_dir: Workspace to rewind; defaults to the tasks file's.
+    """
+    working_dir = working_dir or paths.get_working_dir(tasks_file)
+    for task in persistence.load_tasks(tasks_file).tasks:
+        if task.status != models.TaskStatus.IN_PROGRESS or (
+            task.pid is not None
+            and task.pid != os.getpid()
+            and lifecycle.is_pid_alive(task.pid)
+        ):
+            continue
+        click.echo(f"Task {task.id} was cut off; rewinding it to a checkpoint.")
+        # Completed work survives; only the reviews of it start over.
+        reviewing = task.requested_status == models.TaskStatus.COMPLETED
+        if not reviewing:
+            _rewind_to_pre_tree(
+                tasks_file,
+                task.id,
+                working_dir,
+                f"attempt-{max(1, task.attempts)}.patch",
+            )
+        elif task.runner_tree is not None:
+            current = snapshots.snapshot_tree(tasks_file, working_dir)
+            if current is not None and current != task.runner_tree:
+                lifecycle.write_patch_artifact(
+                    tasks_file,
+                    task.id,
+                    "interrupted-review.patch",
+                    task.runner_tree,
+                    current,
+                )
+                snapshots.restore_tree(
+                    tasks_file,
+                    working_dir,
+                    task.runner_tree,
+                    current_tree=current,
+                )
         with persistence.lock_tasks(tasks_file):
             latest = persistence.load_tasks(tasks_file)
             target = next((t for t in latest.tasks if t.id == task.id), None)
-            if target is not None and target.hook_trees is not None:
-                target.hook_trees = None
-                persistence.save_tasks(tasks_file, latest)
+            if target is None or target.status != models.TaskStatus.IN_PROGRESS:
+                continue
+            # The run last proved it was alive at its heartbeat.
+            lifecycle.update_run_time(
+                target,
+                max(target.last_heartbeat or 0, target.last_started_at or 0),
+            )
+            if not reviewing:
+                target.status = models.TaskStatus.PENDING
+                # A cut-off attempt is not a failed one, unless the agent
+                # had already given up.
+                if target.requested_status != models.TaskStatus.FAILED:
+                    target.attempts = max(0, target.attempts - 1)
+                target.requested_status = None
+                target.rejection = None
+            target.pid = None
+            target.last_heartbeat = None
+            target.active_execution_component = None
+            target.active_execution_started_at = None
+            target.hook_trees = None
+            persistence.save_tasks(tasks_file, latest)
 
 
 def _process_exhausted_retries(
@@ -1022,6 +1084,7 @@ def run_loop(
         or the milestone was reached.
     """
     working_dir = working_dir or paths.get_working_dir(tasks_file)
+    recover_abandoned_tasks(tasks_file, working_dir)
     one_task_id = None
     one_task_config = None
     one_task_runner = None
@@ -1186,13 +1249,6 @@ def run_loop(
         if abandoned:
             click.echo(
                 f"Reclaiming abandoned task {task_id}; its runner is gone."
-            )
-            resolved_dir = working_dir or paths.get_working_dir(tasks_file)
-            _recover_abandoned_task(tasks_file, current_task, resolved_dir)
-            current_task = next(
-                t
-                for t in persistence.load_tasks(tasks_file).tasks
-                if t.id == task_id
             )
 
         if verbose:

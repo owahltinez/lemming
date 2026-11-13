@@ -527,6 +527,20 @@ def repo(workspace):
     return workspace
 
 
+def test_exec_review_interrupt_restores_user_work(repo):
+    """An interrupted review must not leave half its edits behind."""
+    (repo / "committed.py").write_text("x = 2  # uncommitted\n")
+
+    def interrupt(cmd, tasks_file, task_id, *args, **kwargs):
+        (repo / "committed.py").write_text("half-reviewed\n")
+        raise KeyboardInterrupt
+
+    with mock.patch("lemming.runner.run_with_heartbeat", interrupt):
+        CliRunner().invoke(main.cli, ["exec", "--review", "readability"])
+
+    assert (repo / "committed.py").read_text() == "x = 2  # uncommitted\n"
+
+
 def test_review_runs_the_hook_without_a_task_runner(repo):
     """A review of existing work has nothing for a runner to do."""
     (repo / "committed.py").write_text("x = 2\n")
