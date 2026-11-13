@@ -54,12 +54,15 @@ def brief(
 
     # With no new content, the command reads the brief back.
     if not file and not text:
-        if not brief_file.exists() or not brief_file.read_bytes().strip():
+        brief_text = (
+            brief_file.read_text(encoding="utf-8", errors="surrogateescape")
+            if brief_file.exists()
+            else ""
+        )
+        if not brief_text.strip():
             click.echo(f"No brief for task {target.id}.")
             return
-        click.echo(
-            brief_file.read_text(encoding="utf-8", errors="surrogateescape")
-        )
+        click.echo(brief_text)
         return
 
     content = (file.read() if file else text or "").strip()
