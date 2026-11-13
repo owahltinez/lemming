@@ -900,7 +900,10 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
 
 
 def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
-    """Verifies a time limit also kills a child that left the group."""
+    """Verifies a time limit kills a SIGTERM-immune child that left the group.
+
+    The attempt must not return until it is dead, or a retry races it.
+    """
     tasks_file = tmp_path / "tasks.yml"
     task_id = "detached_timeout"
     persistence.save_tasks(
@@ -910,14 +913,22 @@ def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
     lifecycle.mark_task_in_progress(tasks_file, task_id)
 
     pid_file = tmp_path / "grandchild.pid"
-    child_code = (
-        "import os, pathlib, subprocess, sys, time\n"
-        "p = subprocess.Popen(\n"
-        "    [sys.executable, '-c', 'import time; time.sleep(300)'],\n"
-        "    start_new_session=True,\n"
-        ")\n"
-        f"pathlib.Path({str(pid_file)!r} + '.tmp').write_text(str(p.pid))\n"
+    grandchild_code = (
+        "import os, pathlib, signal, time\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"pathlib.Path({str(pid_file)!r} + '.tmp')"
+        ".write_text(str(os.getpid()))\n"
         f"os.replace({str(pid_file)!r} + '.tmp', {str(pid_file)!r})\n"
+        "time.sleep(300)\n"
+    )
+    child_code = (
+        "import subprocess, sys, time\n"
+        "subprocess.Popen(\n"
+        f"    [sys.executable, '-c', {grandchild_code!r}],\n"
+        "    start_new_session=True,\n"
+        "    stdout=subprocess.DEVNULL,\n"
+        "    stderr=subprocess.DEVNULL,\n"
+        ")\n"
         "time.sleep(300)\n"
     )
     real_monotonic = time.monotonic
@@ -929,6 +940,8 @@ def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
         with (
             unittest.mock.patch("time.monotonic", side_effect=fast_monotonic),
             unittest.mock.patch.object(persistence, "STALE_THRESHOLD", 2),
+            unittest.mock.patch.object(runner, "KILL_GRACE_SECONDS", 1),
+            unittest.mock.patch.object(lifecycle, "KILL_GRACE_SECONDS", 1),
         ):
             returncode, _, _ = runner.run_with_heartbeat(
                 [sys.executable, "-c", child_code],
@@ -938,12 +951,7 @@ def test_run_with_heartbeat_timeout_kills_detached_grandchild(tmp_path):
                 time_limit=1,
             )
         assert returncode == runner.RETURNCODE_TIMEOUT
-
-        grandchild = int(pid_file.read_text())
-        deadline = real_monotonic() + 10
-        while persistence.is_pid_alive(grandchild):
-            assert real_monotonic() < deadline, "Grandchild survived"
-            time.sleep(0.1)
+        assert not persistence.is_pid_alive(int(pid_file.read_text()))
     finally:
         if pid_file.exists():
             with contextlib.suppress(OSError):

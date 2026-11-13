@@ -571,8 +571,10 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
         except OSError:
             pass
         return
+    lifecycle.signal_pids(escaped, signal.SIGTERM)
 
     # Escalate to SIGKILL if the process ignored SIGTERM.
+    deadline = time.monotonic() + KILL_GRACE_SECONDS
     try:
         process.wait(timeout=KILL_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
@@ -585,7 +587,7 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
             os.killpg(pgid, signal.SIGKILL)
         except OSError:
             pass
-    lifecycle.terminate_pids(escaped)
+    lifecycle.kill_survivors(escaped, deadline)
 
 
 def _runner_environment(
@@ -696,6 +698,7 @@ def run_with_heartbeat(
     full_log: list[str] = []
 
     timed_out = False
+    exited = threading.Event()
 
     def stream_output():
         """Streams runner output to the log file and optionally the console."""
@@ -775,12 +778,10 @@ def run_with_heartbeat(
                     _kill_process_tree(process)
                     return
 
-                time.sleep(persistence.STALE_THRESHOLD // 2)
+                exited.wait(persistence.STALE_THRESHOLD // 2)
 
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
         if is_claimed:
-            heartbeat_thread = threading.Thread(
-                target=heartbeat_loop, daemon=True
-            )
             heartbeat_thread.start()
         else:
             # The task was cancelled after it was claimed but before this
@@ -789,6 +790,10 @@ def run_with_heartbeat(
 
         reader_thread.start()
         process.wait()
+        # A kill in progress must finish off escaped descendants first.
+        exited.set()
+        if is_claimed:
+            heartbeat_thread.join()
 
         # Drain remaining output, but don't wait forever: an escaped child
         # holding the pipe open must not wedge the attempt.

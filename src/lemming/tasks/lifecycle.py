@@ -489,28 +489,27 @@ def escaped_descendants(pid: int, pgid: int) -> list[int]:
     return escaped
 
 
-def terminate_pids(pids: list[int]) -> None:
-    """Sends SIGTERM, then SIGKILL to any still alive after a grace period.
-
-    Args:
-        pids: The processes to terminate.
-    """
+def signal_pids(pids: list[int], sig: int) -> None:
+    """Sends a signal to each process, skipping any that are gone."""
     for pid in pids:
         try:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, sig)
         except OSError:
             pass
 
-    deadline = time.monotonic() + KILL_GRACE_SECONDS
+
+def kill_survivors(pids: list[int], deadline: float) -> None:
+    """Waits for processes to exit, SIGKILLing any alive at the deadline.
+
+    Args:
+        pids: The processes already sent SIGTERM.
+        deadline: The ``time.monotonic()`` value ending the grace period.
+    """
+    pids = [pid for pid in pids if is_pid_alive(pid)]
     while pids and time.monotonic() < deadline:
         time.sleep(0.1)
         pids = [pid for pid in pids if is_pid_alive(pid)]
-
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
+    signal_pids(pids, signal.SIGKILL)
 
 
 def _kill_pid_tree(pid: int) -> None:
@@ -537,12 +536,13 @@ def _kill_pid_tree(pid: int) -> None:
             os.kill(pid, signal.SIGTERM)
         except OSError:
             return
+    signal_pids(escaped, signal.SIGTERM)
 
     # Poll for exit, then escalate to SIGKILL if SIGTERM was ignored.
     deadline = time.monotonic() + KILL_GRACE_SECONDS
     while time.monotonic() < deadline:
         if not is_pid_alive(pid):
-            terminate_pids(escaped)
+            kill_survivors(escaped, deadline)
             return
         time.sleep(0.1)
 
@@ -558,7 +558,7 @@ def _kill_pid_tree(pid: int) -> None:
             os.kill(pid, signal.SIGKILL)
     except OSError:
         pass
-    terminate_pids(escaped)
+    kill_survivors(escaped, deadline)
 
 
 def cancel_task(
