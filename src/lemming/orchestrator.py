@@ -460,6 +460,13 @@ def _restore_interrupted_attempt(
         ):
             _restore_cancelled_task(tasks_file, task.id, working_dir)
             return
+        # The work is done; leave it for the next run to finalize.
+        if (
+            current is not None
+            and current.requested_status == models.TaskStatus.COMPLETED
+        ):
+            lifecycle.finish_task_attempt(tasks_file, task.id)
+            return
 
     cur_tree = snapshots.snapshot_tree(tasks_file, working_dir)
     base_tree = task.pre_tree or attempt_pre_tree

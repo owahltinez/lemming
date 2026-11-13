@@ -2067,8 +2067,6 @@ def test_run_loop_restores_workspace_on_keyboard_interrupted_runner(
 
     def fake_run(cmd, t_file, t_id, verbose, **kwargs):
         (work / "app.py").write_text("interrupted_v2\n", encoding="utf-8")
-        progress.add_progress(t_file, t_id, "completed just before ctrl+c")
-        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
         raise KeyboardInterrupt
 
     with (
@@ -2194,6 +2192,56 @@ def test_run_loop_interrupted_after_agent_failed_keeps_the_attempt(setup_env):
         run_loop(test_tasks_file, False, 0, True, False, ())
 
     assert persistence.load_tasks(test_tasks_file).tasks[0].attempts == 1
+
+
+def test_run_loop_interrupted_after_agent_completed_keeps_the_work(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t1", description="Done, then lingers")],
+            config=models.RoadmapConfig(retries=3, runner="agy", hooks=[]),
+        ),
+    )
+
+    def fake_run(cmd, t_file, t_id, *_args, **_kwargs):
+        (work / "app.py").write_text("v2\n", encoding="utf-8")
+        progress.add_progress(t_file, t_id, "done")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        raise KeyboardInterrupt
+
+    args = (tasks_file, False, 0, True, False, ())
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch("time.sleep", return_value=None),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        run_loop(*args, working_dir=work, hooks=[])
+
+    assert (work / "app.py").read_text(encoding="utf-8") == "v2\n"
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.requested_status == models.TaskStatus.COMPLETED
+    assert task.pid is None
+
+    with (
+        mock.patch("lemming.runner.run_with_heartbeat") as rerun,
+        mock.patch("time.sleep", return_value=None),
+    ):
+        assert run_loop(*args, working_dir=work, hooks=[])
+
+    rerun.assert_not_called()
+    assert (work / "app.py").read_text(encoding="utf-8") == "v2\n"
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.COMPLETED
+    assert task.attempts == 1
 
 
 def test_run_loop_interrupted_reclaimed_task_refunds_its_attempt(
