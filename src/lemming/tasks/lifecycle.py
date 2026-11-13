@@ -195,6 +195,14 @@ def _mark_task_in_progress(
                 )
                 and not is_task_active(task, now)
             ):
+                # An abandoned run last proved it was alive at its heartbeat.
+                if task.status == models.TaskStatus.IN_PROGRESS:
+                    update_run_time(
+                        task,
+                        max(
+                            task.last_heartbeat or 0, task.last_started_at or 0
+                        ),
+                    )
                 task.status = models.TaskStatus.IN_PROGRESS
                 # A new attempt must not inherit the previous one's
                 # rejection, which would block its completion too.
@@ -613,7 +621,7 @@ def cancel_task(
         pre_tree = task.pre_tree
         prev_runner_tree = task.runner_tree
         loop_pid = persistence.get_loop_pid(tasks_file)
-        if was_in_progress and task.pid != loop_pid:
+        if was_in_progress and task.pid not in (loop_pid, os.getpid()):
             task_pid = task.pid
 
         update_run_time(task)

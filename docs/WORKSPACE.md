@@ -13,7 +13,11 @@ after each task runner and orchestrator hook — without touching your `.git`
 index, branches, or commit history. If an attempt fails, times out, crashes, or
 is cancelled, Lemming saves its changes to an `attempt-<N>.patch` artifact and
 restores the workspace (and host Git `HEAD`, if the runner committed) to the
-task's pre-run snapshot.
+task's pre-run snapshot. When the loop itself dies (a crash, a signal, or
+`lemming stop`), the next `lemming run` does this as it reclaims the task, or,
+if the agent had already completed it, restarts the reviews from the agent's
+completed work. An interrupted `lemming exec` cancels its task and rolls back at
+once, since no later run will reclaim it.
 
 Shadow snapshots work in a Git checkout, a Mercurial repository, or a plain
 directory under no version control at all, as long as `git` is on `PATH`. Even

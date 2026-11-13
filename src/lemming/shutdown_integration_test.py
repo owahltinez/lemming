@@ -11,6 +11,7 @@ import time
 import unittest
 
 from lemming import models, persistence, shutdown
+from lemming.tasks import queries
 
 # Bounds for polling the loop's on-disk state; generous enough for a cold
 # interpreter start, short enough to keep the suite fast.
@@ -127,7 +128,7 @@ class TestShutdownIntegration(unittest.TestCase):
             check=False,
         )
 
-    def test_stop_kills_the_runner_and_requeues_the_task(self):
+    def test_stop_kills_the_runner_and_leaves_the_task_reclaimable(self):
         """`lemming stop` leaves no orphan and no blocked queue."""
         loop = self._start_loop()
         runner_pid = self._wait_for_runner()
@@ -138,9 +139,8 @@ class TestShutdownIntegration(unittest.TestCase):
         self._wait_until_dead(runner_pid, "Runner child")
         loop.wait(timeout=SHUTDOWN_TIMEOUT_SECONDS)
 
-        task = persistence.load_tasks(self.tasks_file).tasks[0]
-        self.assertEqual(task.status, models.TaskStatus.PENDING)
-        self.assertIsNone(task.pid)
+        data = persistence.load_tasks(self.tasks_file)
+        self.assertIsNotNone(queries.get_pending_task(data))
 
     def test_stop_reports_when_nothing_is_running(self):
         """Stopping an idle project succeeds without touching state."""

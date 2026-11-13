@@ -484,6 +484,29 @@ def test_exec_reports_a_runner_that_produced_no_message(workspace):
     assert "no closing message" in result.stderr.lower()
 
 
+def test_exec_interrupt_rolls_back_and_cancels(workspace):
+    """Nothing resumes an interrupted exec, so its work must not linger."""
+    (workspace / "app.py").write_text("v1\n")
+
+    def interrupt(cmd, tasks_file, task_id, *args, **kwargs):
+        (workspace / "app.py").write_text("v2\n")
+        operations.update_task(tasks_file, task_id, status="completed")
+        raise KeyboardInterrupt
+
+    with mock.patch("lemming.runner.run_with_heartbeat", interrupt):
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
+
+    assert result.exit_code != 0
+    assert (workspace / "app.py").read_text() == "v1\n"
+    [exec_dir] = _exec_dirs()
+    task = persistence.load_tasks(exec_dir / "tasks.yml").tasks[0]
+    assert task.status == models.TaskStatus.CANCELLED
+    assert (
+        paths.get_artifacts_dir(exec_dir / "tasks.yml", task.id)
+        / "cancelled.patch"
+    ).is_file()
+
+
 def _git(working_dir, *args):
     """Runs a git command in the given directory."""
     subprocess.run(
