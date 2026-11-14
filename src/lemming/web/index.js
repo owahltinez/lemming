@@ -71,6 +71,8 @@
       $.showNewFolderInput = false;
       $.newFolderName = '';
 
+      $.isActiveTask = (task) =>
+        ['running', 'completing', 'failing'].includes(task.status);
       $.isHistoryTask = (task) =>
         ['completed', 'failed', 'cancelled', 'superseded'].includes(
           task.status,
@@ -80,8 +82,8 @@
         if (task.status === 'failed') return 'Failed';
         if (task.status === 'cancelled') return 'Cancelled';
         if (task.status === 'superseded') return 'Superseded';
-        if (task.status === 'in_progress') {
-          return task.requested_status ? 'Finalizing' : 'Running';
+        if ($.isActiveTask(task)) {
+          return task.status === 'running' ? 'Running' : 'Finalizing';
         }
         return task.attempts > 0 ? 'Retrying' : 'Pending';
       };
@@ -92,7 +94,7 @@
         if (task.status === 'superseded') {
           return 'bg-purple-100 text-purple-700';
         }
-        if (task.status === 'in_progress') {
+        if ($.isActiveTask(task)) {
           return 'bg-blue-100 text-blue-700 animate-pulse';
         }
         return task.attempts > 0
@@ -104,13 +106,13 @@
         if (task.status === 'cancelled') return 'text-orange-600 line-through';
         if (task.status === 'superseded') return 'text-purple-600';
         if (task.status === 'failed') return 'text-red-600';
-        if (task.status === 'in_progress') return 'text-blue-600';
+        if ($.isActiveTask(task)) return 'text-blue-600';
         return task.attempts > 0 ? 'text-amber-600' : '';
       };
 
       // --- Computed Properties ---
       $.runningCount = $.$computed(
-        ($) => $.tasks.filter((t) => t.status === 'in_progress').length,
+        ($) => $.tasks.filter((t) => $.isActiveTask(t)).length,
       );
       $.pendingCount = $.$computed(
         ($) => $.tasks.filter((t) => t.status === 'pending').length,
@@ -137,7 +139,7 @@
       $.filteredTasks = $.$computed(($) => {
         const ts = [...$.tasks];
         // Sort in frontend to ensure consistent order:
-        // 1. Uncompleted tasks (pending, in_progress) first.
+        // 1. Uncompleted tasks (pending, active) first.
         // 2. Completed tasks (completed, failed) at the bottom.
         ts.sort((a, b) => {
           const aDone = $.isHistoryTask(a) ? 1 : 0;
@@ -145,9 +147,9 @@
           if (aDone !== bDone) return aDone - bDone;
 
           if (!aDone) {
-            // Uncompleted tasks: prioritize in_progress first, then FIFO (index)
-            const aInProgress = a.status === 'in_progress' ? 0 : 1;
-            const bInProgress = b.status === 'in_progress' ? 0 : 1;
+            // Uncompleted tasks: prioritize active first, then FIFO (index)
+            const aInProgress = $.isActiveTask(a) ? 0 : 1;
+            const bInProgress = $.isActiveTask(b) ? 0 : 1;
             if (aInProgress !== bInProgress) return aInProgress - bInProgress;
 
             if (a.index !== b.index) return (a.index || 0) - (b.index || 0);
@@ -177,7 +179,7 @@
       };
       $.formatTaskRunTime = (task) => {
         let total = task.run_time || 0;
-        if (task.status === 'in_progress' && task.last_started_at) {
+        if ($.isActiveTask(task) && task.last_started_at) {
           total += Date.now() / 1000 - task.last_started_at;
         }
         return $.formatDuration(total);
@@ -201,7 +203,7 @@
         ];
         const executionTimes = { ...(task.execution_times || {}) };
         if (
-          task.status === 'in_progress' &&
+          $.isActiveTask(task) &&
           task.active_execution_component &&
           task.active_execution_started_at
         ) {
@@ -342,10 +344,7 @@
               `Task superseded: ${$.trim(newTask.description, 60)}`,
               'info',
             );
-          } else if (
-            oldTask.status === 'in_progress' &&
-            newTask.status === 'pending'
-          ) {
+          } else if ($.isActiveTask(oldTask) && newTask.status === 'pending') {
             $.addToast(
               `Attempt failed (retry pending): ${$.trim(newTask.description, 60)}`,
               'error',
@@ -607,12 +606,14 @@
 
       $.taskActionTarget = null;
       $.taskActionTargetStatus = null;
+      $.taskActionTargetActive = false;
       $.taskActionTargetHasAttempts = false;
 
       $.openTaskActionModal = (id) => {
         $.taskActionTarget = id;
         const task = $.tasks.find((t) => t.id === id);
         $.taskActionTargetStatus = task ? task.status : null;
+        $.taskActionTargetActive = task ? $.isActiveTask(task) : false;
         $.taskActionTargetHasAttempts = task ? task.attempts > 0 : false;
         const modal = document.getElementById('task-action-modal');
         if (modal) modal.showModal();

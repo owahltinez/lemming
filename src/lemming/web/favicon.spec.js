@@ -90,7 +90,7 @@ test.describe('Favicon Status Synchronization', () => {
 
     // Running
     loopRunning = true;
-    tasks = [{ id: 't1', status: 'in_progress', attempts: 1 }];
+    tasks = [{ id: 't1', status: 'running', attempts: 1 }];
     await expect(async () => {
       const href = await page.evaluate(
         () => document.querySelector('link[rel="icon"]').href,
@@ -138,7 +138,7 @@ test.describe('Favicon Status Synchronization', () => {
     page,
   }) => {
     let loopRunning = true;
-    let tasks = [{ id: 't1', status: 'in_progress', attempts: 1 }];
+    let tasks = [{ id: 't1', status: 'running', attempts: 1 }];
 
     await page.route('**/api/data**', async (route) => {
       await route.fulfill({
@@ -186,7 +186,7 @@ test.describe('Favicon Status Synchronization', () => {
   test('Logs (logs.html) favicon status reflects task status', async ({
     page,
   }) => {
-    let taskStatus = 'in_progress';
+    let taskStatus = 'running';
     const attempts = 1;
 
     await page.route('**/api/tasks/t1', async (route) => {

@@ -14,10 +14,9 @@ import pathlib
 
 import click
 
-from .. import models, runner
+from .. import models, persistence, runner
 from ..cli.main import cli as lemming_cli
 from ..orchestrator import run_hooks
-from ..tasks import lifecycle, operations
 
 
 def _write_result(
@@ -132,18 +131,16 @@ def _run_hook(
     Returns:
         Per-hook exit codes as reported by run_hooks.
     """
-    final_status = (
-        models.TaskStatus.COMPLETED
-        if outcome == "completed"
-        else models.TaskStatus.FAILED
-    )
-
-    # Mirror orchestrator._process_exhausted_retries before the hook.
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
-    if final_status == models.TaskStatus.FAILED:
-        operations.update_task(
-            tasks_file, task_id, status=models.TaskStatus.FAILED
+    # Hooks see the task as the orchestrator leaves it, still finalizing.
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        task = next(t for t in data.tasks if t.id == task_id)
+        task.status = (
+            models.TaskStatus.COMPLETING
+            if outcome == "completed"
+            else models.TaskStatus.FAILING
         )
+        persistence.save_tasks(tasks_file, data)
 
     return run_hooks(
         tasks_file,
@@ -155,7 +152,6 @@ def _run_hook(
         verbose=True,
         hooks=[hook],
         working_dir=tasks_file.parent,
-        final_status=final_status,
         time_limit=time_limit,
     )
 

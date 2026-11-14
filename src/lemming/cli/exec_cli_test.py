@@ -50,7 +50,7 @@ def _finish(message, returncode=0, status=models.TaskStatus.COMPLETED):
         # again would be the hook overriding the agent it is reviewing.
         data = persistence.load_tasks(tasks_file)
         task = next(t for t in data.tasks if t.id == task_id)
-        if task.requested_status:
+        if task.status != models.TaskStatus.RUNNING:
             return returncode, output, ""
 
         progress.add_progress(tasks_file, task_id, "did the work")

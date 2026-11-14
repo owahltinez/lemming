@@ -10,6 +10,8 @@ const createInitialState = (overrides = {}) => {
     task: { id: 'test-id', status: 'pending', description: 'Test Description' },
     taskLog: '',
     loading: true,
+    isActiveTask: (task) =>
+      ['running', 'completing', 'failing'].includes(task.status),
     formatDate: (ts) => (ts ? new Date(ts * 1000).toLocaleString() : ''),
     formatDuration: (seconds) => {
       if (!seconds) return '0s';
@@ -20,7 +22,7 @@ const createInitialState = (overrides = {}) => {
     },
     formatTaskRunTime: function (task) {
       let total = task.run_time || 0;
-      if (task.status === 'in_progress' && task.last_started_at) {
+      if (this.isActiveTask(task) && task.last_started_at) {
         total += Date.now() / 1000 - task.last_started_at;
       }
       return this.formatDuration(total);
@@ -81,10 +83,10 @@ describe('Lemming Task Log Viewer', () => {
     );
   });
 
-  test('shows live indicator for in_progress tasks', async () => {
+  test('shows live indicator for running tasks', async () => {
     const renderer = new Renderer(
       createInitialState({
-        task: { id: 't1', status: 'in_progress', description: 'Running task' },
+        task: { id: 't1', status: 'running', description: 'Running task' },
         loading: false,
       }),
     );
@@ -133,7 +135,7 @@ describe('Lemming Task Log Viewer', () => {
     const now = Date.now() / 1000;
     const taskInProgress = {
       id: 't-progress',
-      status: 'in_progress',
+      status: 'running',
       description: 'Running task',
       started_at: now - 3600, // 1 hour ago
       last_started_at: now - 600, // 10 mins ago (current attempt)
@@ -166,13 +168,13 @@ describe('Lemming Task Log Viewer', () => {
     // 300s baseline + 600s elapsed = 900s = 15m
     assert.ok(runtimeLabel.nextElementSibling.textContent.includes('15m 0s'));
 
-    // Verify completed label is NOT present for in_progress
+    // Verify completed label is NOT present for running
     const completedLabel = Array.from(fragment.querySelectorAll('span')).find(
       (s) => s.textContent.trim() === 'Completed:',
     );
     assert.ok(
       !completedLabel || completedLabel.parentElement.style.display === 'none',
-      'Completed label should be hidden for in_progress',
+      'Completed label should be hidden for running',
     );
 
     // Test completed task

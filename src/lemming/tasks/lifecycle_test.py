@@ -40,14 +40,6 @@ def test_is_loop_running_stale_pid(tmp_path):
     assert not lock_path.exists()
 
 
-def test_update_run_time():
-    task = models.Task(
-        id="1", description="test", last_started_at=time.time() - 5
-    )
-    lifecycle.update_run_time(task)
-    assert task.run_time >= 5.0
-
-
 def test_record_execution_time_accumulates_by_component(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     persistence.save_tasks(
@@ -87,23 +79,21 @@ def test_active_execution_is_recorded_then_cleared(tmp_path):
     assert finished_task.active_execution_started_at is None
 
 
-def test_mark_task_in_progress(tmp_path):
+def test_claim_task_starts_a_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
     tasks_file = tmp_path / "tasks.yml"
-    data = models.Roadmap(
-        tasks=[
-            models.Task(
-                id="1", description="Task 1", status=models.TaskStatus.PENDING
-            )
-        ]
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(tasks=[models.Task(id="1", description="Task 1")]),
     )
-    persistence.save_tasks(tasks_file, data)
 
-    success = lifecycle.mark_task_in_progress(tasks_file, "1", pid=123)
-    assert success is True
+    task = lifecycle.claim_task(tasks_file, "1", pid=123, working_dir=tmp_path)
 
-    updated_data = persistence.load_tasks(tasks_file)
-    assert updated_data.tasks[0].status == models.TaskStatus.IN_PROGRESS
-    assert updated_data.tasks[0].pid == 123
+    assert task is not None
+    assert task.status == models.TaskStatus.RUNNING
+    assert task.pid == 123
+    assert task.attempts == 1
+    assert task.pre_tree == snapshots.snapshot_tree(tasks_file, tmp_path)
 
 
 def test_claim_task(tmp_path):
@@ -119,92 +109,57 @@ def test_claim_task(tmp_path):
 
     claimed = lifecycle.claim_task(tasks_file, "1", pid=123)
     assert claimed is not None
-    assert claimed.status == models.TaskStatus.IN_PROGRESS
+    assert claimed.status == models.TaskStatus.RUNNING
     assert claimed.pid == 123
     assert claimed.attempts == 1
 
 
-def test_claim_already_in_progress(tmp_path):
+def test_claim_task_refuses_live_and_cut_off_runs(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     data = models.Roadmap(
         tasks=[
             models.Task(
                 id="1",
                 description="Task 1",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
                 pid=os.getpid(),
                 last_heartbeat=time.time(),
             )
         ]
     )
     persistence.save_tasks(tasks_file, data)
+    assert lifecycle.claim_task(tasks_file, "1", pid=456) is None
 
-    # Second claim should fail
-    claimed_again = lifecycle.claim_task(tasks_file, "1", pid=456)
-    assert claimed_again is None
-
-    # But if it's stale, it should succeed
+    # A cut-off run must be settled by recovery, not taken over mid-attempt.
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
-        data.tasks[0].last_heartbeat = time.time() - (
-            persistence.STALE_THRESHOLD + 1
-        )
+        data.tasks[0].pid = 999999
         persistence.save_tasks(tasks_file, data)
-
-    claimed_stale = lifecycle.claim_task(tasks_file, "1", pid=789)
-    assert claimed_stale is not None
-    assert claimed_stale.pid == 789
-    assert (
-        claimed_stale.attempts == 1
-    )  # 0 + 1 because we manually created it with 0
+    assert lifecycle.claim_task(tasks_file, "1", pid=789) is None
 
 
-def test_claim_task_reclaim_does_not_count_cut_off_attempt(tmp_path):
+def test_claim_task_resumes_a_review_without_counting_it(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
-    data = models.Roadmap(
-        tasks=[
-            models.Task(
-                id="1",
-                description="Abandoned",
-                status=models.TaskStatus.IN_PROGRESS,
-                attempts=1,
-                pid=999999,
-                last_heartbeat=time.time() - (persistence.STALE_THRESHOLD + 1),
-            ),
-            models.Task(
-                id="2",
-                description="Retried",
-                status=models.TaskStatus.PENDING,
-                attempts=1,
-            ),
-        ]
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="1",
+                    description="Reviewing",
+                    status=models.TaskStatus.COMPLETING,
+                    attempts=1,
+                )
+            ]
+        ),
     )
-    persistence.save_tasks(tasks_file, data)
 
-    reclaimed = lifecycle.claim_task(tasks_file, "1", pid=123)
-    retried = lifecycle.claim_task(tasks_file, "2", pid=123)
-    assert reclaimed is not None and reclaimed.attempts == 1
-    assert retried is not None and retried.attempts == 2
+    resumed = lifecycle.claim_task(tasks_file, "1", pid=123)
 
-
-def test_finish_task_attempt(tmp_path):
-    tasks_file = tmp_path / "tasks.yml"
-    data = models.Roadmap(
-        tasks=[
-            models.Task(
-                id="1",
-                description="Task 1",
-                status=models.TaskStatus.IN_PROGRESS,
-                last_started_at=time.time(),
-            )
-        ]
-    )
-    persistence.save_tasks(tasks_file, data)
-
-    finished = lifecycle.finish_task_attempt(tasks_file, "1")
-    assert finished is not None
-    assert finished.status == models.TaskStatus.PENDING
-    assert finished.pid is None
+    assert resumed is not None
+    assert resumed.status == models.TaskStatus.COMPLETING
+    assert resumed.attempts == 1
+    assert resumed.pid == 123
 
 
 def test_update_heartbeat(tmp_path):
@@ -214,7 +169,7 @@ def test_update_heartbeat(tmp_path):
             models.Task(
                 id="1",
                 description="Task 1",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
             )
         ]
     )
@@ -235,7 +190,7 @@ def test_cancel_task(tmp_path):
             models.Task(
                 id="1",
                 description="Task 1",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
                 pid=os.getpid(),
             )
         ],
@@ -261,7 +216,7 @@ def test_cancel_active_task_kills_runner_but_not_loop(tmp_path):
             models.Task(
                 id="1",
                 description="Task 1",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
                 pid=123,
             )
         ],
@@ -316,7 +271,7 @@ def test_cancel_during_claim_does_not_kill_loop_pid(tmp_path):
                 models.Task(
                     id="1",
                     description="Claimed task",
-                    status=models.TaskStatus.IN_PROGRESS,
+                    status=models.TaskStatus.RUNNING,
                     pid=456,
                 )
             ]
@@ -374,7 +329,7 @@ def test_cancel_task_escalates_sigterm_immune_process(tmp_path):
             models.Task(
                 id="1",
                 description="Task 1",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
                 pid=12345,
             )
         ],
@@ -436,7 +391,7 @@ def test_cancel_task_kills_detached_grandchild(tmp_path):
                     models.Task(
                         id="1",
                         description="d",
-                        status=models.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.RUNNING,
                         pid=runner_process.pid,
                     )
                 ],
@@ -461,7 +416,7 @@ def test_reject_task_blocks_only_a_requested_completion(tmp_path):
     task = models.Task(
         id="12345678",
         description="Task 1",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
     )
     persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
 
@@ -469,40 +424,13 @@ def test_reject_task_blocks_only_a_requested_completion(tmp_path):
     with pytest.raises(ValueError, match="not awaiting completion"):
         lifecycle.reject_task(tasks_file, "12345678", "suite fails")
 
-    task.requested_status = models.TaskStatus.COMPLETED
+    task.status = models.TaskStatus.COMPLETING
     persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
 
     rejected = lifecycle.reject_task(tasks_file, "12345678", "suite fails")
     assert rejected.rejection == "suite fails"
     # The status is untouched so the remaining hooks still run.
-    assert rejected.status == models.TaskStatus.IN_PROGRESS
-
-    # A retry must not inherit the rejection.
-    reverted = lifecycle.revert_task_to_pending(tasks_file, "12345678")
-    assert reverted and reverted.rejection is None
-
-
-def test_revert_task_to_pending_preserves_snapshot_fields(tmp_path):
-    tasks_file = tmp_path / "tasks.yml"
-    task = models.Task(
-        id="12345678",
-        description="Task 1",
-        status=models.TaskStatus.IN_PROGRESS,
-        pre_tree="aaa",
-        runner_tree="bbb",
-        post_tree="ccc",
-        pre_head="ddd",
-        diff_summary="1 file (+1/-0): a.py (+1/-0)",
-    )
-    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
-
-    reverted = lifecycle.revert_task_to_pending(tasks_file, "12345678")
-    assert reverted is not None
-    assert reverted.pre_tree == "aaa"
-    assert reverted.runner_tree == "bbb"
-    assert reverted.post_tree == "ccc"
-    assert reverted.pre_head == "ddd"
-    assert reverted.diff_summary == "1 file (+1/-0): a.py (+1/-0)"
+    assert rejected.status == models.TaskStatus.COMPLETING
 
 
 def test_reset_task(tmp_path, monkeypatch):
@@ -565,43 +493,43 @@ def test_is_task_active(mock_is_pid_alive):
     )
     assert not lifecycle.is_task_active(task_pending, now)
 
-    # 2. IN_PROGRESS but no PID -> not active
+    # 2. RUNNING but no PID -> not active
     task_no_pid = models.Task(
         id="2",
         description="test",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
         last_heartbeat=now,
     )
     assert not lifecycle.is_task_active(task_no_pid, now)
 
-    # 3. IN_PROGRESS, has PID, PID dead -> not active
+    # 3. RUNNING, has PID, PID dead -> not active
     mock_is_pid_alive.return_value = False
     task_dead_pid = models.Task(
         id="3",
         description="test",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
         pid=123,
         last_heartbeat=now,
     )
     assert not lifecycle.is_task_active(task_dead_pid, now)
 
-    # 4. IN_PROGRESS, has PID, PID alive, stale heartbeat -> not active
+    # 4. RUNNING, has PID, PID alive, stale heartbeat -> not active
     mock_is_pid_alive.return_value = True
     stale_time = now - persistence.STALE_THRESHOLD - 10
     task_stale = models.Task(
         id="4",
         description="test",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
         pid=123,
         last_heartbeat=stale_time,
     )
     assert not lifecycle.is_task_active(task_stale, now)
 
-    # 5. IN_PROGRESS, has PID, PID alive, fresh heartbeat -> active!
+    # 5. RUNNING, has PID, PID alive, fresh heartbeat -> active!
     task_active = models.Task(
         id="5",
         description="test",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
         pid=123,
         last_heartbeat=now,
     )
@@ -611,8 +539,7 @@ def test_is_task_active(mock_is_pid_alive):
     task_finalizing = models.Task(
         id="6",
         description="test",
-        status=models.TaskStatus.IN_PROGRESS,
-        requested_status=models.TaskStatus.COMPLETED,
+        status=models.TaskStatus.COMPLETING,
         last_heartbeat=now,
     )
     assert not lifecycle.is_task_active(task_finalizing, now)
@@ -622,8 +549,7 @@ def test_is_task_active(mock_is_pid_alive):
     task_hooks_running = models.Task(
         id="7",
         description="test",
-        status=models.TaskStatus.IN_PROGRESS,
-        requested_status=models.TaskStatus.COMPLETED,
+        status=models.TaskStatus.COMPLETING,
         pid=123,
         last_heartbeat=now,
     )
@@ -673,7 +599,7 @@ def test_cancel_in_progress_task_saves_patch_and_restores_pre_tree(
     task = models.Task(
         id="cancel12",
         description="In-progress task",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
         pre_tree=pre_tree,
     )
     persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
@@ -692,7 +618,7 @@ def test_cancel_in_progress_task_saves_patch_and_restores_pre_tree(
     assert "+dirty" in patch_file.read_text(encoding="utf-8")
 
 
-def test_cancel_pending_rejected_task_by_prefix_restores_and_clears_trees(
+def test_cancel_running_task_by_prefix_restores_and_clears_trees(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
@@ -704,17 +630,13 @@ def test_cancel_pending_rejected_task_by_prefix_restores_and_clears_trees(
     pre_tree = snapshots.snapshot_tree(tasks_file, work)
     assert pre_tree is not None
 
-    (work / "a.py").write_text("rejected_v2\n", encoding="utf-8")
-    runner_tree = snapshots.snapshot_tree(tasks_file, work)
-    assert runner_tree is not None
-
+    (work / "a.py").write_text("half_done\n", encoding="utf-8")
     task = models.Task(
         id="cancel99",
-        description="Pending after hook rejection",
-        status=models.TaskStatus.PENDING,
+        description="Running",
+        status=models.TaskStatus.RUNNING,
         pre_tree=pre_tree,
-        runner_tree=runner_tree,
-        hook_trees={"testing": [runner_tree, runner_tree]},
+        hook_trees={"testing": [pre_tree, pre_tree]},
     )
     persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
 
@@ -725,7 +647,7 @@ def test_cancel_pending_rejected_task_by_prefix_restores_and_clears_trees(
         paths.get_artifacts_dir(tasks_file, "cancel99") / "cancelled.patch"
     )
     assert patch_file.is_file()
-    assert "+rejected_v2" in patch_file.read_text(encoding="utf-8")
+    assert "+half_done" in patch_file.read_text(encoding="utf-8")
     updated = persistence.load_tasks(tasks_file).tasks[0]
     assert updated.status == models.TaskStatus.CANCELLED
     assert updated.pre_tree is None
@@ -748,7 +670,7 @@ def test_cancel_task_skips_restore_if_orchestrator_restored_during_kill(
     task = models.Task(
         id="cancel88",
         description="Race task",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
         pid=99999,
         pre_tree=pre_tree,
     )
@@ -783,7 +705,7 @@ def test_reset_task_skips_prune_when_task_was_in_progress(
     task = models.Task(
         id="reset77",
         description="In progress hook reset",
-        status=models.TaskStatus.IN_PROGRESS,
+        status=models.TaskStatus.RUNNING,
         pre_tree="aaa",
     )
     persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
@@ -795,44 +717,3 @@ def test_reset_task_skips_prune_when_task_was_in_progress(
 
     assert lifecycle.reset_task(tasks_file, "reset77")
     assert pruned == []
-
-
-def test_write_patch_artifact_keeps_non_utf8_bytes(tmp_path, monkeypatch):
-    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
-    work = tmp_path / "work"
-    work.mkdir()
-    tasks_file = work / "tasks.yml"
-    pre_tree = snapshots.snapshot_tree(tasks_file, work)
-    notes = work / "notes.txt"
-    notes.write_bytes(b"caf\xe9\n")
-    post_tree = snapshots.snapshot_tree(tasks_file, work)
-
-    lifecycle.write_patch_artifact(
-        tasks_file, "latin1", "attempt-1.patch", pre_tree, post_tree
-    )
-
-    notes.unlink()
-    patch_file = (
-        paths.get_artifacts_dir(tasks_file, "latin1") / "attempt-1.patch"
-    )
-    subprocess.run(["git", "apply", str(patch_file)], cwd=work, check=True)
-    assert notes.read_bytes() == b"caf\xe9\n"
-
-
-def test_write_patch_artifact_never_overwrites(tmp_path, monkeypatch):
-    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
-    work = tmp_path / "work"
-    work.mkdir()
-    tasks_file = work / "tasks.yml"
-    pre_tree = snapshots.snapshot_tree(tasks_file, work)
-    for change in ("first", "second", "third"):
-        (work / "file.txt").write_text(f"{change}\n", encoding="utf-8")
-        post_tree = snapshots.snapshot_tree(tasks_file, work)
-        lifecycle.write_patch_artifact(
-            tasks_file, "t1", "attempt-1.patch", pre_tree, post_tree
-        )
-
-    artifacts = paths.get_artifacts_dir(tasks_file, "t1")
-    assert "+first" in (artifacts / "attempt-1.patch").read_text()
-    assert "+second" in (artifacts / "attempt-1-2.patch").read_text()
-    assert "+third" in (artifacts / "attempt-1-3.patch").read_text()

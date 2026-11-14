@@ -36,7 +36,7 @@ const mockTasks = [
   {
     id: 'g7h8i9',
     description: 'Migrate database schema to support multi-tenant architecture',
-    status: 'in_progress',
+    status: 'running',
     attempts: 0,
     has_runner_log: true,
     pid: 48291,

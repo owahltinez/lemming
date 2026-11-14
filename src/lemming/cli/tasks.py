@@ -48,7 +48,9 @@ def _echo_task_summary(
     """Print one task row plus compact supersession lineage."""
     marker_by_status = {
         models.TaskStatus.COMPLETED: ("[x]", "green"),
-        models.TaskStatus.IN_PROGRESS: ("[*]", "cyan"),
+        models.TaskStatus.RUNNING: ("[*]", "cyan"),
+        models.TaskStatus.COMPLETING: ("[*]", "cyan"),
+        models.TaskStatus.FAILING: ("[*]", "cyan"),
         models.TaskStatus.CANCELLED: ("[-]", "red"),
         models.TaskStatus.SUPERSEDED: ("[~]", "magenta"),
         models.TaskStatus.FAILED: ("[!]", "red"),
@@ -390,7 +392,7 @@ def supersede(ctx: click.Context, task_id: str, reason: str):
 
 
 def _abandoned_hint(task: models.Task, loop_running: bool) -> str | None:
-    """Returns how to recover an in_progress task that no loop is running.
+    """Returns how to recover an active task that no loop is running.
 
     With no loop running, no task has a fresh heartbeat, but a runner started
     in its own session can outlive the loop that was watching it.
@@ -402,7 +404,7 @@ def _abandoned_hint(task: models.Task, loop_running: bool) -> str | None:
     Returns:
         A recovery hint, or None if the task is not abandoned.
     """
-    if task.status != models.TaskStatus.IN_PROGRESS or loop_running:
+    if task.status not in models.ACTIVE_STATUSES or loop_running:
         return None
     if task.pid and lifecycle.is_pid_alive(task.pid):
         return f"runner pid {task.pid} is still running; kill it first"
@@ -562,11 +564,6 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
     click.secho(f"Loop Status:   {loop_state}", fg=loop_color, bold=True)
     click.secho(f"Task ID:       {target.id}", bold=True)
     status_str = str(target.status)
-    if (
-        target.status == models.TaskStatus.IN_PROGRESS
-        and target.requested_status
-    ):
-        status_str += f" ({target.requested_status} requested, hooks running)"
     hint = _abandoned_hint(target, project_data.loop_running)
     if hint:
         status_str += f" (abandoned; {hint})"
@@ -634,10 +631,7 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
                 f"{replacement.description}"
             )
     run_time = target.run_time
-    if (
-        target.status == models.TaskStatus.IN_PROGRESS
-        and target.last_started_at
-    ):
+    if target.status in models.ACTIVE_STATUSES and target.last_started_at:
         run_time += time.time() - target.last_started_at
 
     if run_time > 0:
@@ -658,7 +652,7 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
 def _latest_or_active_task(tasks: list[models.Task]) -> models.Task | None:
     """Returns the currently running task, or the most recently finished one."""
     active = next(
-        (t for t in tasks if t.status == models.TaskStatus.IN_PROGRESS),
+        (t for t in tasks if t.status in models.ACTIVE_STATUSES),
         None,
     )
     if active:
@@ -775,7 +769,7 @@ def complete(ctx: click.Context, task_id: str, force: bool):
         current_task = queries.resolve_task(data.tasks, task_id)
         task_is_active = lifecycle.is_task_active(current_task, time.time())
         if (
-            current_task.status == models.TaskStatus.IN_PROGRESS
+            current_task.status in models.ACTIVE_STATUSES
             and current_task.progress
             and not force
             and not task_is_active
@@ -794,7 +788,7 @@ def complete(ctx: click.Context, task_id: str, force: bool):
             require_progress=True,
             force=force,
         )
-        if target_task.requested_status == models.TaskStatus.COMPLETED:
+        if target_task.status == models.TaskStatus.COMPLETING:
             click.echo(
                 f"Task {target_task.id} completion requested; "
                 "finalization hooks are pending."
@@ -863,12 +857,17 @@ def reject(ctx: click.Context, task_id: str, reason: str):
 def cancel(ctx: click.Context, task_id: str):
     """Cancels a task, stopping its runner if it is active."""
     tasks_file = ctx.obj["TASKS_FILE"]
-    if lifecycle.cancel_task(
-        tasks_file, task_id, working_dir=ctx.obj.get("PROJECT_DIR")
-    ):
+    try:
+        cancelled = lifecycle.cancel_task(
+            tasks_file, task_id, working_dir=ctx.obj.get("PROJECT_DIR")
+        )
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
+    if cancelled:
         click.echo(f"Task {task_id} cancelled.")
     else:
-        click.echo(f"Error: Task {task_id} not found or not in progress.")
+        click.echo(f"Error: Task {task_id} not found.")
         ctx.exit(1)
 
 
@@ -944,7 +943,7 @@ def diff(
 
         start_tree = target.pre_tree
         end_tree = target.post_tree or target.runner_tree
-        if not end_tree and target.status == models.TaskStatus.IN_PROGRESS:
+        if not end_tree and target.status in models.ACTIVE_STATUSES:
             end_tree = snapshots.snapshot_tree(tasks_file, working_dir)
         if not end_tree:
             return

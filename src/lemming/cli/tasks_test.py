@@ -246,7 +246,7 @@ class TestCLITasks(unittest.TestCase):
     def test_status_flags_task_abandoned_by_dead_loop(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].status = models.TaskStatus.RUNNING
             data.tasks[0].pid = 999999
             data.tasks[0].last_heartbeat = 0
             persistence.save_tasks(self.test_tasks_file, data)
@@ -266,7 +266,7 @@ class TestCLITasks(unittest.TestCase):
     def test_status_names_runner_that_outlived_its_loop(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].status = models.TaskStatus.RUNNING
             data.tasks[0].pid = os.getpid()
             data.tasks[0].last_heartbeat = 0
             persistence.save_tasks(self.test_tasks_file, data)
@@ -286,7 +286,7 @@ class TestCLITasks(unittest.TestCase):
     def test_status_does_not_flag_live_task(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].status = models.TaskStatus.RUNNING
             data.tasks[0].pid = 1234
             data.tasks[0].last_heartbeat = time.time()
             persistence.save_tasks(self.test_tasks_file, data)
@@ -368,7 +368,7 @@ class TestCLITasks(unittest.TestCase):
     def test_active_task_completion_runs_hooks(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].status = models.TaskStatus.RUNNING
             data.tasks[0].progress = ["Done"]
             data.tasks[0].pid = 1234
             data.tasks[0].last_heartbeat = time.time()
@@ -384,15 +384,12 @@ class TestCLITasks(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("completion requested", result.output)
         data = persistence.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, models.TaskStatus.IN_PROGRESS)
-        self.assertEqual(
-            data.tasks[0].requested_status, models.TaskStatus.COMPLETED
-        )
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.COMPLETING)
 
     def test_stale_task_completion_requires_force(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].status = models.TaskStatus.RUNNING
             data.tasks[0].progress = ["Done"]
             data.tasks[0].pid = 999999
             data.tasks[0].last_heartbeat = 0
@@ -405,13 +402,12 @@ class TestCLITasks(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("Use --force", result.output)
         data = persistence.load_tasks(self.test_tasks_file)
-        self.assertEqual(data.tasks[0].status, models.TaskStatus.IN_PROGRESS)
-        self.assertIsNone(data.tasks[0].requested_status)
+        self.assertEqual(data.tasks[0].status, models.TaskStatus.RUNNING)
 
     def test_force_completes_stale_task(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].status = models.TaskStatus.RUNNING
             data.tasks[0].progress = ["Done"]
             data.tasks[0].pid = 999999
             data.tasks[0].last_heartbeat = 0
@@ -425,7 +421,6 @@ class TestCLITasks(unittest.TestCase):
         self.assertIn("marked as completed", result.output)
         data = persistence.load_tasks(self.test_tasks_file)
         self.assertEqual(data.tasks[0].status, models.TaskStatus.COMPLETED)
-        self.assertIsNone(data.tasks[0].requested_status)
         self.assertIsNone(data.tasks[0].pid)
         self.assertIsNone(data.tasks[0].last_heartbeat)
 
@@ -461,7 +456,7 @@ class TestCLITasks(unittest.TestCase):
         # We need a fake in-progress task for this
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)
-            data.tasks[0].status = models.TaskStatus.IN_PROGRESS
+            data.tasks[0].status = models.TaskStatus.RUNNING
             persistence.save_tasks(self.test_tasks_file, data)
 
         result = self.cli_runner.invoke(

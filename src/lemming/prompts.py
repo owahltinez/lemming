@@ -111,7 +111,7 @@ def _status_marker(
         return f"[SUPERSEDED{reason}]"
     if effective_status == models.TaskStatus.CANCELLED:
         return "[CANCELLED]"
-    if task.status == models.TaskStatus.IN_PROGRESS or is_current:
+    if task.status in models.ACTIVE_STATUSES or is_current:
         return "[IN PROGRESS]"
     if task.attempts > 0:
         return f"[PENDING - {task.attempts}/{retries} attempt(s) so far]"
@@ -147,7 +147,7 @@ def _format_task_block(
     recent_completed_ids: set[str],
 ) -> str:
     """Formats one task according to a bounded roadmap policy."""
-    effective_status = task.requested_status or task.status
+    effective_status = task.status.outcome
     marker = _status_marker(
         task,
         effective_status,
@@ -248,7 +248,7 @@ def _roadmap_task_priority(
     """Prioritizes actionable tasks while favoring recent history."""
     if task.id == current_task_id:
         return (0, index)
-    effective_status = task.requested_status or task.status
+    effective_status = task.status.outcome
     if effective_status not in _TERMINAL_STATUSES:
         return (1, index)
     return (2, -index)
@@ -308,7 +308,7 @@ def _format_roadmap(
     completed_ids = [
         task.id
         for task in data.tasks
-        if (task.requested_status or task.status) == models.TaskStatus.COMPLETED
+        if task.status.outcome == models.TaskStatus.COMPLETED
     ]
     recent_completed_ids = (
         set(completed_ids[-policy.completed_progress_tasks :])
@@ -392,9 +392,8 @@ def prepare_hook_prompt(
         policy=policy,
     )
 
-    # Use requested_status when available — it reflects the actual outcome
-    # (e.g. FAILED) while status may still be IN_PROGRESS during hook execution.
-    result_status = finished_task.requested_status or finished_task.status
+    # Hooks run while the task is still completing or failing.
+    result_status = finished_task.status.outcome
 
     # An earlier hook already refused this completion, so the task is going
     # back to pending. Later hooks must not read it as finished work.

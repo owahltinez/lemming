@@ -114,8 +114,7 @@ def _create_review_task(
     task = models.Task(
         id=lifecycle.generate_task_id(),
         description=f"Review the workspace: {', '.join(reviews)}.",
-        status=models.TaskStatus.IN_PROGRESS,
-        requested_status=models.TaskStatus.COMPLETED,
+        status=models.TaskStatus.COMPLETING,
     )
     persistence.save_tasks(
         tasks_file, models.Roadmap(config=config, tasks=[task])
@@ -438,10 +437,8 @@ def exec_command(
             orchestrator.recover_abandoned_tasks(
                 tasks_file, working_dir, exiting=True
             )
-            if _task_status(tasks_file, task_id) in (
-                models.TaskStatus.PENDING,
-                models.TaskStatus.IN_PROGRESS,
-            ):
+            status = _task_status(tasks_file, task_id)
+            if status and status not in models.TERMINAL_STATUSES:
                 lifecycle.cancel_task(
                     tasks_file, task_id, working_dir=working_dir
                 )

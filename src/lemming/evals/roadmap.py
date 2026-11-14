@@ -129,7 +129,6 @@ def _build_fast_exit(workspace: pathlib.Path) -> None:
                         "tests."
                     ),
                     attempts=1,
-                    requested_status=models.TaskStatus.COMPLETED,
                     progress=[
                         "Implemented add() in calc/ops.py and covered it in "
                         "calc/ops_test.py; all tests pass."
@@ -194,7 +193,6 @@ def _build_prune(workspace: pathlib.Path) -> None:
                         "unit tests."
                     ),
                     attempts=1,
-                    requested_status=models.TaskStatus.COMPLETED,
                     progress=[
                         "Implemented subtract() in calc/ops.py with tests. "
                         "While refactoring the dispatch table I also "
@@ -259,7 +257,6 @@ def _build_extend(workspace: pathlib.Path) -> None:
                         "unit tests."
                     ),
                     attempts=1,
-                    requested_status=models.TaskStatus.COMPLETED,
                     progress=[
                         "Implemented subtract() with tests. Note: the goal "
                         "also requires a multiply command but no roadmap "
@@ -333,7 +330,6 @@ def _build_workspace_gap(workspace: pathlib.Path) -> None:
                         "cover its registered commands with tests."
                     ),
                     attempts=1,
-                    requested_status=models.TaskStatus.COMPLETED,
                     progress=[
                         "Implemented the CLI dispatcher and tests for its "
                         "registered commands; the full test suite passes."
@@ -398,7 +394,6 @@ def _build_follow_up(workspace: pathlib.Path) -> None:
                     id="task1",
                     description=_REDUNDANT_DESCRIPTION,
                     attempts=1,
-                    requested_status=models.TaskStatus.COMPLETED,
                     progress=[
                         "Implemented multiply() in calc/ops.py with tests.",
                         "Found a bug while reading calc/ops.py: "
@@ -471,7 +466,6 @@ def _build_finding_restraint(workspace: pathlib.Path) -> None:
                         "tests."
                     ),
                     attempts=1,
-                    requested_status=models.TaskStatus.COMPLETED,
                     progress=[
                         "Implemented add() in calc/ops.py and covered it in "
                         "calc/ops_test.py; all tests pass.",

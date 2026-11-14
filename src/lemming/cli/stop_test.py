@@ -30,7 +30,7 @@ class TestCLIStop(unittest.TestCase):
                     models.Task(
                         id="task1",
                         description="running task",
-                        status=models.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.RUNNING,
                         pid=424242,
                     )
                 ],
@@ -89,7 +89,7 @@ class TestCLIStop(unittest.TestCase):
             persistence.release_loop_lock(self.tasks_file)
 
         task = persistence.load_tasks(self.tasks_file).tasks[0]
-        self.assertEqual(task.status, models.TaskStatus.IN_PROGRESS)
+        self.assertEqual(task.status, models.TaskStatus.RUNNING)
 
     def test_immediate_stop_leaves_the_task_for_the_next_run(self):
         """The next run resumes the task, so stop must not rewrite it."""
@@ -105,7 +105,7 @@ class TestCLIStop(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0, result.output)
         task = persistence.load_tasks(self.tasks_file).tasks[0]
-        self.assertEqual(task.status, models.TaskStatus.IN_PROGRESS)
+        self.assertEqual(task.status, models.TaskStatus.RUNNING)
 
 
 if __name__ == "__main__":

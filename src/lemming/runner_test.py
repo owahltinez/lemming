@@ -418,7 +418,7 @@ def test_run_with_heartbeat_truncation_only_affects_log(tmp_path):
         tasks_file,
         models.Roadmap(tasks=[models.Task(id=task_id, description="test")]),
     )
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
     log_file = paths.get_log_file(tasks_file, task_id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -464,8 +464,8 @@ def test_run_with_heartbeat_log_header(tmp_path):
             ]
         ),
     )
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
-    lifecycle.mark_task_in_progress(tasks_file, task_id_2)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
+    lifecycle.claim_task(tasks_file, task_id_2, os.getpid())
     log_file = paths.get_log_file(tasks_file, task_id)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -573,7 +573,7 @@ def test_run_with_heartbeat_records_runner_and_hook_times(tmp_path):
             tasks=[models.Task(id=task_id, description="timed task")]
         ),
     )
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     runner.run_with_heartbeat(["true"], tasks_file, task_id, verbose=False)
     runner.run_with_heartbeat(
@@ -601,7 +601,7 @@ def test_run_with_heartbeat_interruption_cleanup(tmp_path):
         tasks=[models.Task(id=task_id, description="test")]
     )
     persistence.save_tasks(tasks_file, roadmap)
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     # 2. Mock subprocess.Popen and related functions
     mock_process = unittest.mock.MagicMock()
@@ -679,7 +679,7 @@ def test_run_with_heartbeat_status_change_mid_run(
                 models.Task(
                     id="t",
                     description="t",
-                    status=models.TaskStatus.IN_PROGRESS,
+                    status=models.TaskStatus.RUNNING,
                 )
             ]
         ),
@@ -741,7 +741,7 @@ def test_run_with_heartbeat_timeout(tmp_path):
         tasks=[models.Task(id=task_id, description="test timeout")]
     )
     persistence.save_tasks(tasks_file, roadmap)
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     # Use a 1-minute time limit. Mock time.monotonic to simulate elapsed
     # time so the heartbeat loop detects the timeout immediately without
@@ -783,7 +783,7 @@ def test_run_with_heartbeat_no_timeout(tmp_path):
         tasks=[models.Task(id=task_id, description="test no timeout")]
     )
     persistence.save_tasks(tasks_file, roadmap)
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     returncode, _, _ = runner.run_with_heartbeat(
         ["true"],
@@ -823,7 +823,7 @@ def test_run_with_heartbeat_timeout_kills_sigterm_immune_runner(tmp_path):
         tasks=[models.Task(id=task_id, description="test escalation")]
     )
     persistence.save_tasks(tasks_file, roadmap)
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     # The runner ignores SIGTERM and signals readiness via a sentinel file.
     sentinel = tmp_path / "ready"
@@ -873,7 +873,7 @@ def test_run_with_heartbeat_returns_when_grandchild_holds_stdout(tmp_path):
         tasks=[models.Task(id=task_id, description="test pipe hold")]
     )
     persistence.save_tasks(tasks_file, roadmap)
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     child_code = (
         "import subprocess, sys\n"
@@ -914,7 +914,7 @@ def test_run_with_heartbeat_timeout_kills_detached_grandchild(
         tasks_file,
         models.Roadmap(tasks=[models.Task(id=task_id, description="d")]),
     )
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     pid_file = tmp_path / "grandchild.pid"
     grandchild_code = (
@@ -986,7 +986,7 @@ def test_run_with_heartbeat_returns_when_kill_hangs(tmp_path, caplog):
         tasks_file,
         models.Roadmap(tasks=[models.Task(id=task_id, description="d")]),
     )
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     release = threading.Event()
 
@@ -1038,7 +1038,7 @@ def _run_interrupted_at(tmp_path, patched: str) -> subprocess.Popen:
         tasks_file,
         models.Roadmap(tasks=[models.Task(id="t1", description="d")]),
     )
-    lifecycle.mark_task_in_progress(tasks_file, "t1")
+    lifecycle.claim_task(tasks_file, "t1", os.getpid())
 
     spawned: list[subprocess.Popen] = []
     real_popen = subprocess.Popen
@@ -1358,7 +1358,7 @@ def test_run_with_heartbeat_kills_the_child_when_tasks_file_is_corrupted(
         tasks_file,
         models.Roadmap(tasks=[models.Task(id=task_id, description="test")]),
     )
-    lifecycle.mark_task_in_progress(tasks_file, task_id)
+    lifecycle.claim_task(tasks_file, task_id, os.getpid())
 
     # The claim succeeds, then the file becomes unreadable on the next
     # heartbeat: the thread that owns cancellation and the time limit.

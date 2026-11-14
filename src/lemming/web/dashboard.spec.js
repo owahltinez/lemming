@@ -179,7 +179,7 @@ test.describe('Dashboard E2E', () => {
             {
               id: 'running',
               description: 'Task with live execution timing',
-              status: 'in_progress',
+              status: 'running',
               attempts: 1,
               progress: [],
               active_execution_component: 'runner',

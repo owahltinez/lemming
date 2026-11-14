@@ -8,6 +8,8 @@ const indexHtmlPath = path.join(process.cwd(), 'src/lemming/web/index.html');
 const createInitialState = (overrides = {}) => {
   const tasks = overrides.tasks || [];
   const hideCompleted = overrides.hideCompleted || false;
+  const isActiveTask = (task) =>
+    ['running', 'completing', 'failing'].includes(task.status);
   const isHistoryTask = (task) =>
     ['completed', 'failed', 'cancelled', 'superseded'].includes(task.status);
   return {
@@ -31,14 +33,15 @@ const createInitialState = (overrides = {}) => {
     folderPickerBreadcrumbs: [],
     folderPickerDirs: [],
     hideCompleted,
+    isActiveTask,
     isHistoryTask,
     getTaskStatusLabel: (task) => {
       if (task.status === 'completed') return 'Completed';
       if (task.status === 'failed') return 'Failed';
       if (task.status === 'cancelled') return 'Cancelled';
       if (task.status === 'superseded') return 'Superseded';
-      if (task.status === 'in_progress') {
-        return task.requested_status ? 'Finalizing' : 'Running';
+      if (isActiveTask(task)) {
+        return task.status === 'running' ? 'Running' : 'Finalizing';
       }
       return task.attempts > 0 ? 'Retrying' : 'Pending';
     },
@@ -49,7 +52,7 @@ const createInitialState = (overrides = {}) => {
       if (task.status === 'superseded') {
         return 'bg-purple-100 text-purple-700';
       }
-      if (task.status === 'in_progress') {
+      if (isActiveTask(task)) {
         return 'bg-blue-100 text-blue-700 animate-pulse';
       }
       return task.attempts > 0
@@ -61,7 +64,7 @@ const createInitialState = (overrides = {}) => {
       if (task.status === 'cancelled') return 'text-orange-600 line-through';
       if (task.status === 'superseded') return 'text-purple-600';
       if (task.status === 'failed') return 'text-red-600';
-      if (task.status === 'in_progress') return 'text-blue-600';
+      if (isActiveTask(task)) return 'text-blue-600';
       return task.attempts > 0 ? 'text-amber-600' : '';
     },
     toasts: [],
@@ -79,7 +82,7 @@ const createInitialState = (overrides = {}) => {
     },
     formatTaskRunTime: function (task) {
       let total = task.run_time || 0;
-      if (task.status === 'in_progress' && task.last_started_at) {
+      if (isActiveTask(task) && task.last_started_at) {
         total += Date.now() / 1000 - task.last_started_at;
       }
       return this.formatDuration(total);
@@ -103,7 +106,7 @@ const createInitialState = (overrides = {}) => {
       ];
       const executionTimes = { ...(task.execution_times || {}) };
       if (
-        task.status === 'in_progress' &&
+        isActiveTask(task) &&
         task.active_execution_component &&
         task.active_execution_started_at
       ) {
@@ -178,8 +181,8 @@ const createInitialState = (overrides = {}) => {
         if (aDone !== bDone) return aDone - bDone;
 
         if (!aDone) {
-          const aInProgress = a.status === 'in_progress' ? 0 : 1;
-          const bInProgress = b.status === 'in_progress' ? 0 : 1;
+          const aInProgress = isActiveTask(a) ? 0 : 1;
+          const bInProgress = isActiveTask(b) ? 0 : 1;
           if (aInProgress !== bInProgress) return aInProgress - bInProgress;
 
           if (a.index !== b.index) return (a.index || 0) - (b.index || 0);
@@ -221,7 +224,7 @@ describe('Lemming Web Dashboard', () => {
       {
         id: 'r1',
         description: 'Running',
-        status: 'in_progress',
+        status: 'running',
         created_at: 1500,
         progress: [],
       },
@@ -260,7 +263,7 @@ describe('Lemming Web Dashboard', () => {
     });
 
     // Check they are sorted:
-    // 1. Running (r1, in_progress)
+    // 1. Running (r1)
     // 2. Pending 1 (p1, created_at 500)
     // 3. Pending 2 (p2, created_at 3000)
     // 4. Newest Completed (c2, completed_at 2000)
@@ -512,12 +515,12 @@ describe('Lemming Web Dashboard', () => {
     assert.ok(!parent.textContent.includes('Failed'));
   });
 
-  test('shows only stop button for in_progress tasks', async () => {
+  test('shows only stop button for running tasks', async () => {
     const tasks = [
       {
         id: '123',
         description: 'Running Task',
-        status: 'in_progress',
+        status: 'running',
         attempts: 1,
         progress: [],
       },
@@ -915,7 +918,7 @@ describe('Lemming Web Dashboard', () => {
     Date.now = () => now;
     try {
       const task = {
-        status: 'in_progress',
+        status: 'running',
         execution_times: { runner: 30 },
         active_execution_component: 'hook:testing',
         active_execution_started_at: 990,
@@ -1071,7 +1074,7 @@ describe('Lemming Web Dashboard', () => {
       {
         id: 'r1',
         description: 'Running Task',
-        status: 'in_progress',
+        status: 'running',
         attempts: 1,
         progress: [],
       },
@@ -1168,7 +1171,7 @@ describe('Lemming Web Dashboard', () => {
       {
         id: 'r1',
         description: 'Running Task',
-        status: 'in_progress',
+        status: 'running',
         attempts: 1,
         run_time: 50.0,
         last_started_at: now - 20, // Started 20 seconds ago
@@ -1203,7 +1206,7 @@ describe('Lemming Web Dashboard', () => {
       {
         id: 'r1',
         description: 'Running Task',
-        status: 'in_progress',
+        status: 'running',
         attempts: 1,
         started_at: now - 3600, // Started 1 hour ago
         progress: [],

@@ -376,7 +376,7 @@ def test_delete_started_task_requires_explicit_force(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task = operations.add_task(tasks_file, "Started task")
     operations.update_task(
-        tasks_file, task.id, status=models.TaskStatus.IN_PROGRESS
+        tasks_file, task.id, status=models.TaskStatus.RUNNING
     )
 
     with pytest.raises(ValueError, match="Supersede it"):
@@ -390,7 +390,7 @@ def test_supersede_task_preserves_history(tmp_path, monkeypatch):
     tasks_file = tmp_path / "tasks.yml"
     task = operations.add_task(tasks_file, "Large task")
     operations.update_task(
-        tasks_file, task.id, status=models.TaskStatus.IN_PROGRESS
+        tasks_file, task.id, status=models.TaskStatus.RUNNING
     )
     log_file = paths.get_log_file(tasks_file, task.id)
     log_file.write_text("partial work")
@@ -402,7 +402,7 @@ def test_supersede_task_preserves_history(tmp_path, monkeypatch):
     assert superseded.status == models.TaskStatus.SUPERSEDED
     assert superseded.superseded_at is not None
     assert superseded.superseded_reason == "split after reaching the time limit"
-    assert superseded.requested_status is None
+    assert superseded.pid is None
     assert log_file.read_text() == "partial work"
 
 

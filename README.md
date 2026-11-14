@@ -370,7 +370,10 @@ These come before the subcommand and apply to all of them.
   - `--json`: Emit machine-readable JSON instead of formatted text, so scripts
     never have to parse the internal state file.
   - `--brief`: Omit task descriptions, which otherwise dominate the output.
-  - An `in_progress` task with no loop running is flagged as abandoned;
+  - A task is `pending`, then `running`; once its agent finishes it is
+    `completing` or `failing` while hooks review it, and it ends `completed`,
+    `failed`, `cancelled`, or `superseded`.
+  - An active task with no loop running is flagged as abandoned;
     `lemming run --detach` reclaims it. If its runner outlived the loop,
     `status` names the runner's pid to kill first, and `run` refuses to start a
     second runner until it is gone.

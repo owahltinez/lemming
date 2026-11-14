@@ -6,7 +6,7 @@ import shutil
 import time
 
 from .. import models, paths, persistence, snapshots
-from . import lifecycle, limits, queries
+from . import lifecycle, limits, queries, state_machine
 
 _DONE_STATUSES = (
     models.TaskStatus.COMPLETED,
@@ -24,10 +24,8 @@ def _insert_at_queue_index(
     """Insert a task at a displayed queue index, before completed history."""
     queue = [item for item in tasks if item.status not in _DONE_STATUSES]
     completed = [item for item in tasks if item.status in _DONE_STATUSES]
-    active_count = sum(
-        item.status == models.TaskStatus.IN_PROGRESS for item in queue
-    )
-    queue.sort(key=lambda item: item.status != models.TaskStatus.IN_PROGRESS)
+    active_count = sum(item.status in models.ACTIVE_STATUSES for item in queue)
+    queue.sort(key=lambda item: item.status not in models.ACTIVE_STATUSES)
 
     if index == -1:
         index = len(queue)
@@ -195,7 +193,7 @@ def delete_tasks(
                     / f"{target.id}-runner.log"
                 ).exists()
                 if not force and (
-                    target.status == models.TaskStatus.IN_PROGRESS
+                    target.status in models.ACTIVE_STATUSES
                     or target.attempts > 0
                     or target.started_at is not None
                     or log_exists
@@ -252,16 +250,9 @@ def supersede_task(
                 f"Cannot supersede task {target.id} with status {target.status}"
             )
 
-        if target.status == models.TaskStatus.IN_PROGRESS:
-            lifecycle.update_run_time(target)
-        target.status = models.TaskStatus.SUPERSEDED
+        state_machine.set_status(target, models.TaskStatus.SUPERSEDED)
         target.superseded_at = time.time()
         target.superseded_reason = reason
-        target.pid = None
-        target.last_heartbeat = None
-        target.requested_status = None
-        target.active_execution_component = None
-        target.active_execution_started_at = None
 
         persistence.save_tasks(tasks_file, data)
         return target
@@ -351,70 +342,36 @@ def update_task(
                 target.parent_tasks_file = parent_tasks_file
 
         pruned_to_pending = False
+        status = models.TaskStatus(status) if status else None
+        if (
+            not force
+            and target.status in models.ACTIVE_STATUSES
+            and status
+            in (models.TaskStatus.COMPLETED, models.TaskStatus.FAILED)
+        ):
+            # An active task only asks to finish; hooks review it first.
+            status = (
+                models.TaskStatus.COMPLETING
+                if status == models.TaskStatus.COMPLETED
+                else models.TaskStatus.FAILING
+            )
         if status and status != target.status:
-            # If the task is currently in progress, we don't transition to
-            # completed/failed immediately. We set requested_status so the
-            # orchestrator can run hooks before final completion.
-            if (
-                not force
-                and target.status == models.TaskStatus.IN_PROGRESS
-                and status
-                in (
-                    models.TaskStatus.COMPLETED,
-                    models.TaskStatus.FAILED,
-                    models.TaskStatus.CANCELLED,
-                    models.TaskStatus.SUPERSEDED,
-                )
-            ):
-                lifecycle.update_run_time(target)
-                target.requested_status = models.TaskStatus(status)
-                target.last_started_at = (
-                    time.time()
-                )  # Track hook execution time
-            else:
-                if target.status == models.TaskStatus.IN_PROGRESS:
-                    lifecycle.update_run_time(target)
-
-                target.status = models.TaskStatus(status)
-                if status in (
-                    models.TaskStatus.COMPLETED,
-                    models.TaskStatus.FAILED,
-                    models.TaskStatus.CANCELLED,
-                    models.TaskStatus.SUPERSEDED,
-                ):
-                    target.completed_at = time.time()
-                    target.pid = None
-                    target.last_heartbeat = None
-                    target.requested_status = None
-                    target.rejection = None
-                    target.active_execution_component = None
-                    target.active_execution_started_at = None
-                elif status == models.TaskStatus.PENDING:
-                    target.completed_at = None
-                    target.superseded_at = None
-                    target.superseded_reason = None
-                    target.attempts = 0
-                    target.pid = None
-                    target.last_heartbeat = None
-                    target.requested_status = None
-                    target.rejection = None
-                    target.active_execution_component = None
-                    target.active_execution_started_at = None
-                    target.pre_tree = None
-                    target.runner_tree = None
-                    target.post_tree = None
-                    target.pre_head = None
-                    target.diff_summary = None
-                    target.hook_trees = None
-                    pruned_to_pending = True
-                elif target.completed_at is not None:
-                    target.completed_at = None
+            state_machine.set_status(target, status)
+            if status == models.TaskStatus.PENDING:
+                target.attempts = 0
+                target.pre_tree = None
+                target.runner_tree = None
+                target.post_tree = None
+                target.pre_head = None
+                target.diff_summary = None
+                target.hook_trees = None
+                pruned_to_pending = True
 
         if index is not None:
             if target.status in _DONE_STATUSES:
                 raise ValueError("Cannot move a finished task")
-            if target.status == models.TaskStatus.IN_PROGRESS:
-                raise ValueError("Cannot move an in-progress task")
+            if target.status in models.ACTIVE_STATUSES:
+                raise ValueError("Cannot move an active task")
             data.tasks.pop(task_idx)
             data.tasks = _insert_at_queue_index(data.tasks, target, index)
 
@@ -594,10 +551,7 @@ def rollback_task(
                     if t.post_tree or t.runner_tree
                 ),
                 None
-                if any(
-                    t.status == models.TaskStatus.IN_PROGRESS
-                    for t in reset_tasks
-                )
+                if any(t.status in models.ACTIVE_STATUSES for t in reset_tasks)
                 else target.pre_tree,
             )
             current_tree = snapshots.snapshot_tree(tasks_file, resolved_dir)
