@@ -511,9 +511,7 @@ def _handle_runner_exit(
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
-    Args:
-        claimed: The task as claimed for this run, holding its checkpoint.
-
+    The claimed task, when given, holds the checkpoint the run started from.
     Returns True to abort the run loop, False to continue.
     """
     working_dir = working_dir or paths.get_working_dir(tasks_file)
