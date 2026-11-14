@@ -14,20 +14,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10.3.3
         with:
-          python-version: '3.14'
+          python-version: '3.15'
 
       - name: Install Python dependencies
         run: uv sync --locked
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '26'
 
       # Before the Python tests: they invoke readability, which runs this.
       - name: Install Node.js dependencies
