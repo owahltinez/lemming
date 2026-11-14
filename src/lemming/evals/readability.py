@@ -85,7 +85,6 @@ def _save_finished_task(workspace: pathlib.Path, progress: list[str]) -> None:
                     id="task1",
                     description=_FINISHED_DESCRIPTION,
                     attempts=1,
-                    requested_status=models.TaskStatus.COMPLETED,
                     progress=progress,
                 ),
             ],

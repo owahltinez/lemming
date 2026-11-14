@@ -98,9 +98,9 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
         if not loop_running and lifecycle.is_task_active(t, now):
             loop_running = True
 
-    # Unified sort: uncompleted (pending, in_progress) first, then completed
+    # Unified sort: uncompleted (pending, active) first, then completed
     # (completed, failed). Within each group:
-    # - Uncompleted: in_progress tasks first, then by index (YAML order),
+    # - Uncompleted: active tasks first, then by index (YAML order),
     #   then by created_at.
     # - Completed: newer tasks appear first (reverse chronological).
     def sort_key(t):
@@ -110,10 +110,9 @@ def get_project_data(tasks_file: pathlib.Path) -> models.ProjectData:
             models.TaskStatus.CANCELLED,
             models.TaskStatus.SUPERSEDED,
         )
-        is_in_progress = t.status == models.TaskStatus.IN_PROGRESS
+        is_in_progress = t.status in models.ACTIVE_STATUSES
         if not is_done:
-            # For pending/in_progress, prioritize in_progress and then YAML
-            # order (index)
+            # For pending/active, prioritize active and then YAML order (index)
             return (
                 0,
                 0 if is_in_progress else 1,
@@ -150,43 +149,28 @@ def get_pending_task(data: models.Roadmap) -> models.Task | None:
         is already in progress.
     """
     now = time.time()
-
-    # 1. Check if ANY task is currently active (running or running hooks).
-    # If so, we must not start any other task (unless it's finalizing).
-    for task in data.tasks:
-        if lifecycle.is_task_active(task, now):
-            return None
-
-        # If it's NOT active, but it has a requested_status, it means it's a
-        # crashed finalizing task. We MUST pick it up immediately.
-        if task.requested_status:
-            return task
-
-    # 2. Sort uncompleted tasks (pending or stale in_progress) to pick the
-    # oldest one (FIFO). Note: we exclude tasks that are currently finalizing
-    # (have requested_status).
-    uncompleted = []
-    for i, task in enumerate(data.tasks):
-        if (
-            task.status
-            in (models.TaskStatus.PENDING, models.TaskStatus.IN_PROGRESS)
-            and not task.requested_status
-        ):
-            # We need to preserve the original index for tie-breaking
-            task.index = i
-            uncompleted.append(task)
-
-    if not uncompleted:
+    if any(lifecycle.is_task_active(task, now) for task in data.tasks):
         return None
 
-    def sort_key(t):
-        return (
-            (t.index if t.index is not None else 0),
-            (t.created_at or 0),
-        )
+    # A review left unowned resumes before anything new starts.
+    for task in data.tasks:
+        if task.status in (
+            models.TaskStatus.COMPLETING,
+            models.TaskStatus.FAILING,
+        ):
+            return task
 
-    uncompleted.sort(key=sort_key)
-    return uncompleted[0]
+    # A run left without an owner comes up in queue order, so the loop can
+    # reclaim it or refuse to run beside its surviving runner.
+    return next(
+        (
+            task
+            for task in data.tasks
+            if task.status
+            in (models.TaskStatus.PENDING, models.TaskStatus.RUNNING)
+        ),
+        None,
+    )
 
 
 def milestone_reached(tasks: list[models.Task], task_id: str) -> bool | None:
@@ -210,7 +194,4 @@ def milestone_reached(tasks: list[models.Task], task_id: str) -> bool | None:
     if task.status == models.TaskStatus.SUPERSEDED:
         replacements = [t for t in tasks if t.parent == task_id]
         return all(milestone_reached(tasks, t.id) for t in replacements)
-    return task.status not in (
-        models.TaskStatus.PENDING,
-        models.TaskStatus.IN_PROGRESS,
-    )
+    return task.status in models.TERMINAL_STATUSES

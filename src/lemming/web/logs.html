@@ -107,10 +107,7 @@
           :attr:title="task.description"
         >
           {{ task.id }} &middot;
-          {{
-            task.status === 'in_progress' &&
-          task.requested_status ? 'finalizing' : task.status
-          }}
+          {{ task.status }}
         </div>
       </header>
 
@@ -128,7 +125,7 @@
           </h2>
           <div class="flex items-center gap-4">
             <div
-              :if="task.status === 'in_progress' && task.started_at"
+              :if="isActiveTask(task) && task.started_at"
               class="hidden sm:block"
             >
               <span class="text-10px font-semibold uppercase text-gray-400 mr-1"
@@ -171,7 +168,7 @@
               >
             </div>
             <div
-              :if="task.run_time || task.status === 'in_progress'"
+              :if="task.run_time || isActiveTask(task)"
               class="hidden sm:block"
             >
               <span class="text-10px font-semibold uppercase text-gray-400 mr-1"
@@ -184,22 +181,19 @@
                 }}</span
               >
             </div>
-            <div
-              :if="task.status === 'in_progress'"
-              class="flex items-center gap-2"
-            >
+            <div :if="isActiveTask(task)" class="flex items-center gap-2">
               <span class="relative flex h-2 w-2">
                 <span
-                  :attr:class="'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ' + (task.requested_status ? 'bg-indigo-400' : 'bg-blue-400')"
+                  :attr:class="'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ' + (task.status !== 'running' ? 'bg-indigo-400' : 'bg-blue-400')"
                 ></span>
                 <span
-                  :attr:class="'relative inline-flex rounded-full h-2 w-2 ' + (task.requested_status ? 'bg-indigo-500' : 'bg-blue-500')"
+                  :attr:class="'relative inline-flex rounded-full h-2 w-2 ' + (task.status !== 'running' ? 'bg-indigo-500' : 'bg-blue-500')"
                 ></span>
               </span>
               <span
-                :attr:class="'text-xs font-medium uppercase tracking-wider ' + (task.requested_status ? 'text-indigo-600' : 'text-blue-600')"
+                :attr:class="'text-xs font-medium uppercase tracking-wider ' + (task.status !== 'running' ? 'text-indigo-600' : 'text-blue-600')"
                 >{{
-                  task.requested_status ? 'Finalizing' : 'Live'
+                  task.status !== 'running' ? 'Finalizing' : 'Live'
                 }}</span
               >
             </div>
@@ -279,9 +273,11 @@
             const remainingSeconds = Math.floor(seconds % 60);
             return `${minutes}m ${remainingSeconds}s`;
           };
+          $.isActiveTask = (task) =>
+            ['running', 'completing', 'failing'].includes(task.status);
           $.formatTaskRunTime = (task) => {
             let total = task.run_time || 0;
-            if (task.status === 'in_progress' && task.last_started_at) {
+            if ($.isActiveTask(task) && task.last_started_at) {
               total += Date.now() / 1000 - task.last_started_at;
             }
             return $.formatDuration(total);
@@ -304,16 +300,15 @@
 
               // Update favicon status
               if (window.updateFavicon) {
-                const state =
-                  $.task.status === 'in_progress'
-                    ? 'running'
-                    : $.task.status === 'completed'
-                      ? 'success'
-                      : $.task.status === 'superseded'
-                        ? 'idle'
-                        : $.task.attempts > 0
-                          ? 'error'
-                          : 'idle';
+                const state = $.isActiveTask($.task)
+                  ? 'running'
+                  : $.task.status === 'completed'
+                    ? 'success'
+                    : $.task.status === 'superseded'
+                      ? 'idle'
+                      : $.task.attempts > 0
+                        ? 'error'
+                        : 'idle';
 
                 $.faviconState = state;
 

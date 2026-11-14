@@ -662,7 +662,7 @@
                   >
                   <span class="font-mono">{{ task.pid }}</span>
                 </div>
-                <div :if="task.status === 'in_progress' && task.started_at">
+                <div :if="isActiveTask(task) && task.started_at">
                   <span
                     class="font-semibold uppercase text-gray-400 block mb-1 text-9px"
                     >Started At:</span
@@ -698,7 +698,7 @@
                     task.superseded_reason
                   }}</span>
                 </div>
-                <div :if="task.run_time || task.status === 'in_progress'">
+                <div :if="task.run_time || isActiveTask(task)">
                   <span
                     class="font-semibold uppercase text-gray-400 block mb-1 text-9px"
                     >Run Time:</span
@@ -707,7 +707,7 @@
                     formatTaskRunTime(task)
                   }}</span>
                 </div>
-                <div :if="task.has_runner_log || task.status === 'in_progress'">
+                <div :if="task.has_runner_log || isActiveTask(task)">
                   <span
                     class="font-semibold uppercase text-gray-400 block mb-1 text-9px"
                     >Logs:</span
@@ -717,7 +717,7 @@
                          depends on task.id, so there is no static path to
                          fall back to; mancha sets it via :attr:href -->
                     <a
-                      :if="task.has_runner_log || task.status === 'in_progress'"
+                      :if="task.has_runner_log || isActiveTask(task)"
                       :attr:href="'/tasks/' + task.id + '/log?name=runner' + ($$project ? '&project=' + encodeURIComponent($$project) : '')"
                       target="_blank"
                       class="text-indigo-600 hover:text-indigo-800 font-medium transition duration-200"
@@ -898,7 +898,7 @@
         <button
           type="button"
           :on:click="confirmCancelTask()"
-          :show="taskActionTargetStatus === 'pending' || taskActionTargetStatus === 'in_progress'"
+          :show="taskActionTargetStatus === 'pending' || taskActionTargetActive"
           class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Cancel Task
@@ -906,7 +906,7 @@
         <button
           type="button"
           :on:click="clearTaskFromModal()"
-          :show="taskActionTargetStatus !== 'completed' && taskActionTargetStatus !== 'in_progress' && taskActionTargetHasAttempts"
+          :show="taskActionTargetStatus !== 'completed' && !taskActionTargetActive && taskActionTargetHasAttempts"
           class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Clear Attempts
@@ -914,7 +914,7 @@
         <button
           type="button"
           :on:click="confirmDeleteTask()"
-          :show="taskActionTargetStatus !== 'in_progress'"
+          :show="!taskActionTargetActive"
           class="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition duration-200 cursor-pointer"
         >
           Delete Permanently

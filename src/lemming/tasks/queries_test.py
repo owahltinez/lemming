@@ -141,7 +141,7 @@ def test_uncompleted_tasks_sorting_prioritizes_in_progress(tmp_path):
             models.Task(
                 id="2",
                 description="Task 2",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
                 created_at=2.0,
             ),
             models.Task(
@@ -183,7 +183,7 @@ def test_failed_tasks_sorting_grouped_with_completed(tmp_path):
             models.Task(
                 id="2",
                 description="In Progress",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
                 created_at=now + 1,
             ),
             models.Task(
@@ -246,7 +246,7 @@ def test_get_pending_task_none_if_in_progress(tmp_path):
                 models.Task(
                     id="1",
                     description="Task 1",
-                    status=models.TaskStatus.IN_PROGRESS,
+                    status=models.TaskStatus.RUNNING,
                     last_heartbeat=time.time(),
                     pid=12345,
                 )

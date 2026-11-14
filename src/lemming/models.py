@@ -50,14 +50,40 @@ class AmbiguousTaskIdError(ValueError):
 
 
 class TaskStatus(enum.StrEnum):
-    """Enumeration of possible task statuses."""
+    """Phases of a task, moved between by tasks/state_machine.py."""
 
     PENDING = "pending"
-    IN_PROGRESS = "in_progress"
+    RUNNING = "running"
+    # The agent has finished; hooks are reviewing the outcome.
+    COMPLETING = "completing"
+    FAILING = "failing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
     SUPERSEDED = "superseded"
+
+    @property
+    def outcome(self) -> "TaskStatus":
+        """The status a finalizing task is heading for, else this one."""
+        return _OUTCOMES.get(self, self)
+
+
+_OUTCOMES = {
+    TaskStatus.COMPLETING: TaskStatus.COMPLETED,
+    TaskStatus.FAILING: TaskStatus.FAILED,
+}
+# Statuses whose task has an owner working on it.
+ACTIVE_STATUSES = frozenset(
+    {TaskStatus.RUNNING, TaskStatus.COMPLETING, TaskStatus.FAILING}
+)
+TERMINAL_STATUSES = frozenset(
+    {
+        TaskStatus.COMPLETED,
+        TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
+        TaskStatus.SUPERSEDED,
+    }
+)
 
 
 class Task(pydantic.BaseModel):
@@ -93,7 +119,6 @@ class Task(pydantic.BaseModel):
     parent: str | None = None
     parent_tasks_file: str | None = None
     index: int | None = pydantic.Field(default=None)
-    requested_status: TaskStatus | None = None
     # Set by a finalization hook that found a defect it could not fix.
     # Blocks the requested completion and is cleared on every retry.
     rejection: str | None = None
@@ -103,6 +128,25 @@ class Task(pydantic.BaseModel):
     pre_head: str | None = None
     diff_summary: str | None = None
     hook_trees: dict[str, list[str]] | None = None
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _merge_requested_status(cls, data):
+        """Maps the status pair older roadmaps stored onto a single status."""
+        if not isinstance(data, dict) or not (
+            "requested_status" in data or data.get("status") == "in_progress"
+        ):
+            return data
+        data = dict(data)
+        requested = data.pop("requested_status", None)
+        if data.get("status") == "in_progress":
+            data["status"] = {
+                "completed": TaskStatus.COMPLETING,
+                "failed": TaskStatus.FAILING,
+                "cancelled": TaskStatus.CANCELLED,
+                "superseded": TaskStatus.SUPERSEDED,
+            }.get(requested, TaskStatus.RUNNING)
+        return data
 
 
 class RoadmapConfig(pydantic.BaseModel):

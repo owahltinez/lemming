@@ -9,7 +9,7 @@ import subprocess
 import time
 
 from .. import models, paths, persistence, snapshots
-from . import limits
+from . import limits, state_machine
 
 logger = logging.getLogger(__name__)
 
@@ -40,20 +40,6 @@ def is_loop_lock_held(tasks_file: pathlib.Path) -> bool:
     """Check if a live process holds the loop lock while holding tasks.lock."""
     pid = persistence.get_loop_pid(tasks_file)
     return pid is not None and is_pid_alive(pid)
-
-
-def update_run_time(task: models.Task, end_time: float | None = None) -> None:
-    """Accumulates the execution run time for a given task.
-
-    Args:
-        task: The Task to update.
-        end_time: Optional end timestamp (defaults to current time).
-    """
-    if task.last_started_at is not None:
-        end = end_time or time.time()
-        duration = end - task.last_started_at
-        task.run_time += duration
-        task.last_started_at = None
 
 
 def record_execution_time(
@@ -146,194 +132,67 @@ def mark_execution_started(
 
 
 def is_task_active(task: models.Task, now: float) -> bool:
-    """Returns True if the task is actively being executed.
-
-    A task is active if:
-    1. It is marked IN_PROGRESS or has a requested_status (finalizing).
-    2. AND it has a PID that is alive.
-    3. AND its heartbeat is recent (not stale).
-    """
-    if (
-        task.status != models.TaskStatus.IN_PROGRESS
-        and not task.requested_status
-    ):
+    """Returns True if a live, heartbeating owner is working on the task."""
+    if task.status not in models.ACTIVE_STATUSES:
         return False
 
     if not task.pid or not is_pid_alive(task.pid):
         return False
 
     last_heartbeat = task.last_heartbeat or 0
-    if now - last_heartbeat > persistence.STALE_THRESHOLD:
-        return False
-
-    return True
-
-
-def _mark_task_in_progress(
-    data: models.Roadmap, task_id: str, pid: int | None = None
-) -> bool:
-    """Internal helper to mark a task as in_progress without locking or saving.
-
-    Args:
-        data: The Roadmap to update.
-        task_id: The ID of the task to mark.
-        pid: Optional process ID associated with the task.
-
-    Returns:
-        True if the task was successfully marked, False otherwise.
-    """
-    now = time.time()
-    for task in data.tasks:
-        if task.id == task_id:
-            # A task can be marked in progress if it's pending, or if it's
-            # nominally in progress/finalizing but has crashed or timed out
-            # (stale).
-            if task.status == models.TaskStatus.PENDING or (
-                (
-                    task.status == models.TaskStatus.IN_PROGRESS
-                    or task.requested_status
-                )
-                and not is_task_active(task, now)
-            ):
-                task.status = models.TaskStatus.IN_PROGRESS
-                # A new attempt must not inherit the previous one's
-                # rejection, which would block its completion too.
-                task.rejection = None
-                task.last_heartbeat = now
-                if task.started_at is None:
-                    task.started_at = now
-                task.last_started_at = now
-                task.active_execution_component = None
-                task.active_execution_started_at = None
-                if pid is not None:
-                    task.pid = pid
-                return True
-            return False
-    return False
-
-
-def mark_task_in_progress(
-    tasks_file: pathlib.Path, task_id: str, pid: int | None = None
-) -> bool:
-    """Try to mark a task as in_progress. Returns True if successful.
-
-    Args:
-        tasks_file: Path to the tasks YAML file.
-        task_id: The ID of the task to mark.
-        pid: Optional process ID associated with the task.
-
-    Returns:
-        True if the task was successfully marked, False otherwise.
-    """
-    with persistence.lock_tasks(tasks_file):
-        data = persistence.load_tasks(tasks_file)
-        if _mark_task_in_progress(data, task_id, pid=pid):
-            persistence.save_tasks(tasks_file, data)
-            return True
-    return False
+    return now - last_heartbeat <= persistence.STALE_THRESHOLD
 
 
 def claim_task(
-    tasks_file: pathlib.Path, task_id: str, pid: int
+    tasks_file: pathlib.Path,
+    task_id: str,
+    pid: int,
+    working_dir: pathlib.Path | None = None,
+    status: models.TaskStatus = models.TaskStatus.RUNNING,
 ) -> models.Task | None:
-    """Claims a task for execution: marks in_progress and increments attempts.
+    """Gives a task to an owner: starts a pending one or resumes a review.
 
-    Reclaiming a stale in_progress task resumes its cut-off attempt, which
-    was already counted, so attempts stay put.
+    Starting a run counts an attempt and checkpoints the workspace as its
+    pre_tree. A review left unowned is resumed as it was.
 
     Args:
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task to claim.
-        pid: The process ID of the agent executing the task.
+        pid: The process ID of the new owner.
+        working_dir: Workspace to checkpoint; defaults to the tasks file's.
+        status: What a pending task moves to: running, or failing once it
+            has run out of attempts.
 
     Returns:
         The claimed Task, or None if the task could not be claimed.
     """
-    with persistence.lock_tasks(tasks_file):
-        data = persistence.load_tasks(tasks_file)
-        resumed = any(
-            t.id == task_id and t.status == models.TaskStatus.IN_PROGRESS
-            for t in data.tasks
-        )
-        if not _mark_task_in_progress(data, task_id, pid=pid):
-            return None
-
-        task = next(t for t in data.tasks if t.id == task_id)
-        if not task.requested_status and not (resumed and task.attempts):
-            task.attempts += 1
-        persistence.save_tasks(tasks_file, data)
-        return task
-
-
-def finish_task_attempt(
-    tasks_file: pathlib.Path,
-    task_id: str,
-    count_attempt: bool = True,
-) -> models.Task | None:
-    """Handles post-execution cleanup for a task attempt.
-
-    Args:
-        tasks_file: Path to the tasks YAML file.
-        task_id: The ID of the task that finished.
-        count_attempt: Whether the attempt should consume the retry budget.
-
-    Returns:
-        The updated Task, or None if not found.
-    """
+    pre_tree = pre_head = None
+    if status == models.TaskStatus.RUNNING:
+        working_dir = working_dir or paths.get_working_dir(tasks_file)
+        pre_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+        pre_head = snapshots.head_commit(working_dir)
+    now = time.time()
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
         task = next((t for t in data.tasks if t.id == task_id), None)
-        if not task:
+        if task is None or is_task_active(task, now):
             return None
-
-        if task.status == models.TaskStatus.IN_PROGRESS:
-            # If it failed or simply finished without requesting completion,
-            # we keep it as pending so it can be retried.
-            if not task.requested_status:
-                update_run_time(task)
-                task.status = models.TaskStatus.PENDING
-                task.last_heartbeat = None
-                if not count_attempt:
-                    task.attempts = max(0, task.attempts - 1)
-            else:
-                task.last_heartbeat = time.time()
-
-            task.pid = None
-            persistence.save_tasks(tasks_file, data)
-
-        return task
-
-
-def revert_task_to_pending(
-    tasks_file: pathlib.Path, task_id: str
-) -> models.Task | None:
-    """Reverts an in-progress or finalizing task to pending for a retry.
-
-    Unlike reset_task, this preserves the attempt count and progress so
-    retry accounting still applies.
-
-    Args:
-        tasks_file: Path to the tasks YAML file.
-        task_id: The ID of the task to revert.
-
-    Returns:
-        The updated Task, or None if not found.
-    """
-    with persistence.lock_tasks(tasks_file):
-        data = persistence.load_tasks(tasks_file)
-        task = next((t for t in data.tasks if t.id == task_id), None)
-        if not task:
+        if task.status == models.TaskStatus.PENDING:
+            state_machine.set_status(task, status, now)
+            if status == models.TaskStatus.RUNNING:
+                task.pre_tree = pre_tree
+                task.pre_head = pre_head
+                task.runner_tree = None
+                task.hook_trees = None
+        elif task.status in (
+            models.TaskStatus.COMPLETING,
+            models.TaskStatus.FAILING,
+        ):
+            task.last_started_at = now
+            task.last_heartbeat = now
+        else:
             return None
-
-        update_run_time(task)
-        task.status = models.TaskStatus.PENDING
-        task.requested_status = None
-        task.rejection = None
-        task.pid = None
-        task.last_heartbeat = None
-        task.active_execution_component = None
-        task.active_execution_started_at = None
-
+        task.pid = pid
         persistence.save_tasks(tasks_file, data)
         return task
 
@@ -374,10 +233,7 @@ def reject_task(
             raise ValueError(f"Task {task_id} not found")
 
         # Only a completion that has not been applied yet can be blocked.
-        if (
-            target.status != models.TaskStatus.IN_PROGRESS
-            or target.requested_status != models.TaskStatus.COMPLETED
-        ):
+        if target.status != models.TaskStatus.COMPLETING:
             raise ValueError(
                 f"Task {target.id} is not awaiting completion; only a task "
                 "finalizing as completed can be rejected."
@@ -399,14 +255,14 @@ def update_heartbeat(
         pid: Optional new PID to store (e.g. the runner subprocess PID).
 
     Returns:
-        True if the task is still in_progress, False if it was cancelled or
+        True if the task is still active, False if it was cancelled or
         otherwise changed (caller should stop work).
     """
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
         for task in data.tasks:
             if task.id == task_id:
-                if task.status != models.TaskStatus.IN_PROGRESS:
+                if task.status not in models.ACTIVE_STATUSES:
                     return False
                 task.last_heartbeat = time.time()
                 if pid is not None:
@@ -426,30 +282,6 @@ def reset_task_logs(tasks_file: pathlib.Path, task_id: str) -> None:
     log_file = paths.get_log_file(tasks_file, task_id)
     if log_file.exists():
         log_file.unlink()
-
-
-def write_patch_artifact(
-    tasks_file: pathlib.Path,
-    task_id: str,
-    filename: str,
-    pre_tree: str | None,
-    post_tree: str | None,
-) -> None:
-    """Writes the diff between two trees into the task's artifacts directory."""
-    if not pre_tree or not post_tree or pre_tree == post_tree:
-        return
-    patch_text = snapshots.diff_trees(tasks_file, pre_tree, post_tree)
-    if not patch_text:
-        return
-    artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    # A patch may be the only copy of reverted work, so never overwrite one.
-    base = target = artifacts_dir / filename
-    n = 1
-    while target.exists():
-        n += 1
-        target = base.with_name(f"{base.stem}-{n}{base.suffix}")
-    target.write_text(patch_text, encoding="utf-8", errors="surrogateescape")
 
 
 def escaped_descendants(pid: int, pgid: int) -> list[int]:
@@ -583,19 +415,18 @@ def cancel_task(
         tasks_file: Path to the tasks YAML file.
         task_id: The ID of the task to cancel.
         working_dir: Optional workspace directory to restore when cancelling
-            an in-progress task.
+            an active task.
 
     Returns:
         True if the task was found and cancellation was attempted, False
         otherwise.
+
+    Raises:
+        state_machine.TransitionError: If the task has already finished.
     """
     # Update the task state first and release the lock: the kill below can
     # wait out a grace period and must not stall heartbeats or readers.
     task_pid = None
-    was_in_progress = False
-    pre_tree = None
-    prev_runner_tree = None
-    resolved_id = task_id
     with persistence.lock_tasks(tasks_file):
         data = persistence.load_tasks(tasks_file)
         task = next(
@@ -609,70 +440,32 @@ def cancel_task(
             return False
 
         resolved_id = task.id
-        was_in_progress = task.status == models.TaskStatus.IN_PROGRESS
-        pre_tree = task.pre_tree
-        prev_runner_tree = task.runner_tree
-        loop_pid = persistence.get_loop_pid(tasks_file)
-        if was_in_progress and task.pid != loop_pid:
+        if (
+            task.status in models.ACTIVE_STATUSES
+            and task.pid != persistence.get_loop_pid(tasks_file)
+        ):
             task_pid = task.pid
-
-        update_run_time(task)
-        task.status = models.TaskStatus.CANCELLED
-        task.pid = None
-        task.last_heartbeat = None
-        task.requested_status = None
-        task.active_execution_component = None
-        task.active_execution_started_at = None
-        task.runner_tree = None
-        task.hook_trees = None
-        if not ((was_in_progress or prev_runner_tree is not None) and pre_tree):
+        if task.status not in models.ACTIVE_STATUSES:
+            # Only an attempt in flight has changes of its own to undo.
             task.pre_tree = None
             task.pre_head = None
-
+        state_machine.set_status(task, models.TaskStatus.CANCELLED)
         persistence.save_tasks(tasks_file, data)
 
     if task_pid:
         _kill_pid_tree(task_pid)
 
-    if (was_in_progress or prev_runner_tree is not None) and pre_tree:
-        resolved_dir = working_dir or paths.get_working_dir(tasks_file)
-        with persistence.lock_tasks(tasks_file):
-            data = persistence.load_tasks(tasks_file)
-            current = next((t for t in data.tasks if t.id == resolved_id), None)
-            if current is not None and current.pre_tree is not None:
-                restore_target = current.pre_tree
-                restore_head = current.pre_head
-                current_tree = snapshots.snapshot_tree(tasks_file, resolved_dir)
-                write_patch_artifact(
-                    tasks_file,
-                    resolved_id,
-                    "cancelled.patch",
-                    restore_target,
-                    current_tree,
-                )
-                if current_tree != restore_target or (
-                    restore_head is not None
-                    and snapshots.head_commit(resolved_dir) != restore_head
-                ):
-                    snapshots.restore_tree(
-                        tasks_file,
-                        resolved_dir,
-                        restore_target,
-                        current_tree=current_tree,
-                        target_head=restore_head,
-                    )
-                current.pre_tree = None
-                current.pre_head = None
-                current.runner_tree = None
-                current.hook_trees = None
-                persistence.save_tasks(tasks_file, data)
-
+    state_machine.settle(
+        tasks_file,
+        resolved_id,
+        working_dir or paths.get_working_dir(tasks_file),
+    )
     return True
 
 
 def clear_task_state(task: models.Task) -> None:
     """Resets a task's status, attempts, progress, and snapshot fields."""
-    task.status = models.TaskStatus.PENDING
+    state_machine.set_status(task, models.TaskStatus.PENDING)
     task.attempts = 0
     task.progress = []
     task.run_time = 0.0
@@ -686,7 +479,6 @@ def clear_task_state(task: models.Task) -> None:
     task.last_started_at = None
     task.pid = None
     task.last_heartbeat = None
-    task.requested_status = None
     task.rejection = None
     task.pre_tree = None
     task.runner_tree = None
@@ -712,10 +504,10 @@ def reset_task(tasks_file: pathlib.Path, task_id: str) -> models.Task:
         if not target:
             raise models.TaskNotFoundError(f"Task {task_id} not found")
 
-        was_in_progress = target.status == models.TaskStatus.IN_PROGRESS
+        was_active = target.status in models.ACTIVE_STATUSES
         clear_task_state(target)
         persistence.save_tasks(tasks_file, data)
-        if not was_in_progress and not is_loop_lock_held(tasks_file):
+        if not was_active and not is_loop_lock_held(tasks_file):
             snapshots.prune_snapshots(
                 tasks_file, snapshots.collect_task_trees(data.tasks)
             )

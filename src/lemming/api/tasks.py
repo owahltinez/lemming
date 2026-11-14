@@ -202,11 +202,15 @@ def cancel_task_endpoint(
     request: fastapi.Request, task_id: str, project: str | None = None
 ):
     """Cancel a running or pending task."""
-    if lifecycle.cancel_task(
-        context.resolve_tasks_file(request.app.state, project),
-        task_id,
-        working_dir=context.resolve_project_dir(request.app.state, project),
-    ):
+    try:
+        cancelled = lifecycle.cancel_task(
+            context.resolve_tasks_file(request.app.state, project),
+            task_id,
+            working_dir=context.resolve_project_dir(request.app.state, project),
+        )
+    except ValueError as e:
+        raise fastapi.HTTPException(400, str(e))
+    if cancelled:
         return {"status": "ok"}
     raise fastapi.HTTPException(404, "Task not found")
 
@@ -277,7 +281,7 @@ def get_task_diff(
         return {"diff": "", "summary": target.diff_summary}
 
     end_tree = target.post_tree or target.runner_tree
-    if not end_tree and target.status == models.TaskStatus.IN_PROGRESS:
+    if not end_tree and target.status in models.ACTIVE_STATUSES:
         end_tree = snapshots.snapshot_tree(tasks_file, working_dir)
     diff_text = (
         snapshots.diff_trees(tasks_file, target.pre_tree, end_tree)

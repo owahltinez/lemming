@@ -8,7 +8,9 @@ from lemming import models
 
 def test_task_status_values():
     assert models.TaskStatus.PENDING == "pending"
-    assert models.TaskStatus.IN_PROGRESS == "in_progress"
+    assert models.TaskStatus.RUNNING == "running"
+    assert models.TaskStatus.COMPLETING == "completing"
+    assert models.TaskStatus.FAILING == "failing"
     assert models.TaskStatus.COMPLETED == "completed"
     assert models.TaskStatus.FAILED == "failed"
     assert models.TaskStatus.SUPERSEDED == "superseded"
@@ -26,6 +28,24 @@ def test_task_model_defaults():
     assert task.superseded_at is None
     assert task.superseded_reason is None
     assert task.created_at > 0
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ({"status": "in_progress"}, "running"),
+        (
+            {"status": "in_progress", "requested_status": "completed"},
+            "completing",
+        ),
+        ({"status": "in_progress", "requested_status": "failed"}, "failing"),
+        ({"status": "completed", "requested_status": None}, "completed"),
+    ],
+)
+def test_task_migrates_split_status(old, new):
+    task = models.Task.model_validate({"id": "t", "description": "d", **old})
+    assert task.status == new
+    assert "requested_status" not in task.model_dump()
 
 
 def test_task_model_validation():

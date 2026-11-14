@@ -56,7 +56,7 @@ class TestCLIOperations(unittest.TestCase):
                     models.Task(
                         id="active123",
                         description="Active task",
-                        status=models.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.RUNNING,
                         pid=1234,
                         last_heartbeat=time.time(),
                     ),
@@ -87,7 +87,7 @@ class TestCLIOperations(unittest.TestCase):
                     models.Task(
                         id="orphan12",
                         description="Orphaned task",
-                        status=models.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.RUNNING,
                         attempts=1,
                         pid=999999,
                         last_heartbeat=time.time() - 3600,
@@ -148,7 +148,7 @@ class TestCLIOperations(unittest.TestCase):
                     models.Task(
                         id="orphan12",
                         description="Orphaned task",
-                        status=models.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.RUNNING,
                         attempts=2,
                         pid=999999,
                         last_heartbeat=time.time() - 3600,
@@ -176,8 +176,7 @@ class TestCLIOperations(unittest.TestCase):
                     models.Task(
                         id="orphan12",
                         description="Orphaned task",
-                        status=models.TaskStatus.IN_PROGRESS,
-                        requested_status=models.TaskStatus.COMPLETED,
+                        status=models.TaskStatus.COMPLETING,
                         attempts=1,
                         pid=999999,
                         last_heartbeat=time.time() - 3600,
@@ -204,8 +203,7 @@ class TestCLIOperations(unittest.TestCase):
                     models.Task(
                         id="orphan12",
                         description="Orphaned task",
-                        status=models.TaskStatus.IN_PROGRESS,
-                        requested_status=models.TaskStatus.FAILED,
+                        status=models.TaskStatus.FAILING,
                         attempts=1,
                         pid=999999,
                         last_heartbeat=time.time() - 3600,
@@ -340,7 +338,7 @@ class TestCLIOperations(unittest.TestCase):
                         models.Task(
                             id="orphan12",
                             description="Orphaned task",
-                            status=models.TaskStatus.IN_PROGRESS,
+                            status=models.TaskStatus.RUNNING,
                             attempts=1,
                             pid=runner.pid,
                             last_heartbeat=time.time() - 3600,

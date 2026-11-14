@@ -144,7 +144,7 @@ def test_prepare_hook_prompt_substitution(tmp_path, monkeypatch):
             models.Task(
                 id="task2",
                 description="Task 2",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
             ),
         ],
     )
@@ -432,19 +432,17 @@ def test_prepare_prompt_time_limit_custom(tmp_path):
 def test_prepare_hook_prompt_shows_failed_for_exhausted_task(
     tmp_path, monkeypatch
 ):
-    """A task with requested_status=FAILED (during hook execution) should show
-    Result: failed and [FAILED] in the roadmap, not in_progress."""
+    """A failing task (during hook execution) should show Result: failed and
+    [FAILED] in the roadmap, not in progress."""
     lemming_home = tmp_path / "lemming_home"
     monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
 
     tasks_file = tmp_path / "tasks.yml"
-    # Simulate the state during hook execution after retry exhaustion:
-    # status=IN_PROGRESS, requested_status=FAILED
+    # Simulate the state during hook execution after retry exhaustion.
     failed_task = models.Task(
         id="task1",
         description="Flaky task",
-        status=models.TaskStatus.IN_PROGRESS,
-        requested_status=models.TaskStatus.FAILED,
+        status=models.TaskStatus.FAILING,
         attempts=3,
         progress=["Task killed: time limit of 60 minutes reached."],
     )
@@ -512,8 +510,7 @@ def test_format_roadmap_with_finalizing_task():
             models.Task(
                 id="2",
                 description="Finalizing",
-                status=models.TaskStatus.IN_PROGRESS,
-                requested_status=models.TaskStatus.COMPLETED,
+                status=models.TaskStatus.COMPLETING,
                 progress=["b"],
             ),
         ]
@@ -645,8 +642,7 @@ def test_format_task_block_and_hook_prompt_include_diff_summary(
     current = models.Task(
         id="t3",
         description="Task 3",
-        status=models.TaskStatus.IN_PROGRESS,
-        requested_status=models.TaskStatus.COMPLETED,
+        status=models.TaskStatus.COMPLETING,
     )
     data = models.Roadmap(tasks=[done_with_diff, done_no_diff, current])
 

@@ -49,7 +49,7 @@ def test_tasks():
             models.Task(
                 id="task3",
                 description="In Progress Task",
-                status=models.TaskStatus.IN_PROGRESS,
+                status=models.TaskStatus.RUNNING,
                 attempts=1,
                 progress=[],
                 pid=os.getpid(),

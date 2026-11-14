@@ -28,7 +28,7 @@ class TestMachineOutput(unittest.TestCase):
                     models.Task(
                         id="task1",
                         description=LONG_DESCRIPTION,
-                        status=models.TaskStatus.IN_PROGRESS,
+                        status=models.TaskStatus.RUNNING,
                         model="fast-model",
                         resolved_command="agy --model fast-model",
                     ),
@@ -67,7 +67,7 @@ class TestMachineOutput(unittest.TestCase):
         payload = json.loads(self._invoke("status", "task1", "--json").output)
 
         self.assertEqual(payload["id"], "task1")
-        self.assertEqual(payload["status"], "in_progress")
+        self.assertEqual(payload["status"], "running")
 
     def test_status_brief_omits_descriptions(self):
         """Answering "what is running?" must not cost 20KB of prose."""
