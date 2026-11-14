@@ -29,10 +29,20 @@ _NEXT: dict[S, frozenset[S]] = {
             S.SUPERSEDED,
         }
     ),
+    # A review may switch outcome: the agent changing its mind, or --force.
     S.COMPLETING: frozenset(
-        {S.PENDING, S.COMPLETED, S.CANCELLED, S.SUPERSEDED}
+        {S.PENDING, S.FAILING, S.COMPLETED, S.FAILED, S.CANCELLED, S.SUPERSEDED}
     ),
-    S.FAILING: frozenset({S.PENDING, S.FAILED, S.CANCELLED, S.SUPERSEDED}),
+    S.FAILING: frozenset(
+        {
+            S.PENDING,
+            S.COMPLETING,
+            S.COMPLETED,
+            S.FAILED,
+            S.CANCELLED,
+            S.SUPERSEDED,
+        }
+    ),
     **{
         status: frozenset({S.PENDING, S.COMPLETED, S.FAILED} - {status})
         for status in models.TERMINAL_STATUSES
@@ -189,9 +199,9 @@ def settle(
     """Returns a task to its status's checkpoint once its process stops.
 
     A running task goes back to pending at its pre_tree. A completing task
-    keeps the agent's work: its runner_tree is taken the first time and
-    restored after that, so only the reviews start over. A failing or
-    cancelled task drops the attempt's changes.
+    keeps the agent's work: its runner_tree is taken the first time, and
+    restored when a cut-off owner is released, so only the reviews start
+    over. A failing or cancelled task drops the attempt's changes.
 
     Args:
         tasks_file: Path to the tasks YAML file.
@@ -211,7 +221,8 @@ def settle(
     if task.status == S.COMPLETING:
         if runner_tree is None:
             runner_tree = snapshots.snapshot_tree(tasks_file, working_dir)
-        else:
+        elif released_at is not None:
+            # Only a cut-off hook's edits; a resume keeps edits made since.
             rewind(
                 tasks_file,
                 task_id,

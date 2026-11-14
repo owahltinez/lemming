@@ -143,6 +143,8 @@ class Task(pydantic.BaseModel):
             data["status"] = {
                 "completed": TaskStatus.COMPLETING,
                 "failed": TaskStatus.FAILING,
+                "cancelled": TaskStatus.CANCELLED,
+                "superseded": TaskStatus.SUPERSEDED,
             }.get(requested, TaskStatus.RUNNING)
         return data
 

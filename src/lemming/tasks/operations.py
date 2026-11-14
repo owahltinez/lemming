@@ -355,6 +355,8 @@ def update_task(
                 if status == models.TaskStatus.COMPLETED
                 else models.TaskStatus.FAILING
             )
+        if status == models.TaskStatus.RUNNING != target.status:
+            raise ValueError("Only a loop can start a run; it claims the task.")
         if status and status != target.status:
             state_machine.set_status(target, status)
             if status == models.TaskStatus.PENDING:

@@ -507,8 +507,12 @@ def _handle_runner_exit(
     scope: str | None = None,
     retry_runner_failures: bool = False,
     abort_failed_finalization: bool = False,
+    claimed: models.Task | None = None,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
+
+    Args:
+        claimed: The task as claimed for this run, holding its checkpoint.
 
     Returns True to abort the run loop, False to continue.
     """
@@ -542,6 +546,24 @@ def _handle_runner_exit(
     if not post_task:
         click.echo("Error: Task disappeared from roadmap during execution.")
         return True
+    if claimed is not None and (
+        post_task.status
+        in (models.TaskStatus.FAILED, models.TaskStatus.SUPERSEDED)
+        or (
+            post_task.status == models.TaskStatus.PENDING
+            and not post_task.pre_tree
+        )
+    ):
+        # Moved by hand mid-run (reset, reopened, superseded, force-failed),
+        # taking its checkpoint along; the claim still holds it.
+        state_machine.rewind(
+            tasks_file,
+            task_id,
+            working_dir,
+            claimed.pre_tree,
+            claimed.pre_head,
+            f"attempt-{max(1, claimed.attempts)}.patch",
+        )
     requested = post_task.status in (
         models.TaskStatus.COMPLETING,
         models.TaskStatus.FAILING,
@@ -856,19 +878,21 @@ def run_loop(
             one_task_runner = current_task.runner or runner_name
             one_task_model = current_task.model or model_name
 
+        orphan_pid = current_task.pid
+        # A runner or hook in its own session can outlive its loop; never
+        # run two.
+        if (
+            current_task.status in models.ACTIVE_STATUSES
+            and orphan_pid
+            and orphan_pid != os.getpid()
+            and lifecycle.is_pid_alive(orphan_pid)
+        ):
+            click.echo(
+                f"Task {task_id} was abandoned, but its runner (pid "
+                f"{orphan_pid}) is still running; kill it, then rerun."
+            )
+            return False
         if current_task.status == models.TaskStatus.RUNNING:
-            orphan_pid = current_task.pid
-            # A runner in its own session can outlive its loop; never run two.
-            if (
-                orphan_pid
-                and orphan_pid != os.getpid()
-                and lifecycle.is_pid_alive(orphan_pid)
-            ):
-                click.echo(
-                    f"Task {task_id} was abandoned, but its runner (pid "
-                    f"{orphan_pid}) is still running; kill it, then rerun."
-                )
-                return False
             recover_abandoned_tasks(tasks_file, working_dir)
             continue
 
@@ -1044,6 +1068,7 @@ def run_loop(
             scope=scope,
             retry_runner_failures=once,
             abort_failed_finalization=once,
+            claimed=current_task,
         )
         if should_abort:
             return False

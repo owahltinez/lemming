@@ -13,7 +13,7 @@ S = models.TaskStatus
     ("start", "end"),
     [
         (S.PENDING, S.COMPLETING),
-        (S.COMPLETING, S.FAILING),
+        (S.FAILING, S.RUNNING),
         (S.COMPLETED, S.CANCELLED),
         (S.SUPERSEDED, S.RUNNING),
     ],

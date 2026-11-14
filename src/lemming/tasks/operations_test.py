@@ -375,9 +375,7 @@ def test_add_task_refuses_to_replace_a_corrupted_roadmap(tmp_path):
 def test_delete_started_task_requires_explicit_force(tmp_path):
     tasks_file = tmp_path / "tasks.yml"
     task = operations.add_task(tasks_file, "Started task")
-    operations.update_task(
-        tasks_file, task.id, status=models.TaskStatus.RUNNING
-    )
+    lifecycle.claim_task(tasks_file, task.id, os.getpid())
 
     with pytest.raises(ValueError, match="Supersede it"):
         operations.delete_tasks(tasks_file, task_id=task.id)
@@ -389,9 +387,7 @@ def test_supersede_task_preserves_history(tmp_path, monkeypatch):
     monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
     tasks_file = tmp_path / "tasks.yml"
     task = operations.add_task(tasks_file, "Large task")
-    operations.update_task(
-        tasks_file, task.id, status=models.TaskStatus.RUNNING
-    )
+    lifecycle.claim_task(tasks_file, task.id, os.getpid())
     log_file = paths.get_log_file(tasks_file, task.id)
     log_file.write_text("partial work")
 
@@ -1074,3 +1070,47 @@ def test_delete_and_update_skip_prune_snapshots_when_loop_active(
             mock_prune.assert_not_called()
     finally:
         persistence.release_loop_lock(tasks_file)
+
+
+@pytest.mark.parametrize(
+    ("start", "requested", "force", "expected"),
+    [
+        # The agent changes its mind after `lemming complete`.
+        (
+            models.TaskStatus.COMPLETING,
+            models.TaskStatus.FAILED,
+            False,
+            models.TaskStatus.FAILING,
+        ),
+        # `complete --force` rescues a task stuck in failure review.
+        (
+            models.TaskStatus.FAILING,
+            models.TaskStatus.COMPLETED,
+            True,
+            models.TaskStatus.COMPLETED,
+        ),
+    ],
+)
+def test_update_task_moves_between_review_outcomes(
+    tmp_path, start, requested, force, expected
+):
+    tasks_file = tmp_path / "tasks.yml"
+    task = models.Task(id="t1", description="d", status=start, progress=["p"])
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    updated = operations.update_task(
+        tasks_file, "t1", status=requested, force=force
+    )
+
+    assert updated.status == expected
+
+
+def test_update_task_refuses_to_start_a_run(tmp_path):
+    tasks_file = tmp_path / "tasks.yml"
+    task = models.Task(id="t1", description="d")
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    with pytest.raises(ValueError, match="claim"):
+        operations.update_task(
+            tasks_file, "t1", status=models.TaskStatus.RUNNING
+        )

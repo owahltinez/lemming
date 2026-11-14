@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import time
 from unittest import mock
 
@@ -795,12 +796,8 @@ def _exit_oneshot_task(tasks_file, active_hooks):
 def test_oneshot_task_completes_without_hooks(
     mock_run, mock_prepare, hooks_env
 ):
-    operations.update_task(
-        hooks_env,
-        "12345678",
-        oneshot=True,
-        status=models.TaskStatus.RUNNING,
-    )
+    operations.update_task(hooks_env, "12345678", oneshot=True)
+    lifecycle.claim_task(hooks_env, "12345678", os.getpid())
     operations.update_task(
         hooks_env, "12345678", status=models.TaskStatus.COMPLETED
     )
@@ -821,12 +818,8 @@ def test_oneshot_task_failure_still_runs_failure_hooks(
     """The skip is scoped to success: an unconditional one loses recovery."""
     mock_run.return_value = (0, "stdout", "")
     mock_prepare.return_value = "Hook Prompt"
-    operations.update_task(
-        hooks_env,
-        "12345678",
-        oneshot=True,
-        status=models.TaskStatus.RUNNING,
-    )
+    operations.update_task(hooks_env, "12345678", oneshot=True)
+    lifecycle.claim_task(hooks_env, "12345678", os.getpid())
     operations.update_task(
         hooks_env, "12345678", status=models.TaskStatus.FAILED
     )
@@ -999,9 +992,7 @@ def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
     mock_run, mock_prepare, hooks_env
 ):
     """A hook that exits cleanly can still refuse the completion."""
-    operations.update_task(
-        hooks_env, "12345678", status=models.TaskStatus.RUNNING
-    )
+    lifecycle.claim_task(hooks_env, "12345678", os.getpid())
     lifecycle.claim_task(hooks_env, "12345678", pid=os.getpid())
     operations.update_task(
         hooks_env, "12345678", status=models.TaskStatus.COMPLETED
@@ -2643,3 +2634,136 @@ def test_reset_task_in_hook_defers_prune_until_after_run_hooks(
     assert should_abort is False
     assert events == ["hook_start", "hook_end", "prune"]
     assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+
+
+@pytest.fixture
+def loop_env(tmp_path, monkeypatch):
+    """A workspace and a roadmap whose loop lock is held, as `run` holds it."""
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr("lemming.orchestrator.time.sleep", lambda *_: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "a.txt").write_text("base\n")
+    tasks_file = tmp_path / "proj" / "tasks.yml"
+    tasks_file.parent.mkdir()
+    persistence.acquire_loop_lock(tasks_file)
+    yield tasks_file, work
+    persistence.release_loop_lock(tasks_file)
+
+
+def _run_hookless(tasks_file, work, **kwargs):
+    return run_loop(
+        tasks_file,
+        False,
+        0,
+        True,
+        True,
+        (),
+        working_dir=work,
+        hooks=[],
+        **kwargs,
+    )
+
+
+def test_review_whose_process_outlived_its_loop_is_not_resumed(
+    loop_env, monkeypatch
+):
+    tasks_file, work = loop_env
+    orphan = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"]
+    )
+    try:
+        task = models.Task(
+            id="t1",
+            description="d",
+            status=models.TaskStatus.COMPLETING,
+            pid=orphan.pid,
+            last_heartbeat=0.0,
+            attempts=1,
+        )
+        persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+        monkeypatch.setattr(
+            "lemming.runner.run_with_heartbeat",
+            lambda *a, **k: pytest.fail("nothing may run beside the orphan"),
+        )
+
+        assert _run_hookless(tasks_file, work) is False
+
+        task = persistence.load_tasks(tasks_file).tasks[0]
+        assert task.status == models.TaskStatus.COMPLETING
+        assert task.pid == orphan.pid
+    finally:
+        orphan.kill()
+        orphan.wait()
+
+
+def test_resumed_review_keeps_edits_made_between_runs(loop_env):
+    tasks_file, work = loop_env
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.txt").write_text("agent\n")
+    task = models.Task(
+        id="t1",
+        description="d",
+        status=models.TaskStatus.COMPLETING,
+        attempts=1,
+        pre_tree=pre_tree,
+        runner_tree=snapshots.snapshot_tree(tasks_file, work),
+    )
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+    (work / "user.txt").write_text("user edit\n")
+
+    _run_hookless(tasks_file, work)
+
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.COMPLETED
+    assert (work / "a.txt").read_text() == "agent\n"
+    assert (work / "user.txt").exists()
+
+
+@pytest.mark.parametrize(
+    "move",
+    [
+        lambda f: operations.supersede_task(f, "t1", "replaced"),
+        lambda f: lifecycle.reset_task(f, "t1"),
+        lambda f: operations.update_task(
+            f, "t1", status=models.TaskStatus.PENDING
+        ),
+        lambda f: operations.update_task(
+            f, "t1", status=models.TaskStatus.FAILED, force=True
+        ),
+    ],
+    ids=["supersede", "reset", "reopen", "force-fail"],
+)
+def test_run_moved_by_hand_drops_its_partial_work(loop_env, monkeypatch, move):
+    tasks_file, work = loop_env
+    task = models.Task(id="t1", description="d", progress=["p"])
+    persistence.save_tasks(tasks_file, models.Roadmap(tasks=[task]))
+
+    def fake_runner(cmd, t_file, t_id, *args, **kwargs):
+        (work / "a.txt").write_text("half-done\n")
+        move(t_file)
+        return -15, "", ""  # the heartbeat kills a runner whose task moved
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_runner)
+    _run_hookless(tasks_file, work, once=True)
+
+    assert (work / "a.txt").read_text() == "base\n"
+
+
+@pytest.mark.parametrize("requested", ["cancelled", "superseded"])
+def test_migrated_cancel_request_is_not_run_again(
+    loop_env, monkeypatch, requested
+):
+    tasks_file, work = loop_env
+    tasks_file.write_text(
+        "tasks:\n- id: t1\n  description: d\n  status: in_progress\n"
+        f"  requested_status: {requested}\n  attempts: 1\n"
+    )
+    monkeypatch.setattr(
+        "lemming.runner.run_with_heartbeat",
+        lambda *a, **k: pytest.fail("a cancelled task ran again"),
+    )
+
+    _run_hookless(tasks_file, work, once=True)
+
+    assert persistence.load_tasks(tasks_file).tasks[0].status == requested
