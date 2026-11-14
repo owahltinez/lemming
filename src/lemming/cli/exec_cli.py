@@ -18,7 +18,16 @@ import typing
 
 import click
 
-from .. import hooks, models, paths, persistence, runner, scope, shutdown
+from .. import (
+    hooks,
+    models,
+    orchestrator,
+    paths,
+    persistence,
+    runner,
+    scope,
+    shutdown,
+)
 from ..orchestrator import run_loop
 from ..tasks import lifecycle, limits, operations
 from .main import TEXT_FILE, PassthroughCommand, cli
@@ -420,6 +429,23 @@ def exec_command(
             click.echo(message)
         else:
             click.echo("The agent produced no closing message.", err=True)
+    except BaseException:
+        # Nothing resumes an interrupted exec, so roll its work back.
+        with (
+            contextlib.suppress(persistence.CorruptedTasksError),
+            contextlib.redirect_stdout(sys.stderr),
+        ):
+            orchestrator.recover_abandoned_tasks(
+                tasks_file, working_dir, exiting=True
+            )
+            if _task_status(tasks_file, task_id) in (
+                models.TaskStatus.PENDING,
+                models.TaskStatus.IN_PROGRESS,
+            ):
+                lifecycle.cancel_task(
+                    tasks_file, task_id, working_dir=working_dir
+                )
+        raise
     finally:
         # A run worth investigating keeps its log, and an interrupt counts:
         # the caller may need to see how far the agent got.

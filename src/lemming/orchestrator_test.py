@@ -13,11 +13,15 @@ from lemming.orchestrator import (
     _process_finalizing_task,
     format_duration,
     parse_timeout,
+    recover_abandoned_tasks,
     run_hooks,
     run_loop,
 )
 from lemming.runner import RETURNCODE_TIMEOUT
 from lemming.tasks import lifecycle, operations, progress
+
+# The pid of a loop that has since exited.
+DEAD_PID = 999999
 
 
 @pytest.fixture
@@ -2031,7 +2035,7 @@ def test_cancellation_during_hooks_restores_once_and_suppresses_stdout(
     assert "NOISY RUNNER STDERR" not in captured.err
 
 
-def test_run_loop_restores_workspace_on_keyboard_interrupted_runner(
+def test_run_loop_interrupt_leaves_state_for_the_next_run_to_rewind(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
@@ -2040,67 +2044,57 @@ def test_run_loop_restores_workspace_on_keyboard_interrupted_runner(
     work.mkdir()
     tasks_file = work / "tasks.yml"
     (work / "app.py").write_text("v1\n", encoding="utf-8")
-    t0 = snapshots.snapshot_tree(tasks_file, work)
-    assert t0 is not None
-    # Simulate a prior rejected attempt leaving t1 on disk while pre_tree is t0.
-    (work / "app.py").write_text("rejected_v1\n", encoding="utf-8")
-    t1 = snapshots.snapshot_tree(tasks_file, work)
-    assert t1 is not None
-
     persistence.save_tasks(
         tasks_file,
         models.Roadmap(
             goal="Goal",
-            tasks=[
-                models.Task(
-                    id="t1",
-                    description="Interrupted",
-                    attempts=1,
-                    pre_tree=t0,
-                    runner_tree=t1,
-                    hook_trees={"testing": [t1, t1]},
-                )
-            ],
+            tasks=[models.Task(id="t1", description="Interrupted")],
             config=models.RoadmapConfig(retries=3, runner="agy", hooks=[]),
         ),
     )
 
-    def fake_run(cmd, t_file, t_id, verbose, **kwargs):
-        (work / "app.py").write_text("interrupted_v2\n", encoding="utf-8")
-        progress.add_progress(t_file, t_id, "completed just before ctrl+c")
-        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+    def fake_interrupt(cmd, t_file, t_id, *_args, **_kwargs):
+        (work / "app.py").write_text("partial\n", encoding="utf-8")
         raise KeyboardInterrupt
 
+    args = (tasks_file, False, 0, True, False, ())
     with (
-        mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
+        mock.patch(
+            "lemming.runner.run_with_heartbeat", side_effect=fake_interrupt
+        ),
         mock.patch("time.sleep", return_value=None),
+        mock.patch("lemming.orchestrator.os.getpid", return_value=DEAD_PID),
         pytest.raises(KeyboardInterrupt),
     ):
-        run_loop(
-            tasks_file,
-            verbose=False,
-            retry_delay=0,
-            yolo=True,
-            no_defaults=False,
-            runner_args=(),
-            working_dir=work,
-            hooks=[],
-        )
+        run_loop(*args, working_dir=work, hooks=[])
 
-    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
-    patch_file = paths.get_artifacts_dir(tasks_file, "t1") / "attempt-2.patch"
-    assert patch_file.is_file()
-    assert "+interrupted_v2" in patch_file.read_text(encoding="utf-8")
+    # Killed outright, the loop leaves the rewind to the next run.
+    assert (work / "app.py").read_text(encoding="utf-8") == "partial\n"
     task = persistence.load_tasks(tasks_file).tasks[0]
-    assert task.status == models.TaskStatus.PENDING
-    assert task.requested_status is None
-    assert task.rejection is None
-    assert task.pid is None
-    assert task.last_heartbeat is None
-    assert task.active_execution_component is None
-    assert task.active_execution_started_at is None
-    assert task.runner_tree is None
-    assert task.hook_trees is None
+    assert task.status == models.TaskStatus.IN_PROGRESS
+    assert task.attempts == 1
+
+    seen = []
+
+    def fake_finish(cmd, t_file, t_id, *_args, **_kwargs):
+        seen.append((work / "app.py").read_text(encoding="utf-8"))
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        return 0, "", ""
+
+    with (
+        mock.patch(
+            "lemming.runner.run_with_heartbeat", side_effect=fake_finish
+        ),
+        mock.patch("time.sleep", return_value=None),
+    ):
+        assert run_loop(*args, working_dir=work, hooks=[])
+
+    assert seen == ["v1\n"]
+    patch_file = paths.get_artifacts_dir(tasks_file, "t1") / "attempt-1.patch"
+    assert "+partial" in patch_file.read_text(encoding="utf-8")
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.COMPLETED
+    assert task.attempts == 1
 
     # If cancel_task already ran before KeyboardInterrupt, delegate without
     # overwriting post-cancel user edits or writing an attempt patch.
@@ -2126,6 +2120,7 @@ def test_run_loop_restores_workspace_on_keyboard_interrupted_runner(
         ),
         mock.patch("lemming.orchestrator.os.getpid", return_value=None),
         mock.patch("time.sleep", return_value=None),
+        mock.patch("lemming.orchestrator.os.getpid", return_value=DEAD_PID),
         pytest.raises(KeyboardInterrupt),
     ):
         run_loop(
@@ -2159,18 +2154,17 @@ def test_run_loop_interrupted_attempt_does_not_charge_a_retry(
     with (
         mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
         mock.patch("time.sleep", return_value=None),
+        mock.patch("lemming.orchestrator.os.getpid", return_value=DEAD_PID),
         pytest.raises(KeyboardInterrupt),
     ):
         run_loop(test_tasks_file, False, 0, True, False, ())
 
     assert "[task1] Attempt 1/3" in capsys.readouterr().out
-    task = persistence.load_tasks(test_tasks_file).tasks[0]
-    assert task.status == models.TaskStatus.PENDING
-    assert task.attempts == 0
 
     with (
         mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
         mock.patch("time.sleep", return_value=None),
+        mock.patch("lemming.orchestrator.os.getpid", return_value=DEAD_PID),
         pytest.raises(KeyboardInterrupt),
     ):
         run_loop(test_tasks_file, False, 0, True, False, ())
@@ -2178,49 +2172,187 @@ def test_run_loop_interrupted_attempt_does_not_charge_a_retry(
     assert "[task1] Attempt 1/3" in capsys.readouterr().out
 
 
-def test_run_loop_interrupted_after_agent_failed_keeps_the_attempt(setup_env):
-    test_tasks_file, _ = setup_env
+@pytest.mark.parametrize(
+    "requested", [models.TaskStatus.FAILED, models.TaskStatus.CANCELLED]
+)
+def test_recover_abandoned_tasks_keeps_other_requests_for_the_next_run(
+    setup_env, requested
+):
+    test_tasks_file, data = setup_env
+    task = data.tasks[0]
+    task.status = models.TaskStatus.IN_PROGRESS
+    task.requested_status = requested
+    task.attempts = 1
+    task.pid = DEAD_PID
+    persistence.save_tasks(test_tasks_file, data)
+
+    recover_abandoned_tasks(test_tasks_file)
+
+    task = persistence.load_tasks(test_tasks_file).tasks[0]
+    assert task.requested_status == requested
+    assert task.attempts == 1
+    assert task.pid is None
+
+
+def test_recover_abandoned_tasks_leaves_unowned_tasks_alone(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("agent work\n", encoding="utf-8")
+    runner_tree = snapshots.snapshot_tree(tasks_file, work)
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Recovered once already",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    requested_status=models.TaskStatus.COMPLETED,
+                    runner_tree=runner_tree,
+                )
+            ],
+        ),
+    )
+    # The user carries on while the loop is stopped.
+    (work / "other.py").write_text("user work\n", encoding="utf-8")
+
+    recover_abandoned_tasks(tasks_file, work)
+
+    assert (work / "other.py").read_text(encoding="utf-8") == "user work\n"
+
+
+def test_run_loop_interrupted_after_agent_completed_keeps_the_work(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[models.Task(id="t1", description="Done, then lingers")],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
 
     def fake_run(cmd, t_file, t_id, *_args, **_kwargs):
-        progress.add_progress(t_file, t_id, "cannot be done")
-        operations.update_task(t_file, t_id, status=models.TaskStatus.FAILED)
+        (work / "app.py").write_text("v2\n", encoding="utf-8")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
         raise KeyboardInterrupt
 
+    args = (tasks_file, False, 0, True, False, ())
     with (
         mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run),
         mock.patch("time.sleep", return_value=None),
+        mock.patch("lemming.orchestrator.os.getpid", return_value=DEAD_PID),
         pytest.raises(KeyboardInterrupt),
     ):
-        run_loop(test_tasks_file, False, 0, True, False, ())
-
-    assert persistence.load_tasks(test_tasks_file).tasks[0].attempts == 1
-
-
-def test_run_loop_interrupted_reclaimed_task_refunds_its_attempt(
-    setup_env, capsys
-):
-    test_tasks_file, initial_data = setup_env
-    task = initial_data.tasks[0]
-    task.status = models.TaskStatus.IN_PROGRESS
-    task.attempts = 1
-    task.pid = 999999
-    task.last_heartbeat = time.time() - 3600
-    persistence.save_tasks(test_tasks_file, initial_data)
+        run_loop(*args, working_dir=work, hooks=[])
 
     with (
-        mock.patch(
-            "lemming.runner.run_with_heartbeat", side_effect=KeyboardInterrupt
-        ),
+        mock.patch("lemming.runner.run_with_heartbeat") as rerun,
         mock.patch("time.sleep", return_value=None),
-        pytest.raises(KeyboardInterrupt),
     ):
-        run_loop(test_tasks_file, False, 0, True, False, ())
+        assert run_loop(*args, working_dir=work, hooks=[])
 
-    assert "[task1] Attempt 1/3" in capsys.readouterr().out
+    rerun.assert_not_called()
+    assert (work / "app.py").read_text(encoding="utf-8") == "v2\n"
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.COMPLETED
+    assert task.attempts == 1
+
+
+def test_run_loop_reclaimed_review_restarts_from_the_runner_tree(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    monkeypatch.setattr(snapshots, "head_commit", lambda _w: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    (work / "app.py").write_text("v1\n", encoding="utf-8")
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    (work / "app.py").write_text("v2\n", encoding="utf-8")
+    runner_tree = snapshots.snapshot_tree(tasks_file, work)
+    # A review hook was cut off halfway through its edits.
+    (work / "app.py").write_text("half-reviewed\n", encoding="utf-8")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Reviewing",
+                    status=models.TaskStatus.IN_PROGRESS,
+                    requested_status=models.TaskStatus.COMPLETED,
+                    attempts=1,
+                    pid=999999,
+                    pre_tree=pre_tree,
+                    runner_tree=runner_tree,
+                )
+            ],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
+
+    with mock.patch("time.sleep", return_value=None):
+        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
+
+    assert (work / "app.py").read_text(encoding="utf-8") == "v2\n"
+    patch_file = (
+        paths.get_artifacts_dir(tasks_file, "t1") / "interrupted-review.patch"
+    )
+    assert "+half-reviewed" in patch_file.read_text(encoding="utf-8")
+    task = persistence.load_tasks(tasks_file).tasks[0]
+    assert task.status == models.TaskStatus.COMPLETED
+
+
+@pytest.mark.parametrize(
+    ("last_started_at", "last_heartbeat", "run_time"),
+    [(1000.0, 1010.0, 15.0), (1010.0, 1000.0, 5.0)],
+)
+def test_recover_abandoned_tasks_counts_run_time_until_the_last_heartbeat(
+    setup_env, last_started_at, last_heartbeat, run_time
+):
+    test_tasks_file, data = setup_env
+    task = data.tasks[0]
+    task.status = models.TaskStatus.IN_PROGRESS
+    task.pid = DEAD_PID
+    task.run_time = 5.0
+    task.last_started_at = last_started_at
+    task.last_heartbeat = last_heartbeat
+    persistence.save_tasks(test_tasks_file, data)
+
+    recover_abandoned_tasks(test_tasks_file)
+
     task = persistence.load_tasks(test_tasks_file).tasks[0]
-    assert task.status == models.TaskStatus.PENDING
-    # Neither the abandoned run nor its interrupted resumption failed.
-    assert task.attempts == 0
+    assert task.run_time == run_time
+    assert task.last_started_at is None
+
+
+def test_recover_abandoned_tasks_on_exit_counts_run_time_until_now(setup_env):
+    test_tasks_file, data = setup_env
+    task = data.tasks[0]
+    task.status = models.TaskStatus.IN_PROGRESS
+    task.pid = DEAD_PID
+    task.last_started_at = time.time() - 60
+    task.last_heartbeat = time.time() - 50
+    persistence.save_tasks(test_tasks_file, data)
+
+    recover_abandoned_tasks(test_tasks_file, exiting=True)
+
+    assert persistence.load_tasks(test_tasks_file).tasks[0].run_time >= 60
 
 
 def test_finalizing_task_snapshots_runner_tree_and_once_restores_on_reject(

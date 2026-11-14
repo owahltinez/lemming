@@ -102,12 +102,43 @@ class TestCLIOperations(unittest.TestCase):
                 cli.cli, ["--tasks-file", str(self.test_tasks_file), "run"]
             )
 
-        self.assertIn("Reclaiming abandoned task orphan12", result.output)
+        self.assertIn("Task orphan12 was cut off", result.output)
         # The cut-off attempt is rerun, not charged; the next retry still is.
         self.assertIn("[orphan12] Attempt 1/2", result.output)
         self.assertIn("[orphan12] Attempt 2/2", result.output)
         task = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertEqual(task.attempts, 2)
+
+    def test_interrupted_run_rewinds_its_task_on_the_way_out(self):
+        work = pathlib.Path(self.test_dir)
+        (work / "app.py").write_text("v1\n")
+        persistence.save_tasks(
+            self.test_tasks_file,
+            models.Roadmap(
+                tasks=[models.Task(id="t1", description="Interrupted")],
+                config=models.RoadmapConfig(retries=2, runner="true", hooks=[]),
+            ),
+        )
+
+        def interrupt(cmd, tasks_file, task_id, *args, **kwargs):
+            (work / "app.py").write_text("partial\n")
+            raise KeyboardInterrupt
+
+        with mock.patch("lemming.runner.run_with_heartbeat", interrupt):
+            result = self.cli_runner.invoke(
+                cli.cli,
+                ["--tasks-file", str(self.test_tasks_file), "-C", str(work)]
+                + ["run"],
+            )
+
+        self.assertNotEqual(result.exit_code, 0)
+        # Anything acting on the task before the next run sees a clean slate.
+        self.assertEqual((work / "app.py").read_text(), "v1\n")
+        task = persistence.load_tasks(self.test_tasks_file).tasks[0]
+        self.assertEqual(task.status, models.TaskStatus.PENDING)
+        self.assertEqual(task.attempts, 0)
+        self.assertIsNone(task.pid)
+        self.assertIsNone(task.last_started_at)
 
     def test_run_reclaims_task_abandoned_on_its_last_attempt(self):
         persistence.save_tasks(
@@ -132,7 +163,7 @@ class TestCLIOperations(unittest.TestCase):
                 cli.cli, ["--tasks-file", str(self.test_tasks_file), "run"]
             )
 
-        self.assertIn("Reclaiming abandoned task orphan12", result.output)
+        self.assertIn("Task orphan12 was cut off", result.output)
         self.assertIn("[orphan12] Attempt 2/2", result.output)
         task = persistence.load_tasks(self.test_tasks_file).tasks[0]
         self.assertEqual(task.attempts, 2)

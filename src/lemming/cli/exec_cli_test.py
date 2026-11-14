@@ -484,6 +484,29 @@ def test_exec_reports_a_runner_that_produced_no_message(workspace):
     assert "no closing message" in result.stderr.lower()
 
 
+def test_exec_interrupt_rolls_back_and_cancels(workspace):
+    """Nothing resumes an interrupted exec, so its work must not linger."""
+    (workspace / "app.py").write_text("v1\n")
+
+    def interrupt(cmd, tasks_file, task_id, *args, **kwargs):
+        (workspace / "app.py").write_text("v2\n")
+        operations.update_task(tasks_file, task_id, status="completed")
+        raise KeyboardInterrupt
+
+    with mock.patch("lemming.runner.run_with_heartbeat", interrupt):
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
+
+    assert result.exit_code != 0
+    assert (workspace / "app.py").read_text() == "v1\n"
+    [exec_dir] = _exec_dirs()
+    task = persistence.load_tasks(exec_dir / "tasks.yml").tasks[0]
+    assert task.status == models.TaskStatus.CANCELLED
+    assert (
+        paths.get_artifacts_dir(exec_dir / "tasks.yml", task.id)
+        / "cancelled.patch"
+    ).is_file()
+
+
 def _git(working_dir, *args):
     """Runs a git command in the given directory."""
     subprocess.run(
@@ -502,6 +525,43 @@ def repo(workspace):
     _git(workspace, "add", "committed.py")
     _git(workspace, "commit", "-qm", "initial")
     return workspace
+
+
+def test_exec_review_interrupt_restores_user_work(repo):
+    """An interrupted review must not leave half its edits behind."""
+    (repo / "committed.py").write_text("x = 2  # uncommitted\n")
+
+    def interrupt(cmd, tasks_file, task_id, *args, **kwargs):
+        (repo / "committed.py").write_text("half-reviewed\n")
+        raise KeyboardInterrupt
+
+    with mock.patch("lemming.runner.run_with_heartbeat", interrupt):
+        CliRunner().invoke(main.cli, ["exec", "--review", "readability"])
+
+    assert (repo / "committed.py").read_text() == "x = 2  # uncommitted\n"
+
+
+def test_exec_interrupt_keeps_stdout_for_the_agent(workspace):
+    """Recovery chatter must not pose as the agent's closing message."""
+
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    with mock.patch("lemming.runner.run_with_heartbeat", interrupt):
+        result = CliRunner().invoke(main.cli, ["exec", "Fix the flaky test"])
+
+    assert "rewinding" not in result.stdout
+
+
+def test_review_has_nothing_to_recover(repo):
+    """A review task is created in progress, but nothing abandoned it."""
+    (repo / "committed.py").write_text("x = 2\n")
+    with mock.patch("lemming.runner.run_with_heartbeat", _finish("Reviewed.")):
+        result = CliRunner().invoke(
+            main.cli, ["exec", "--review", "readability"]
+        )
+
+    assert "cut off" not in result.stderr
 
 
 def test_review_runs_the_hook_without_a_task_runner(repo):
