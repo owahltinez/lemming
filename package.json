@@ -15,7 +15,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.6.7",
     "@playwright/test": "^1.65.0",
-    "jsdom": "^31.0.0",
+    "jsdom": "^31.0.1",
     "mancha": "^0.30.0",
     "playwright": "^1.65.0"
   }
