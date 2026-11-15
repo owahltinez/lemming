@@ -19,6 +19,9 @@ One interface over several agent CLIs. You do not need to know how `agy`,
 Use `exec` for one unit of work, and a roadmap for anything larger than a single
 agent run can hold.
 
+This guide is for `lemming` 0.11.0 or newer. If `lemming --version` is older,
+run `uv tool upgrade lemming-cli` first; older versions lack flags used below.
+
 ## Delegate one task
 
 ```sh
@@ -221,16 +224,32 @@ lemming diff [<id>] --stat  # diffstat for a task (or the full patch without --s
 lemming logs <id> | tail -n 30   # never the whole log
 ```
 
-A task is stuck when its run time approaches the limit with no new progress
-entries and the log tail shows the same step repeating. Otherwise leave it.
+`status` marks a running task `Stale` once it has gone a quarter of the time
+limit without a progress entry. A stale task whose log tail shows the same step
+repeating is stuck. Otherwise leave it.
 
 Never hold a shell open on a foreground or backgrounded `lemming run`: the loop
 dies with the shell or harness that started it, leaving its task abandoned.
 `--detach` keeps it alive; if a loop died anyway, `lemming run --detach`
 reclaims the abandoned task. A detached loop hides a stuck task until it
-exhausts its retries, so schedule a wake-up near each task's time limit that
-runs the checks above; if the task is stuck, `lemming cancel <id>` and `add`
-smaller tasks in its place.
+exhausts its retries, so wait on more than the queue. This waiter returns when
+the overview changes (a task settles or turns stale, or the loop stops) or when
+the timeout passes; set the timeout to the time limit from
+`lemming config list`:
+
+```sh
+before=$(lemming status --brief)
+timeout 60m sh -c 'while [ "$(lemming status --brief)" = "$1" ]; do sleep 60; done' _ "$before"
+```
+
+Fix a stuck task yourself; do not end your turn to ask the user:
+
+- Amend it for the retry. `lemming brief <id>` and `lemming edit <id>` take
+  effect when the task's next attempt starts, so record what the last attempt
+  found and let the retry run. A timed-out attempt's output tail is kept as its
+  `attempt-N-timeout.log` artifact.
+- Split it when it is too large: `lemming cancel <id>` and `add` smaller tasks
+  in its place. Cancelling one task does not stop the loop.
 
 Adjust the queue while it runs — new tasks are picked up automatically:
 
@@ -244,6 +263,7 @@ lemming stop --after-current-task                             # drain, then stop
 Your own words fill context faster than any tool. Whether reporting to a user or
 to a parent agent:
 
+- Report once, when the milestone settles, not at every check-in.
 - Report one milestone in this shape and no other: outcome (`done`, `failed`,
   `blocked`), task IDs that settled, files changed, one line of guidance for the
   next milestone. Skip anything that can be re-read from `lemming status`.

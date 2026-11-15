@@ -544,6 +544,17 @@ def _handle_runner_exit(
     if not post_task:
         click.echo("Error: Task disappeared from roadmap during execution.")
         return True
+    if returncode == runner.RETURNCODE_TIMEOUT and stdout.strip():
+        # Findings that only reached the log would be lost to the retry.
+        try:
+            state_machine.write_artifact(
+                tasks_file,
+                task_id,
+                f"attempt-{max(1, post_task.attempts)}-timeout.log",
+                stdout[-prompts.MAX_LOG_CONTEXT_BYTES :],
+            )
+        except OSError as e:
+            click.echo(f"Could not save timeout output for {task_id}: {e}")
     if claimed is not None and (
         post_task.status
         in (models.TaskStatus.FAILED, models.TaskStatus.SUPERSEDED)

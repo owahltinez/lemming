@@ -411,6 +411,32 @@ def _abandoned_hint(task: models.Task, loop_running: bool) -> str | None:
     return "`lemming run --detach` reclaims it"
 
 
+def _stale_hint(task: models.Task, time_limit: int) -> str | None:
+    """Returns how long a running task has gone without recording progress.
+
+    Runners are told to record progress often, so a quarter of the time
+    limit without an entry suggests the attempt is spinning.
+
+    Args:
+        task: The task to check.
+        time_limit: The roadmap's time limit in minutes; 0 means none.
+
+    Returns:
+        A description of the silence, or None if the task is not stale.
+    """
+    if (
+        task.status != models.TaskStatus.RUNNING
+        or not task.last_started_at
+        or time_limit <= 0
+    ):
+        return None
+    since = max(task.last_started_at, task.last_progress_at or 0)
+    if time.time() - since < time_limit * 60 / 4:
+        return None
+    # Fixed text, so the overview only changes when the task turns stale.
+    return f"no progress in the last {time_limit / 4:g}m"
+
+
 def _task_payload(task: models.Task, brief: bool) -> dict:
     """Serialises a task for machine consumption.
 
@@ -509,8 +535,11 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
             for task in queue:
                 _echo_task_summary(task, project_data.tasks, brief)
                 hint = _abandoned_hint(task, project_data.loop_running)
+                stale = _stale_hint(task, project_data.config.time_limit)
                 if hint:
                     click.echo(f"    Abandoned: {hint}.")
+                elif stale:
+                    click.echo(f"    Stale: {stale}.")
         else:
             click.echo("No active tasks.")
 
@@ -565,8 +594,11 @@ def status(ctx: click.Context, task_id: str | None, as_json: bool, brief: bool):
     click.secho(f"Task ID:       {target.id}", bold=True)
     status_str = str(target.status)
     hint = _abandoned_hint(target, project_data.loop_running)
+    stale = _stale_hint(target, project_data.config.time_limit)
     if hint:
         status_str += f" (abandoned; {hint})"
+    elif stale:
+        status_str += f" (stale; {stale})"
     click.echo(f"Status:        {status_str}")
     click.echo(f"Description:   {target.description}")
     if target.parent:

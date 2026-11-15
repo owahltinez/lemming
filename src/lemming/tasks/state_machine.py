@@ -122,6 +122,21 @@ def set_status(task: models.Task, status: S, now: float | None = None) -> None:
         task.completed_at = now
 
 
+def write_artifact(
+    tasks_file: pathlib.Path, task_id: str, filename: str, text: str
+) -> None:
+    """Writes text into the task's artifacts directory, never overwriting."""
+    artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    # An artifact may be the only copy of reverted work, so keep every one.
+    base = target = artifacts_dir / filename
+    n = 1
+    while target.exists():
+        n += 1
+        target = base.with_name(f"{base.stem}-{n}{base.suffix}")
+    target.write_text(text, encoding="utf-8", errors="surrogateescape")
+
+
 def write_patch_artifact(
     tasks_file: pathlib.Path,
     task_id: str,
@@ -133,17 +148,8 @@ def write_patch_artifact(
     if not pre_tree or not post_tree or pre_tree == post_tree:
         return
     patch_text = snapshots.diff_trees(tasks_file, pre_tree, post_tree)
-    if not patch_text:
-        return
-    artifacts_dir = paths.get_artifacts_dir(tasks_file, task_id)
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    # A patch may be the only copy of reverted work, so never overwrite one.
-    base = target = artifacts_dir / filename
-    n = 1
-    while target.exists():
-        n += 1
-        target = base.with_name(f"{base.stem}-{n}{base.suffix}")
-    target.write_text(patch_text, encoding="utf-8", errors="surrogateescape")
+    if patch_text:
+        write_artifact(tasks_file, task_id, filename, patch_text)
 
 
 def rewind(

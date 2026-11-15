@@ -301,6 +301,39 @@ class TestCLITasks(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertNotIn("abandoned", result.output.lower())
 
+    def _run_live_task(self, started_ago: float, progress_ago: float | None):
+        now = time.time()
+        with persistence.lock_tasks(self.test_tasks_file):
+            data = persistence.load_tasks(self.test_tasks_file)
+            data.config.time_limit = 60
+            task = data.tasks[0]
+            task.status = models.TaskStatus.RUNNING
+            task.pid = 1234
+            task.last_heartbeat = now
+            task.last_started_at = now - started_ago
+            if progress_ago is not None:
+                task.last_progress_at = now - progress_ago
+            persistence.save_tasks(self.test_tasks_file, data)
+
+        with mock.patch(
+            "lemming.tasks.lifecycle.is_pid_alive", return_value=True
+        ):
+            return [
+                self.cli_runner.invoke(cli.cli, self.base_args + args)
+                for args in (["status", "--brief"], ["status", "12345678"])
+            ]
+
+    def test_status_flags_running_task_without_recent_progress(self):
+        for result in self._run_live_task(20 * 60, progress_ago=40 * 60):
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertIn("stale", result.output.lower())
+            self.assertIn("no progress in the last 15m", result.output)
+
+    def test_status_does_not_flag_task_with_recent_progress(self):
+        for result in self._run_live_task(40 * 60, progress_ago=5 * 60):
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertNotIn("stale", result.output.lower())
+
     def test_status_command_shows_execution_time_breakdown(self):
         with persistence.lock_tasks(self.test_tasks_file):
             data = persistence.load_tasks(self.test_tasks_file)

@@ -366,6 +366,35 @@ def test_run_loop_timeout_retries(mock_sleep, mock_run, setup_env):
 
 @mock.patch("lemming.runner.run_with_heartbeat")
 @mock.patch("time.sleep", return_value=None)
+def test_run_loop_timeout_saves_output_tail(mock_sleep, mock_run, setup_env):
+    """A timed-out attempt's findings reach the retry as an artifact."""
+    test_tasks_file, initial_data = setup_env
+    mock_run.return_value = (RETURNCODE_TIMEOUT, "noise\nerror is 3px\n", "")
+
+    data = persistence.load_tasks(test_tasks_file)
+    data.config.retries = 1
+    data.config.time_limit = 60
+    persistence.save_tasks(test_tasks_file, data)
+
+    run_loop(
+        test_tasks_file,
+        verbose=False,
+        retry_delay=0,
+        yolo=True,
+        no_defaults=False,
+        runner_args=(),
+    )
+
+    task_id = initial_data.tasks[0].id
+    artifact = (
+        paths.get_artifacts_dir(test_tasks_file, task_id)
+        / "attempt-1-timeout.log"
+    )
+    assert "error is 3px" in artifact.read_text()
+
+
+@mock.patch("lemming.runner.run_with_heartbeat")
+@mock.patch("time.sleep", return_value=None)
 def test_run_loop_passes_time_limit(mock_sleep, mock_run, setup_env):
     """Verifies that time_limit from config is passed to the runner."""
     test_tasks_file, initial_data = setup_env

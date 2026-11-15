@@ -2,6 +2,7 @@
 
 import dataclasses
 import pathlib
+import time
 
 from . import hooks, models, paths, persistence, runner, snapshots
 from .tasks import limits
@@ -566,12 +567,20 @@ def prepare_prompt(
 
     time_limit_section = ""
     if time_limit > 0:
+        # Leave a quarter of the limit to save and record before the kill.
+        wrap_up = time.strftime(
+            "%H:%M %Z", time.localtime(time.time() + time_limit * 45)
+        )
         time_limit_section = (
             f"\n## Time Limit\n\n"
             f"You have a hard time limit of **{time_limit} minutes**."
             f" If you exceed it, your\n"
             f"process will be killed and any unrecorded progress will be"
             f" lost.\n\n"
+            f"- **Wrap up by {wrap_up}** (check with `date`). By then, save"
+            f" your results\n"
+            f"  to the workspace, record your findings, and complete or fail"
+            f" the task.\n"
             f"- **Record progress early and often.** Don't wait until the"
             f" end. If you\n"
             f"  are killed, your recorded progress will be passed to the"

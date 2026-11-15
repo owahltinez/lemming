@@ -238,7 +238,9 @@ loops through each pending task:
     the discarded workspace diff as an `attempt-<N>.patch` artifact (a repeated
     number gets `-2`, `-3`, ... rather than overwriting), restores the working
     tree to the task's pre-run snapshot, and retries up to the configured limit
-    with accumulated progress as context. On success, it moves to the next task.
+    with accumulated progress as context. A timeout also keeps the tail of the
+    agent's output as `attempt-<N>-timeout.log`, so the retry starts from what
+    the killed attempt found. On success, it moves to the next task.
 5.  **Orchestration**: After each task, Lemming can run one or more
     **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the
     results and adapt the roadmap if needed. Only `roadmap` runs by default;
@@ -377,6 +379,8 @@ These come before the subcommand and apply to all of them.
     `lemming run --detach` reclaims it. If its runner outlived the loop,
     `status` names the runner's pid to kill first, and `run` refuses to start a
     second runner until it is gone.
+  - A running task that has recorded no progress for a quarter of the time limit
+    is flagged as stale.
 - **`goal [<text>]`**: Set or view the long-term goal shared by all tasks.
   Supports `-f/--file`.
 - **`add <desc>`**: Append a new task. Supports `--index`, `--runner`,

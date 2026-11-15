@@ -95,8 +95,10 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
      leave the changes in the working tree for the caller to review. Either way:
      never push, and never rewrite history — no amend, rebase, or reset,
      including on commits you made yourself.
-6. **Success:** When you have completely finished and verified the task, and
-   recorded relevant progress (at least one entry is required), run:
+6. **Success:** Acceptance criteria are thresholds, not targets to beat. As soon
+   as a result meets them, save it to the workspace and finish; do not keep
+   refining past the bar. When you have completely finished and verified the
+   task, and recorded relevant progress (at least one entry is required), run:
    `lemming --tasks-file {{tasks_file_path}} complete {{task_id}}`
 7. **Failure/Blocker:** If you hit a technical roadblock, cannot fix a bug, or
    are unable to complete the task, after recording relevant progress (at least

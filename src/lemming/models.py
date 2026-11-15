@@ -115,6 +115,7 @@ class Task(pydantic.BaseModel):
     active_execution_started_at: float | None = None
     pid: int | None = None
     last_heartbeat: float | None = None
+    last_progress_at: float | None = None
     has_runner_log: bool = False
     parent: str | None = None
     parent_tasks_file: str | None = None
