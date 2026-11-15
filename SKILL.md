@@ -19,7 +19,7 @@ One interface over several agent CLIs. You do not need to know how `agy`,
 Use `exec` for one unit of work, and a roadmap for anything larger than a single
 agent run can hold.
 
-This guide is for `lemming` 0.11.0 or newer. If `lemming --version` is older,
+This guide is for `lemming` 0.10.1 or newer. If `lemming --version` is older,
 run `uv tool upgrade lemming-cli` first; older versions lack flags used below.
 
 ## Delegate one task
