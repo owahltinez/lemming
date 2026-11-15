@@ -22,6 +22,7 @@ def test_add_progress(tmp_path):
     assert target.id == "123"
     assert len(target.progress) == 1
     assert target.progress[0] == "Found bug in module X"
+    assert target.last_progress_at is not None
 
 
 def test_add_progress_enforces_entry_size_limit(tmp_path, monkeypatch):

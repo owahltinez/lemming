@@ -1,4 +1,5 @@
 import pathlib
+import time
 
 import pytest
 
@@ -427,6 +428,18 @@ def test_prepare_prompt_time_limit_custom(tmp_path):
 
     prompt = prompts.prepare_prompt(data, task, tasks_file, time_limit=30)
     assert "30 minutes" in prompt
+
+
+def test_prepare_prompt_sets_wrap_up_deadline(tmp_path, monkeypatch):
+    """The runner is told when to stop refining, ahead of the hard kill."""
+    tasks_file = tmp_path / "tasks.yml"
+    data = models.Roadmap(tasks=[models.Task(id="1", description="T1")])
+    monkeypatch.setattr(time, "time", lambda: 0.0)
+    prompt = prompts.prepare_prompt(
+        data, data.tasks[0], tasks_file, time_limit=60
+    )
+    wrap_up = time.strftime("%H:%M", time.localtime(45 * 60))
+    assert f"Wrap up by {wrap_up}" in prompt
 
 
 def test_prepare_hook_prompt_shows_failed_for_exhausted_task(

@@ -1,6 +1,7 @@
 """Recording of task progress entries."""
 
 import pathlib
+import time
 
 from .. import models, persistence
 from . import limits, queries
@@ -25,5 +26,6 @@ def add_progress(
 
         limits.validate_progress_entry(text)
         target.progress.append(text)
+        target.last_progress_at = time.time()
         persistence.save_tasks(tasks_file, data)
     return target
