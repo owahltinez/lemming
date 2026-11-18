@@ -1,5 +1,6 @@
 """Orchestrator loop that executes pending tasks via runners and hooks."""
 
+import collections.abc
 import os
 import pathlib
 import random
@@ -64,7 +65,7 @@ def run_hooks(
     time_limit: int = 0,
     model_name: str | None = None,
     scope: str | None = None,
-    at_boundary: bool = True,
+    is_boundary: collections.abc.Callable[[models.Roadmap], bool] | None = None,
 ) -> dict[str, int]:
     """Executes orchestrator hooks for a finished task.
 
@@ -89,8 +90,9 @@ def run_hooks(
         model_name: Model to request from the hook runner, if any.
         scope: What the hooks should look at. Defaults to the work the
             finished task left behind.
-        at_boundary: Whether the loop is stopping after this task settles;
-            standalone callers default to True.
+        is_boundary: Predicate evaluated on reloaded roadmap data to test
+            whether the loop stops after this task; None treats the call as a
+            boundary so standalone callers and resumed reviews run 9x hooks.
 
     Returns:
         Mapping of each executed hook name to its runner exit code (-1 when
@@ -160,8 +162,9 @@ def run_hooks(
                 continue
             if (
                 hooks is None
-                and not at_boundary
-                and _has_other_pending(data, task_id)
+                and is_boundary is not None
+                and not is_boundary(data)
+                and _has_other_hooked_pending(data, task_id)
                 and len(task.progress) == initial_progress_len
             ):
                 continue
@@ -386,7 +389,7 @@ def _review(
     time_limit: int,
     model_name: str | None = None,
     scope: str | None = None,
-    at_boundary: bool = True,
+    is_boundary: collections.abc.Callable[[models.Roadmap], bool] | None = None,
 ) -> models.Task | None:
     """Runs the hooks over a settled completing or failing task.
 
@@ -426,7 +429,7 @@ def _review(
         time_limit=time_limit,
         model_name=model_name,
         scope=scope,
-        at_boundary=at_boundary,
+        is_boundary=is_boundary,
     )
 
     refreshed = persistence.load_tasks(tasks_file)
@@ -525,7 +528,7 @@ def _handle_runner_exit(
     retry_runner_failures: bool = False,
     abort_failed_finalization: bool = False,
     claimed: models.Task | None = None,
-    at_boundary: bool = True,
+    is_boundary: collections.abc.Callable[[models.Roadmap], bool] | None = None,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
@@ -540,7 +543,8 @@ def _handle_runner_exit(
     )
 
     # Record agy's silently lost file creations before hooks judge the task.
-    for path in runner.extract_lost_writes(stdout):
+    lost_writes = runner.extract_lost_writes(stdout)
+    for path in lost_writes:
         message = f"Runner failed to create {path}: agy rejected the write"
         click.echo(message)
         try:
@@ -614,7 +618,7 @@ def _handle_runner_exit(
                 time_limit,
                 model_name=model_name,
                 scope=scope,
-                at_boundary=at_boundary,
+                is_boundary=None if lost_writes else is_boundary,
             )
             or post_task
         )
@@ -720,15 +724,17 @@ def _count_pending(data: models.Roadmap) -> int:
     return sum(t.status == models.TaskStatus.PENDING for t in data.tasks)
 
 
-def _has_other_pending(data: models.Roadmap, task_id: str) -> bool:
+def _has_other_hooked_pending(data: models.Roadmap, task_id: str) -> bool:
     return any(
-        t.id != task_id and t.status == models.TaskStatus.PENDING
+        t.id != task_id
+        and t.status == models.TaskStatus.PENDING
+        and not t.oneshot
         for t in data.tasks
     )
 
 
 def _stops_at_boundary(
-    tasks_file: pathlib.Path,
+    data: models.Roadmap,
     task_id: str,
     settled_count: int,
     *,
@@ -737,12 +743,11 @@ def _stops_at_boundary(
     until: str | None = None,
 ) -> bool:
     """Reports whether settling task_id as completed stops run_loop."""
-    if once:
+    if once or shutdown.drain_requested():
         return True
     if max_tasks is not None and settled_count + 1 >= max_tasks:
         return True
     if until is not None:
-        data = persistence.load_tasks(tasks_file)
         projected = [
             t.model_copy(update={"status": models.TaskStatus.COMPLETED})
             if t.id == task_id
@@ -1029,14 +1034,6 @@ def run_loop(
                 time_limit,
                 model_name=model_name,
                 scope=scope,
-                at_boundary=_stops_at_boundary(
-                    tasks_file,
-                    task_id,
-                    settled_count,
-                    once=once,
-                    max_tasks=max_tasks,
-                    until=until,
-                ),
             )
             if once:
                 return bool(task and task.status == models.TaskStatus.COMPLETED)
@@ -1138,13 +1135,15 @@ def run_loop(
             retry_runner_failures=once,
             abort_failed_finalization=once,
             claimed=current_task,
-            at_boundary=_stops_at_boundary(
-                tasks_file,
-                task_id,
-                settled_count,
-                once=once,
-                max_tasks=max_tasks,
-                until=until,
+            is_boundary=lambda d, tid=task_id, sc=settled_count: (
+                _stops_at_boundary(
+                    d,
+                    tid,
+                    sc,
+                    once=once,
+                    max_tasks=max_tasks,
+                    until=until,
+                )
             ),
         )
         if should_abort:

@@ -32,14 +32,10 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
    use create-or-update patterns, and avoid operations that fail if run twice.
 2. **DO NOT edit `{{tasks_file_name}}` directly.** You must use the Lemming CLI
    API.
-3. **Task Management:** You may manipulate the task list to add, insert, or
-   supersede tasks in the queue. Do this only when explicitly requested by the
-   user, clearly necessary to complete your current assignment, or when your
-   changes already satisfy a pending task or uncover a concrete out-of-scope
-   bug: call
-   `lemming --tasks-file {{tasks_file_path}} supersede <id> --reason '<why>'` or
-   `lemming --tasks-file {{tasks_file_path}} add '<description>'` directly
-   rather than leaving a note in progress for a post-task hook. Use
+3. **Task Management:** You may manipulate the task list to add or insert new
+   tasks at any position in the queue. However, you should generally only do
+   this if it is explicitly requested by the user or clearly necessary to
+   complete your current assignment. Use
    `lemming --tasks-file {{tasks_file_path}} --help` for the full list of
    available commands. Assume the Lemming queue is in a running state and will
    pick up new tasks automatically.

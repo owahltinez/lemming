@@ -244,8 +244,9 @@ loops through each pending task:
 5.  **Orchestration**: Lemming runs enabled **Orchestrator Hooks** to review
     work and adapt the plan. Opt-in review hooks run after each completed task;
     the default `roadmap` hook (`90+`) runs on failures, when a review hook
-    records a finding, or at run boundaries (queue drain or `--max-tasks` /
-    `--until` stops).
+    records a finding, or at run boundaries (when no non-oneshot pending tasks
+    remain, or `--max-tasks`, `--until`, or `--after-current-task` stops the
+    run).
 
 ---
 
@@ -265,9 +266,10 @@ files, and udev-style filename conventions control their behavior:
   runs before `90-roadmap.md`); files without a prefix default to priority 50.
 - **Orchestration & failure hooks**: Hooks at priority 90 and above run when a
   task fails, when an earlier review hook records a finding, or when
-  `lemming run` reaches a boundary (no pending tasks remain, or `--max-tasks` /
-  `--until` stops the run), skipping clean mid-queue and rejected completions;
-  hooks below 90 run after every non-oneshot completion.
+  `lemming run` reaches a boundary (no non-oneshot pending tasks remain, or
+  `--max-tasks`, `--until`, or `--after-current-task` stops the run), skipping
+  clean mid-queue and rejected completions; hooks below 90 run after every
+  non-oneshot completion.
 - **Oneshot tasks**: A task added with `--oneshot` skips all hooks once it
   completes, so mechanical work (a typo fix, a version bump) does not pay for
   the full review lifecycle. Failure hooks still run if it fails.

@@ -35,10 +35,10 @@ conventions control their behavior:
 - **Orchestration and failure hooks**: Hooks at priority 90 and above (such as
   `90-roadmap.md`) run when a task fails, when an earlier review hook records a
   finding in `progress`, or when `lemming run` reaches a run boundary (no
-  `pending` tasks remain, or `--max-tasks` / `--until` stops the run). Clean
-  mid-queue completions and rejected completions skip them. Hooks below priority
-  90 are review hooks and run after every non-oneshot completion, never on
-  failure.
+  non-oneshot `pending` tasks remain, or `--max-tasks`, `--until`, or
+  `--after-current-task` stops the run). Clean mid-queue completions and
+  rejected completions skip them. Hooks below priority 90 are review hooks and
+  run after every non-oneshot completion, never on failure.
 - **Oneshot tasks**: No hook runs after a task marked `--oneshot` completes,
   keeping mechanical changes cheap. A oneshot task that fails still gets its
   failure hooks, so recovery is never skipped. Note that `roadmap` is skipped

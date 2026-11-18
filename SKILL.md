@@ -174,11 +174,12 @@ without a `.gitignore`, create one (or queue it as the first `--oneshot` task)
 before tasks install dependencies or run builds so workspace snapshots skip
 `node_modules/`, `.venv/`, and build outputs.
 
-**Mark mechanical tasks `--oneshot`.** After every other task, a roadmap hook
-may revise the queue and any enabled reviews run; each hook is a full agent run,
-so a typo fix, rename, version bump, or cleanup without `--oneshot` takes
-several times longer than the work itself. Reviews are opt-in: pick them for one
-task with `lemming add ... --hooks testing,ux`, or for every task with
+**Mark mechanical tasks `--oneshot`.** Non-oneshot tasks run any enabled reviews
+after completion, and the `roadmap` hook runs on failures, review findings, and
+run boundaries (including the last non-oneshot task); each hook is a full agent
+run, so a typo fix, rename, version bump, or cleanup without `--oneshot` can
+take several times longer than the work itself. Reviews are opt-in: pick them
+for one task with `lemming add ... --hooks testing,ux`, or for every task with
 `lemming hooks enable <name>`. `lemming hooks list` shows which are enabled.
 
 ### Supervise in milestones
