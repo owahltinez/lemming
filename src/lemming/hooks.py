@@ -11,7 +11,7 @@ import typing
 
 from . import paths, persistence
 
-# "NN-name.md" prefixes order hooks; >= 90 orchestrates failures/boundaries.
+# "NN-name.md" prefixes order hooks; >= 90 runs only when a task fails.
 DEFAULT_HOOK_PRIORITY = 50
 FAILURE_HOOK_PRIORITY = 90
 

@@ -242,36 +242,32 @@ loops through each pending task:
     agent's output as `attempt-<N>-timeout.log`, so the retry starts from what
     the killed attempt found. On success, it moves to the next task.
 5.  **Orchestration**: Lemming runs enabled **Orchestrator Hooks** to review
-    work and adapt the plan. Opt-in review hooks run after each completed task;
-    the default `roadmap` hook (`90+`) runs on failures, when a review hook
-    records a finding, or at run boundaries (when no non-oneshot pending tasks
-    remain, or `--max-tasks`, `--until`, or `--after-current-task` stops the
-    run).
+    completed work or recover from failures. Opt-in review hooks (`< 90`) run
+    after each completed task; failure hooks (`90+`, including the default
+    `roadmap` hook) run only when a task fails.
 
 ---
 
 ## Orchestrator Hooks ⚓️
 
 For longer, multi-stage projects, the initial task list often can't anticipate
-everything. Tasks may fail in ways that retrying won't fix, or completing all
-tasks may not fully achieve the stated goal. **Orchestrator Hooks** address this
-by running custom agents or scripts to review completed work and adapt the
-roadmap.
+everything. Tasks may fail in ways that retrying won't fix, or completed changes
+may benefit from an independent review pass. **Orchestrator Hooks** address this
+by running custom agents or scripts to review completed work or repair the
+roadmap on failure.
 
 Lemming runs the hooks enabled for the project, which by default is only the
 built-in `roadmap` hook; review hooks are opt-in. Hooks are plain Markdown
 files, and udev-style filename conventions control their behavior:
 
 - **Ordering**: A numeric prefix sets the execution order (e.g. `10-lint.md`
-  runs before `90-roadmap.md`); files without a prefix default to priority 50.
-- **Orchestration & failure hooks**: Hooks at priority 90 and above run when a
-  task fails, when an earlier review hook records a finding, or when
-  `lemming run` reaches a boundary (no non-oneshot pending tasks remain, or
-  `--max-tasks`, `--until`, or `--after-current-task` stops the run), skipping
-  clean mid-queue and rejected completions; hooks below 90 run after every
-  non-oneshot completion.
-- **Oneshot tasks**: A task added with `--oneshot` skips all hooks once it
-  completes, so mechanical work (a typo fix, a version bump) does not pay for
+  runs before `50-readability.md`); files without a prefix default to priority
+  50.
+- **Failure hooks**: Hooks at priority 90 and above (such as `90-roadmap.md`)
+  run only when a task fails; hooks below 90 are review hooks and run only on
+  success.
+- **Oneshot tasks**: A task added with `--oneshot` skips all review hooks once
+  it completes, so mechanical work (a typo fix, a version bump) does not pay for
   the full review lifecycle. Failure hooks still run if it fails.
 - **Masking**: An empty file hides the hook of the same name from a
   lower-precedence layer, even where it is enabled.
@@ -288,10 +284,9 @@ lemming add "Redesign the settings page" --hooks ux,testing
 
 Lemming comes with several built-in hooks to help manage your project:
 
-- **`roadmap`**: The primary mechanism for autonomous project management. It
-  analyzes the results of the finished task and decides if the remaining roadmap
-  needs to be adjusted (e.g., adding a missing prerequisite, skipping obsolete
-  tasks, or breaking down a broad task).
+- **`roadmap`**: Failure-recovery orchestration. When a task exhausts retries or
+  fails, it diagnoses the failure and adapts the roadmap (e.g., rewriting the
+  approach, splitting into prerequisites, or superseding obsolete tasks).
 - **`readability`**: A code quality and simplification hook that challenges
   unnecessary complexity and duplicate implementations, then reviews changes for
   adherence to the Google Style Guide and general readability using the

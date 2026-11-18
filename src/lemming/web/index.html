@@ -290,7 +290,7 @@
                 :for="hook in availableHooks"
                 :key="hook.name"
                 class="flex items-center gap-2 cursor-pointer shrink-0"
-                :attr:title="hook.runs_on_failure ? 'Run the ' + hook.name + ' hook on failures, review findings, and run boundaries' : 'Run the ' + hook.name + ' review hook after each completed task'"
+                :attr:title="hook.runs_on_failure ? 'Run the ' + hook.name + ' hook when a task fails' : 'Run the ' + hook.name + ' review hook after each completed task'"
               >
                 <input
                   type="checkbox"

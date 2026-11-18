@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 import sys
@@ -7,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from lemming import models, paths, persistence, prompts, shutdown, snapshots
+from lemming import models, paths, persistence, prompts, snapshots
 from lemming.orchestrator import (
     HOOK_TIME_LIMIT,
     _handle_runner_exit,
@@ -681,9 +680,12 @@ def test_run_hooks_success(mock_prepare, mock_run, hooks_env):
     mock_run.return_value = (0, "stdout", "")
     working_dir = hooks_env.parent / "project with spaces"
 
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = ["readability", "roadmap"]
+    persistence.save_tasks(hooks_env, data)
     _finalizing(hooks_env)
 
-    run_hooks(
+    exit_codes = run_hooks(
         hooks_env,
         "12345678",
         "agy",
@@ -694,7 +696,7 @@ def test_run_hooks_success(mock_prepare, mock_run, hooks_env):
         working_dir=working_dir,
     )
 
-    assert mock_run.called
+    assert exit_codes == {"readability": 0}
     cmd = mock_run.call_args.args[0]
     assert cmd[cmd.index("--add-dir") + 1] == str(working_dir)
     data = persistence.load_tasks(hooks_env)
@@ -702,26 +704,47 @@ def test_run_hooks_success(mock_prepare, mock_run, hooks_env):
 
 
 @pytest.mark.parametrize(
-    ("config_hooks", "task_hooks", "expected"),
+    ("status", "config_hooks", "task_hooks", "expected"),
     [
-        (["roadmap"], None, ["roadmap"]),
-        (["ux", "roadmap"], None, ["ux", "roadmap"]),
-        (["ux", "roadmap"], ["testing"], ["testing", "roadmap"]),
-        (["ux", "roadmap"], [], ["roadmap"]),
-        ([], ["testing"], ["testing"]),
+        (models.TaskStatus.COMPLETING, ["roadmap"], None, []),
+        (models.TaskStatus.COMPLETING, ["ux", "roadmap"], None, ["ux"]),
+        (
+            models.TaskStatus.COMPLETING,
+            ["ux", "roadmap"],
+            ["testing"],
+            ["testing"],
+        ),
+        (models.TaskStatus.COMPLETING, ["ux", "roadmap"], [], []),
+        (models.TaskStatus.COMPLETING, [], ["testing"], ["testing"]),
+        (models.TaskStatus.FAILING, ["roadmap"], None, ["roadmap"]),
+        (
+            models.TaskStatus.FAILING,
+            ["ux", "roadmap"],
+            ["testing"],
+            ["roadmap"],
+        ),
+        (models.TaskStatus.FAILING, ["ux", "roadmap"], [], ["roadmap"]),
+        (models.TaskStatus.FAILING, [], ["testing"], []),
     ],
 )
 @mock.patch("lemming.runner.run_with_heartbeat")
 @mock.patch("lemming.prompts.prepare_hook_prompt")
 def test_run_hooks_selects_hooks_per_task(
-    mock_prepare, mock_run, hooks_env, config_hooks, task_hooks, expected
+    mock_prepare,
+    mock_run,
+    hooks_env,
+    status,
+    config_hooks,
+    task_hooks,
+    expected,
 ):
-    """Reviews are opt-in per project or task; the 9x band is project-wide."""
+    """Reviews run on completion; 9x hooks are project-wide and failure-only."""
     mock_prepare.return_value = "Hook Prompt"
     mock_run.return_value = (0, "stdout", "")
     data = persistence.load_tasks(hooks_env)
     data.config.hooks = config_hooks
     data.tasks[0].hooks = task_hooks
+    data.tasks[0].status = status
     persistence.save_tasks(hooks_env, data)
 
     exit_codes = run_hooks(
@@ -1028,7 +1051,10 @@ def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
         hooks_env, "12345678", status=models.TaskStatus.COMPLETED
     )
 
-    # Remaining review hooks see the rejection; 9x hooks are skipped.
+    # Remaining review hooks see the rejection; 9x hooks do not run on success.
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = ["testing", "ux", "roadmap"]
+    persistence.save_tasks(hooks_env, data)
     seen_prompts = []
 
     def run_hook(*args, **kwargs):
@@ -1051,7 +1077,6 @@ def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
         runner_args=(),
         no_defaults=False,
         verbose=False,
-        hooks=["testing", "ux", "roadmap"],
     )
 
     assert seen_prompts == [("testing", None), ("ux", "suite fails")]
@@ -2793,19 +2818,18 @@ def test_migrated_cancel_request_is_not_run_again(
     assert persistence.load_tasks(tasks_file).tasks[0].status == requested
 
 
-def test_run_loop_skips_roadmap_mid_queue_and_runs_at_drain(loop_env):
+def test_run_loop_runs_9x_hooks_only_on_failure(loop_env):
     tasks_file, work = loop_env
     persistence.save_tasks(
         tasks_file,
         models.Roadmap(
             goal="Goal",
             tasks=[
-                models.Task(id="t1", description="First"),
-                models.Task(id="t2", description="Second"),
-                models.Task(id="t3", description="Third"),
+                models.Task(id="t1", description="Completes"),
+                models.Task(id="t2", description="Fails"),
             ],
             config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["roadmap"]
+                retries=1, runner="agy", hooks=["testing", "roadmap"]
             ),
         ),
     )
@@ -2815,51 +2839,15 @@ def test_run_loop_skips_roadmap_mid_queue_and_runs_at_drain(loop_env):
         header = kwargs.get("header") or ""
         events.append((t_id, header))
         if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
+            progress.add_progress(t_file, t_id, "attempted")
+            status = (
+                models.TaskStatus.COMPLETED
+                if t_id == "t1"
+                else models.TaskStatus.FAILED
             )
-        return 0, "", ""
-
-    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
-        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
-
-    assert events == [
-        ("t1", "Task Runner"),
-        ("t2", "Task Runner"),
-        ("t3", "Task Runner"),
-        ("t3", "Hook: roadmap"),
-    ]
-
-
-def test_run_loop_runs_roadmap_mid_queue_on_review_finding(loop_env):
-    tasks_file, work = loop_env
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            goal="Goal",
-            tasks=[
-                models.Task(id="t1", description="Has finding"),
-                models.Task(id="t2", description="Clean mid-queue"),
-                models.Task(id="t3", description="Final"),
-            ],
-            config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["testing", "roadmap"]
-            ),
-        ),
-    )
-    events: list[tuple[str, str]] = []
-
-    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
-        header = kwargs.get("header") or ""
-        events.append((t_id, header))
-        if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
-            )
-        elif header == "Hook: testing" and t_id == "t1":
-            progress.add_progress(t_file, t_id, "missing regression test")
+            operations.update_task(t_file, t_id, status=status)
+        elif header == "Hook: testing":
+            progress.add_progress(t_file, t_id, "review note")
         return 0, "", ""
 
     with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
@@ -2868,401 +2856,30 @@ def test_run_loop_runs_roadmap_mid_queue_on_review_finding(loop_env):
     assert events == [
         ("t1", "Task Runner"),
         ("t1", "Hook: testing"),
-        ("t1", "Hook: roadmap"),
-        ("t2", "Task Runner"),
-        ("t2", "Hook: testing"),
-        ("t3", "Task Runner"),
-        ("t3", "Hook: testing"),
-        ("t3", "Hook: roadmap"),
-    ]
-
-
-@pytest.mark.parametrize(
-    "stop_kwargs",
-    [{"max_tasks": 2}, {"until": "t2"}],
-    ids=["max_tasks", "until"],
-)
-def test_run_loop_runs_roadmap_at_bounded_stop(loop_env, stop_kwargs):
-    tasks_file, work = loop_env
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            goal="Goal",
-            tasks=[
-                models.Task(id="t1", description="Before boundary"),
-                models.Task(id="t2", description="At boundary"),
-                models.Task(id="t3", description="Still pending"),
-            ],
-            config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["roadmap"]
-            ),
-        ),
-    )
-    events: list[tuple[str, str]] = []
-
-    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
-        header = kwargs.get("header") or ""
-        events.append((t_id, header))
-        if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
-            )
-        return 0, "", ""
-
-    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
-        assert run_loop(
-            tasks_file,
-            False,
-            0,
-            True,
-            False,
-            (),
-            working_dir=work,
-            **stop_kwargs,
-        )
-
-    assert events == [
-        ("t1", "Task Runner"),
         ("t2", "Task Runner"),
         ("t2", "Hook: roadmap"),
     ]
+    tasks = {t.id: t for t in persistence.load_tasks(tasks_file).tasks}
+    assert tasks["t1"].status == models.TaskStatus.COMPLETED
+    assert tasks["t2"].status == models.TaskStatus.FAILED
 
 
-def test_run_hooks_rechecks_pending_queue_dynamically(hooks_env):
-    data = persistence.load_tasks(hooks_env)
-    data.config.hooks = ["testing", "roadmap"]
-    data.tasks[0].status = models.TaskStatus.COMPLETING
-    data.tasks[0].progress = ["done"]
-    data.tasks.append(models.Task(id="t2", description="Pending"))
-    persistence.save_tasks(hooks_env, data)
-
-    def empty_queue(cmd, t_file, t_id, *_args, **kwargs):
-        if kwargs.get("header") == "Hook: testing":
-            operations.delete_tasks(t_file, "t2")
-        return 0, "", ""
-
-    with mock.patch(
-        "lemming.runner.run_with_heartbeat", side_effect=empty_queue
-    ):
-        codes = run_hooks(
-            hooks_env,
-            "12345678",
-            "agy",
-            True,
-            (),
-            False,
-            False,
-            is_boundary=lambda _: False,
-        )
-    assert list(codes) == ["testing", "roadmap"]
-
-    # Conversely, populating an empty queue mid-review skips roadmap.
-    data = persistence.load_tasks(hooks_env)
-    data.tasks = [
-        models.Task(
-            id="12345678",
-            description="Initial",
-            status=models.TaskStatus.COMPLETING,
-            progress=["done"],
-        )
-    ]
-    persistence.save_tasks(hooks_env, data)
-
-    def populate_queue(cmd, t_file, t_id, *_args, **kwargs):
-        if kwargs.get("header") == "Hook: testing":
-            operations.add_task(t_file, "Newly queued")
-        return 0, "", ""
-
-    with mock.patch(
-        "lemming.runner.run_with_heartbeat", side_effect=populate_queue
-    ):
-        codes = run_hooks(
-            hooks_env,
-            "12345678",
-            "agy",
-            True,
-            (),
-            False,
-            False,
-            is_boundary=lambda _: False,
-        )
-    assert list(codes) == ["testing"]
-
-
-def test_run_hooks_skips_roadmap_on_failed_review_but_honors_explicit_hooks(
-    hooks_env,
+@mock.patch("lemming.runner.run_with_heartbeat", return_value=(0, "", ""))
+@mock.patch("lemming.prompts.prepare_hook_prompt", return_value="Prompt")
+def test_run_hooks_honors_explicit_9x_hook_on_completion(
+    _mock_prepare, _mock_run, hooks_env
 ):
-    data = persistence.load_tasks(hooks_env)
-    data.config.hooks = ["testing", "roadmap"]
-    data.tasks[0].status = models.TaskStatus.COMPLETING
-    data.tasks[0].attempts = 1
-    data.tasks[0].progress = ["done"]
-    data.tasks.append(models.Task(id="t2", description="Pending"))
-    persistence.save_tasks(hooks_env, data)
-
-    with mock.patch(
-        "lemming.runner.run_with_heartbeat", return_value=(1, "", "")
-    ):
-        codes = run_hooks(hooks_env, "12345678", "agy", True, (), False, False)
-    assert codes == {"testing": 1}
-    assert (
-        persistence.load_tasks(hooks_env).tasks[0].status
-        == models.TaskStatus.PENDING
-    )
-
-    # Explicit hooks=[...] still runs roadmap mid-queue when clean.
     _finalizing(hooks_env)
-    with mock.patch(
-        "lemming.runner.run_with_heartbeat", return_value=(0, "", "")
-    ):
-        codes = run_hooks(
-            hooks_env,
-            "12345678",
-            "agy",
-            True,
-            (),
-            False,
-            False,
-            hooks=["roadmap"],
-            is_boundary=lambda _: False,
-        )
+
+    codes = run_hooks(
+        hooks_env,
+        "12345678",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        hooks=["roadmap"],
+    )
+
     assert codes == {"roadmap": 0}
-
-
-def test_run_loop_trailing_oneshot_runs_roadmap_on_last_hooked_task(loop_env):
-    tasks_file, work = loop_env
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            goal="Goal",
-            tasks=[
-                models.Task(id="t1", description="First"),
-                models.Task(id="t2", description="Last hooked"),
-                models.Task(id="t3", description="Cleanup", oneshot=True),
-            ],
-            config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["roadmap"]
-            ),
-        ),
-    )
-    events: list[tuple[str, str]] = []
-
-    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
-        header = kwargs.get("header") or ""
-        events.append((t_id, header))
-        if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
-            )
-        return 0, "", ""
-
-    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
-        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
-
-    assert events == [
-        ("t1", "Task Runner"),
-        ("t2", "Task Runner"),
-        ("t2", "Hook: roadmap"),
-        ("t3", "Task Runner"),
-    ]
-
-
-def test_run_loop_resumed_completing_review_still_runs_roadmap(loop_env):
-    tasks_file, work = loop_env
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            goal="Goal",
-            tasks=[
-                models.Task(
-                    id="t1",
-                    description="Interrupted during review",
-                    status=models.TaskStatus.COMPLETING,
-                    attempts=1,
-                    progress=["done", "testing: missing edge case"],
-                ),
-                models.Task(id="t2", description="Next"),
-            ],
-            config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["testing", "roadmap"]
-            ),
-        ),
-    )
-    events: list[tuple[str, str]] = []
-
-    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
-        header = kwargs.get("header") or ""
-        events.append((t_id, header))
-        if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
-            )
-        return 0, "", ""
-
-    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
-        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
-
-    assert events == [
-        ("t1", "Hook: testing"),
-        ("t1", "Hook: roadmap"),
-        ("t2", "Task Runner"),
-        ("t2", "Hook: testing"),
-        ("t2", "Hook: roadmap"),
-    ]
-
-
-def test_run_loop_lost_write_mid_queue_forces_roadmap(loop_env):
-    tasks_file, work = loop_env
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            goal="Goal",
-            tasks=[
-                models.Task(id="t1", description="Lost write"),
-                models.Task(id="t2", description="Next"),
-            ],
-            config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["roadmap"]
-            ),
-        ),
-    )
-    lost_event = json.dumps(
-        {
-            "event": "step_update",
-            "step_update": {
-                "state": "ERROR",
-                "tool_name": "write_file",
-                "tool_info": {
-                    "name": "write_file",
-                    "parameters": {"Path": "/w/missing.py"},
-                    "error": {
-                        "type": "TOOL_ERROR",
-                        "message": (
-                            "ArtifactMetadata was provided but /w/missing.py "
-                            "is not a valid artifact path"
-                        ),
-                    },
-                },
-            },
-        }
-    )
-    events: list[tuple[str, str]] = []
-
-    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
-        header = kwargs.get("header") or ""
-        events.append((t_id, header))
-        if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
-            )
-            if t_id == "t1":
-                return 0, lost_event + "\n", ""
-        return 0, "", ""
-
-    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
-        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
-
-    assert events == [
-        ("t1", "Task Runner"),
-        ("t1", "Hook: roadmap"),
-        ("t2", "Task Runner"),
-        ("t2", "Hook: roadmap"),
-    ]
-
-
-def test_run_loop_drain_requested_mid_queue_runs_roadmap(loop_env):
-    tasks_file, work = loop_env
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            goal="Goal",
-            tasks=[
-                models.Task(id="t1", description="Draining"),
-                models.Task(id="t2", description="Still pending"),
-            ],
-            config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["roadmap"]
-            ),
-        ),
-    )
-    events: list[tuple[str, str]] = []
-
-    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
-        header = kwargs.get("header") or ""
-        events.append((t_id, header))
-        if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
-            )
-            shutdown.request_drain()
-        return 0, "", ""
-
-    shutdown.clear_drain()
-    try:
-        with mock.patch(
-            "lemming.runner.run_with_heartbeat", side_effect=fake_run
-        ):
-            assert (
-                run_loop(
-                    tasks_file, False, 0, True, False, (), working_dir=work
-                )
-                is False
-            )
-    finally:
-        shutdown.clear_drain()
-
-    assert events == [("t1", "Task Runner"), ("t1", "Hook: roadmap")]
-
-
-def test_run_loop_until_superseded_in_review_dynamically_runs_roadmap(loop_env):
-    tasks_file, work = loop_env
-    persistence.save_tasks(
-        tasks_file,
-        models.Roadmap(
-            goal="Goal",
-            tasks=[
-                models.Task(id="t1", description="First"),
-                models.Task(id="t2", description="Milestone"),
-                models.Task(id="t3", description="After milestone"),
-            ],
-            config=models.RoadmapConfig(
-                retries=2, runner="agy", hooks=["testing", "roadmap"]
-            ),
-        ),
-    )
-    events: list[tuple[str, str]] = []
-
-    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
-        header = kwargs.get("header") or ""
-        events.append((t_id, header))
-        if header == "Task Runner":
-            progress.add_progress(t_file, t_id, "done")
-            operations.update_task(
-                t_file, t_id, status=models.TaskStatus.COMPLETED
-            )
-        elif header == "Hook: testing" and t_id == "t1":
-            operations.supersede_task(t_file, "t2", "covered by t1")
-        return 0, "", ""
-
-    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
-        assert run_loop(
-            tasks_file,
-            False,
-            0,
-            True,
-            False,
-            (),
-            working_dir=work,
-            until="t2",
-        )
-
-    assert events == [
-        ("t1", "Task Runner"),
-        ("t1", "Hook: testing"),
-        ("t1", "Hook: roadmap"),
-    ]

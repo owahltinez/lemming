@@ -14,9 +14,8 @@ def hooks_group():
     (.lemming/hooks/), global (~/.local/lemming/hooks/), and built-in
     layers, with the project layer taking precedence. A numeric filename
     prefix (e.g. 90-roadmap.md) sets the execution order. Hooks below 90
-    review each completed task; hooks at 90 and above orchestrate the
-    queue on failures, review findings, and run boundaries. An empty file
-    masks the hook of the same name.
+    review completed tasks; hooks at 90 and above run only when a task
+    fails. An empty file masks the hook of the same name.
 
     Only the hooks enabled for the project run by default (initially just
     roadmap). A task can pick its own reviews with 'add --hooks' or

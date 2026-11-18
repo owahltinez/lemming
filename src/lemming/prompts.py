@@ -57,7 +57,7 @@ _ROADMAP_HOOK_POLICY = _RoadmapContextPolicy(
     terminal_description_chars=200,
     progress_entries=3,
     progress_entry_chars=2_000,
-    completed_progress_tasks=15,
+    completed_progress_tasks=5,
 )
 _REVIEW_HOOK_POLICY = _RoadmapContextPolicy(
     total_chars=16_000,

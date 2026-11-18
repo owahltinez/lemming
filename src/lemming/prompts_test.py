@@ -676,30 +676,3 @@ def test_format_task_block_and_hook_prompt_include_diff_summary(
         "test-hook", data, current, tasks_file
     )
     assert "Changes: 1 file (+1/-0): a.py (+1/-0)\n" in hook_prompt_with_changes
-
-
-def test_roadmap_hook_retains_progress_across_mid_queue_tasks(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
-    tasks_file = tmp_path / "tasks.yml"
-    tasks = [
-        models.Task(
-            id=f"t{i}",
-            description=f"Task {i}",
-            status=models.TaskStatus.COMPLETED,
-            progress=[f"deferred-note-{i}"],
-        )
-        for i in range(12)
-    ]
-    current = models.Task(
-        id="t12",
-        description="Final task",
-        status=models.TaskStatus.COMPLETING,
-        progress=["done"],
-    )
-    data = models.Roadmap(goal="Goal", tasks=[*tasks, current])
-    persistence.save_tasks(tasks_file, data)
-
-    prompt = prompts.prepare_hook_prompt("roadmap", data, current, tasks_file)
-    assert "deferred-note-0" in prompt
