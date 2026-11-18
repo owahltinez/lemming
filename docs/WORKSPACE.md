@@ -49,7 +49,7 @@ out under it.
 
 The minimal Git shape, from a clean tree:
 
-```bash
+```sh
 repo=$(git rev-parse --show-toplevel) || exit 1
 test -z "$(git -C "$repo" status --porcelain)" || exit 1
 
@@ -78,84 +78,120 @@ streams: never parallelize tasks that touch the same files, shared schemas or
 types, central router or CLI registrations, or lockfiles. Land shared
 foundations on the base branch and commit them before branching any worktrees.
 
-From a clean checkout, create one worktree and `lemming/<slug>` branch per
-stream from committed `HEAD`, seed each roadmap, and start detached loops (for a
-single-shot stream, either queue one `--oneshot` task under `run --detach` so
-the combined waiter below tracks it, or run `lemming -C "$wt" -v exec ...` when
-a dedicated caller or subagent owns that stream):
+A fresh Git worktree contains only tracked files from `HEAD`. It does **not**
+inherit untracked state from `$repo`:
 
-```bash
+- **Project configuration**: `lemming config` settings (`runner`, `model`,
+  `retries`, `time_limit`, enabled hooks) stored in an untracked roadmap start
+  at defaults; pass `--runner` / `--model` per task or run
+  `lemming -C "$wt" config set ...` per worktree.
+- **Environment and local hooks**: copy or symlink `.env` and any untracked
+  `.lemming/hooks` into `$wt` when needed (global `~/.local/lemming/.env` and
+  `~/.local/lemming/hooks` still apply automatically).
+- **Dependencies**: untracked environments (`.venv`, `node_modules`) are absent
+  until installed or linked in `$wt`.
+- **Roadmaps (`tasks.yml`)**: when untracked, Lemming hashes each resolved
+  worktree path to `~/.local/lemming/<hash>/tasks.yml` automatically (remove
+  that state directory afterward if discarding a throwaway run). If the
+  repository tracks `tasks.yml`, every loop mutates its worktree's copy and must
+  be restored before committing so branches do not conflict on merge.
+
+Record `base` from a clean checkout, create one worktree and `lemming/<slug>`
+branch per stream under `$wt_root`, seed each roadmap, and start detached loops
+(for a single-shot stream, either queue one `--oneshot` task under
+`run --detach` so the waiter below tracks it, or run
+`lemming -C "$wt" -v exec ...` when a dedicated caller or subagent owns that
+stream):
+
+```sh
 repo=$(git rev-parse --show-toplevel) || exit 1
 test -z "$(git -C "$repo" status --porcelain)" || exit 1
-wt_root=$(mktemp -d "${TMPDIR:-/tmp}/lemming-fanout.XXXXXX") || exit 1
+base=$(git -C "$repo" rev-parse HEAD) || exit 1
+wt_root=$(mktemp -d "${TMPDIR:-/tmp}/lemming.XXXXXX") || exit 1
 
-wts=""
 for slug in auth-events billing-csv; do
-  wt="$wt_root/$slug"
-  git -C "$repo" worktree add -b "lemming/$slug" "$wt" HEAD || exit 1
-  wts="${wts:+$wts }$wt"
+  git -C "$repo" worktree add -b "lemming/$slug" "$wt_root/$slug" "$base" || exit 1
 done
 
 lemming -C "$wt_root/auth-events" goal "Emit audit events in src/auth/"
-lemming -C "$wt_root/auth-events" add "Record login and token refresh events"
+lemming -C "$wt_root/auth-events" add "Record login and refresh events" --runner codex
 lemming -C "$wt_root/auth-events" run --detach
 
 lemming -C "$wt_root/billing-csv" goal "Export invoices in src/billing/"
-lemming -C "$wt_root/billing-csv" add "Stream CSV rows with RFC 4180 quoting"
+lemming -C "$wt_root/billing-csv" add "Stream CSV rows with RFC 4180 quoting" --runner codex
 lemming -C "$wt_root/billing-csv" run --detach
 ```
 
-When `tasks.yml` is untracked, Lemming keys each roadmap by its resolved
-worktree path under `~/.local/lemming/`, so parallel loops share no state and
-dirty no tracked files. If the repository tracks `tasks.yml`, every loop mutates
-its worktree's copy and the branches will conflict on merge — untrack
-`tasks.yml` before branching, or discard or reconcile those edits in each
-worktree before committing.
-
-Supervise all detached loops with **one** combined waiter instead of holding `N`
-open background shells or polling loops that fill a supervising agent's context
-window. The waiter snapshots `status --brief` across `$wts` and sleeps until
-_any_ worktree changes (a task settles, turns `Stale`, or fails, or a loop
-becomes `Idle`):
+Supervise all detached loops from **one** combined waiter instead of holding `N`
+background shells or polling loops in context. Iterating `"$wt_root"/*/` handles
+spaces in `$TMPDIR` and shrinks automatically as landed worktrees are removed;
+the waiter exits `0` immediately if any remaining stream is already `Idle` or
+`Stale`, propagates CLI errors, and waits out initial task claiming (`[ ]` to
+`[*]`) before comparing snapshots:
 
 ```sh
-before=$(for wt in $wts; do lemming -C "$wt" status --brief; done)
 timeout 60m sh -c '
-  wts=$2
-  while [ "$(
-    for wt in $wts; do lemming -C "$wt" status --brief; done
-  )" = "$1" ]; do
-    sleep 60
-  done
-' _ "$before" "$wts"
+  wt_root=$1; interval=${2:-30}
+  poll() {
+    snap=""; claiming=0
+    for wt in "$wt_root"/*/; do
+      [ -d "$wt" ] || continue
+      out=$(lemming -C "$wt" status --brief) || exit 1
+      case "$out" in
+        *"Loop Status: Idle"* | *"    Stale: "*) exit 0 ;;
+        *"[*] "*) ;; *) claiming=1 ;;
+      esac
+      snap="$snap$wt:$out
+"
+    done
+    [ -n "$snap" ] || exit 0
+  }
+  for _ in 1 2 3 4 5; do poll; [ "$claiming" -eq 0 ] && break; sleep 1; done
+  before=$snap
+  while :; do sleep "$interval"; poll; [ "$snap" != "$before" ] && exit 0; done
+' _ "$wt_root"
 ```
 
 Clean merges do not guarantee semantic compatibility across streams. As streams
-finish, land and verify them **one branch at a time**:
+finish, land and verify them **one branch at a time**, running mutating reviews
+only once after all merges so `$repo` stays clean between merges:
 
-1. Inspect `lemming -C "$wt" diff --stat` (or `diff <id> --stat` per task) and
-   `git -C "$wt" status --short`. Verify any commits the runner made, and commit
-   remaining intended edits on `lemming/<slug>` while excluding untracked
-   throwaway state (and restoring or reconciling any tracked `tasks.yml`).
-2. Merge into the integration branch one stream at a time and run the test suite
-   (plus an optional scoped review) on the integrated tree before landing the
-   next stream, so cross-branch interactions are caught immediately:
+```sh
+for slug in auth-events billing-csv; do
+  wt="$wt_root/$slug"
+  branch="lemming/$slug"
+  [ -d "$wt" ] || continue
 
-   ```bash
-   git -C "$repo" merge --no-ff "lemming/$slug"
-   # Run the project's test suite on $repo, and optionally review the merge:
-   git -C "$repo" diff -z --name-only --diff-filter=d HEAD~1..HEAD |
-     lemming -C "$repo" exec --review testing --scope -
-   ```
+  # Inspect every task (`lemming diff` alone shows only the latest) plus $base diff.
+  lemming -C "$wt" -v status
+  git -C "$wt" status --short
+  git -C "$wt" diff --stat "$base"
 
-3. Remove the landed worktree and branch non-forcibly, drop `$wt` from `$wts`
-   (`-C` requires an existing directory), and re-arm the waiter until every
-   stream has merged:
+  # Restore a tracked tasks.yml and drop its lockfile so branches do not conflict.
+  if git -C "$wt" ls-files --error-unmatch tasks.yml >/dev/null 2>&1; then
+    git -C "$wt" checkout -- tasks.yml && rm -f "$wt/tasks.lock"
+  fi
 
-   ```bash
-   git -C "$repo" worktree remove "$wt"
-   git -C "$repo" branch -d "lemming/$slug"
-   ```
+  # Remove throwaway files first; commit uncommitted edits and reject no-op branches.
+  if [ -n "$(git -C "$wt" status --porcelain)" ]; then
+    git -C "$wt" add -A && git -C "$wt" commit -m "Land $slug" || exit 1
+  fi
+  [ "$(git -C "$wt" rev-parse HEAD)" != "$base" ] || exit 1
+
+  git -C "$repo" merge --no-ff "$branch" || exit 1
+  # Run the project's non-mutating test suite on $repo before the next merge.
+
+  git -C "$repo" worktree remove "$wt" || exit 1
+  git -C "$repo" branch -d "$branch" || exit 1
+done
+rmdir "$wt_root"
+
+# Guard against pure-deletion diffs where --scope - would receive no paths.
+if [ -n "$(git -C "$repo" diff --name-only --diff-filter=d "$base"..HEAD)" ]; then
+  git -C "$repo" diff -z --name-only --diff-filter=d "$base"..HEAD |
+    lemming -C "$repo" exec --review testing --scope -
+fi
+```
 
 ## Inspecting Diffs and Rolling Back Tasks
 
@@ -163,7 +199,7 @@ Every snapshotted task records its `pre_tree`, `runner_tree`, `post_tree`, and
 per-hook tree pairs (`hook_trees`), so you can inspect or undo individual tasks
 and hooks without relying on the runner having made Git commits:
 
-```bash
+```sh
 lemming -C "$worktree" status                 # queue, attempts, diff summaries
 lemming -C "$worktree" diff <id>              # full patch for one task
 lemming -C "$worktree" diff <id> --stat       # diffstat summary
@@ -175,7 +211,7 @@ When the orchestrator loop is idle and the workspace has no uncommitted manual
 edits outside the latest snapshot, `lemming rollback` can revert completed work
 at three granularities:
 
-```bash
+```sh
 # Rewind to <id>'s pre_tree and reset <id> and later tasks to pending
 lemming -C "$worktree" rollback <id>
 
@@ -204,7 +240,7 @@ non-forcibly, which refuses rather than destroying uncommitted work — includin
 a tracked `tasks.yml` the loop has edited, which must be committed or discarded
 first:
 
-```bash
+```sh
 git -C "$repo" worktree remove "$worktree"
 git -C "$repo" branch -d "$branch"
 ```
@@ -230,7 +266,7 @@ If `git` is not installed on the host, snapshots are disabled silently and there
 is nothing to diff against or reset; **copy the directory before the run** if
 you need a rollback baseline:
 
-```bash
+```sh
 cp -a project project.bak
 lemming -C project run
 ```
