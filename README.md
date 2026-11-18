@@ -276,6 +276,9 @@ lemming hooks enable testing
 
 # Or pick the reviews for one task, replacing the project's ('' for none)
 lemming add "Redesign the settings page" --hooks ux,testing
+
+# Or batch reviews once over cumulative changes at a milestone or queue drain
+lemming run --until <id> --review '*'
 ```
 
 ### Built-in Hooks ⚓️
@@ -469,6 +472,12 @@ These come before the subcommand and apply to all of them.
   - `--max-tasks N`: Stop between tasks once `N` have completed or failed,
     printing `Stopped after N tasks; M pending.` Attempts that leave a task
     pending do not count. Combine with `--until` as a budget cap.
+  - `--review <names>`: Run these reviews once over the surviving cumulative
+    changes when the loop stops cleanly (queue drain, `--until`, or
+    `--max-tasks`), suppressing per-task reviews while keeping `9x` hooks such
+    as `roadmap` active. Comma-separated or repeated; `'*'` selects every
+    review. A rejected or failed batch review exits 1 without rewinding
+    completed tasks.
   - `--detach`: Start the loop in its own session and return, printing its PID
     and log file (`loop.log` in the project's state directory; one over 1 MB
     moves to `loop.log.1` first). The loop outlives the shell or agent harness

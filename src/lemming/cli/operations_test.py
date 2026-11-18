@@ -493,6 +493,85 @@ class TestCLIOperations(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertEqual(run_loop.call_args.args[5], ("--model", "--", "x"))
 
+    def test_run_forwards_reviews_in_priority_order(self):
+        local_hooks = pathlib.Path(self.test_dir) / ".lemming" / "hooks"
+        local_hooks.mkdir(parents=True)
+        (local_hooks / "10-lint.md").write_text("lint prompt\n")
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"LEMMING_HOME": str(pathlib.Path(self.test_dir) / "home")},
+            ),
+            mock.patch.object(
+                operations, "run_loop", return_value=True
+            ) as run_loop,
+        ):
+            result = self.cli_runner.invoke(
+                cli.cli,
+                self.base_args
+                + ["run", "--review", "ux,lint", "--review", "readability"],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(
+            run_loop.call_args.kwargs["reviews"],
+            ["lint", "readability", "ux"],
+        )
+
+    def test_run_rejects_invalid_and_orchestration_reviews(self):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"LEMMING_HOME": str(pathlib.Path(self.test_dir) / "home")},
+            ),
+            mock.patch("subprocess.Popen") as popen,
+            mock.patch.object(operations, "run_loop") as run_loop,
+        ):
+            unknown = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--review", "nope"]
+            )
+            ninety = self.cli_runner.invoke(
+                cli.cli, self.base_args + ["run", "--review", "roadmap"]
+            )
+            detached = self.cli_runner.invoke(
+                cli.cli,
+                self.base_args + ["run", "--detach", "--review", "roadmap"],
+            )
+
+        self.assertNotEqual(unknown.exit_code, 0)
+        self.assertIn("Unknown review 'nope'", unknown.output)
+        self.assertNotEqual(ninety.exit_code, 0)
+        self.assertIn("orchestrates the roadmap", ninety.output)
+        self.assertNotEqual(detached.exit_code, 0)
+        self.assertIn("orchestrates the roadmap", detached.output)
+        run_loop.assert_not_called()
+        popen.assert_not_called()
+
+    def test_run_detach_forwards_reviews(self):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"LEMMING_HOME": str(pathlib.Path(self.test_dir) / "home")},
+            ),
+            mock.patch("subprocess.Popen") as popen,
+            mock.patch.object(operations, "run_loop") as run_loop,
+        ):
+            popen.return_value.pid = 4242
+            result = self.cli_runner.invoke(
+                cli.cli,
+                self.base_args + ["run", "--detach", "--review", "*"],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        run_loop.assert_not_called()
+        cmd = popen.call_args.args[0]
+        run_args = cmd[cmd.index("run") + 1 :]
+        self.assertEqual(
+            [arg for arg in run_args if arg.startswith("--review=")],
+            ["--review=readability", "--review=testing", "--review=ux"],
+        )
+
     def test_serve_help(self):
         result = self.cli_runner.invoke(cli.cli, ["serve", "--help"])
         self.assertEqual(result.exit_code, 0)

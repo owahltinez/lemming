@@ -1,8 +1,10 @@
 """Orchestrator loop that executes pending tasks via runners and hooks."""
 
+import contextlib
 import os
 import pathlib
 import random
+import shutil
 import time
 
 import click
@@ -64,11 +66,13 @@ def run_hooks(
     time_limit: int = 0,
     model_name: str | None = None,
     scope: str | None = None,
+    suppress_reviews: bool = False,
+    conclude_task: bool = True,
 ) -> dict[str, int]:
     """Executes orchestrator hooks for a finished task.
 
     A completing or failing task is concluded once they finish, unless a hook
-    already moved it elsewhere.
+    already moved it elsewhere or ``conclude_task`` is False.
 
     Args:
         tasks_file: Path to the tasks YAML file.
@@ -88,6 +92,8 @@ def run_hooks(
         model_name: Model to request from the hook runner, if any.
         scope: What the hooks should look at. Defaults to the work the
             finished task left behind.
+        suppress_reviews: Whether to omit review hooks below the 9x band.
+        conclude_task: Whether to apply task finalization once hooks finish.
 
     Returns:
         Mapping of each executed hook name to its runner exit code (-1 when
@@ -99,7 +105,8 @@ def run_hooks(
     task = next((t for t in data.tasks if t.id == task_id), None)
     if not task:
         return exit_codes
-    finalizing = task.status in (
+    started_active = task.status in models.ACTIVE_STATUSES
+    finalizing = conclude_task and task.status in (
         models.TaskStatus.COMPLETING,
         models.TaskStatus.FAILING,
     )
@@ -108,8 +115,18 @@ def run_hooks(
     active_hooks = (
         hooks
         if hooks is not None
-        else select_hooks(tasks_file, data.config.hooks, task.hooks)
+        else select_hooks(
+            tasks_file,
+            data.config.hooks,
+            [] if suppress_reviews else task.hooks,
+        )
     )
+    if suppress_reviews and hooks is not None:
+        active_hooks = [
+            h
+            for h in active_hooks
+            if get_hook_priority(h, tasks_file) >= FAILURE_HOOK_PRIORITY
+        ]
 
     # A oneshot task buys its latency back by skipping the post-task
     # review, but a failing one still gets failure-hook recovery below.
@@ -143,7 +160,7 @@ def run_hooks(
             continue
         if task.status == models.TaskStatus.CANCELLED or (
             hook_index > 0
-            and finalizing
+            and started_active
             and task.status not in models.ACTIVE_STATUSES
         ):
             break
@@ -235,6 +252,13 @@ def run_hooks(
                 latest_task is not None
                 and latest_task.status == models.TaskStatus.CANCELLED
             ):
+                if not conclude_task and hook_pre_tree is not None:
+                    snapshots.restore_tree(
+                        tasks_file,
+                        working_dir,
+                        hook_pre_tree,
+                        target_head=hook_pre_head,
+                    )
                 break
             if hook_pre_tree is not None:
                 snapshots.restore_tree(
@@ -371,6 +395,8 @@ def _review(
     time_limit: int,
     model_name: str | None = None,
     scope: str | None = None,
+    suppress_reviews: bool = False,
+    keep_trees: set[str] | None = None,
 ) -> models.Task | None:
     """Runs the hooks over a settled completing or failing task.
 
@@ -410,6 +436,7 @@ def _review(
         time_limit=time_limit,
         model_name=model_name,
         scope=scope,
+        suppress_reviews=suppress_reviews,
     )
 
     refreshed = persistence.load_tasks(tasks_file)
@@ -424,7 +451,9 @@ def _review(
         and task.pre_tree is None
     ):
         snapshots.prune_snapshots(
-            tasks_file, snapshots.collect_task_trees(refreshed.tasks)
+            tasks_file,
+            snapshots.collect_task_trees(refreshed.tasks)
+            | (keep_trees or set()),
         )
     return task
 
@@ -443,6 +472,8 @@ def _process_exhausted_retries(
     time_limit: int,
     model_name: str | None = None,
     scope: str | None = None,
+    suppress_reviews: bool = False,
+    keep_trees: set[str] | None = None,
 ) -> bool:
     """Fails a task that ran out of attempts, giving failure hooks a say.
 
@@ -471,6 +502,8 @@ def _process_exhausted_retries(
         time_limit,
         model_name=model_name,
         scope=scope,
+        suppress_reviews=suppress_reviews,
+        keep_trees=keep_trees,
     )
     if (
         task is not None
@@ -508,6 +541,8 @@ def _handle_runner_exit(
     retry_runner_failures: bool = False,
     abort_failed_finalization: bool = False,
     claimed: models.Task | None = None,
+    suppress_reviews: bool = False,
+    keep_trees: set[str] | None = None,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
@@ -596,6 +631,8 @@ def _handle_runner_exit(
                 time_limit,
                 model_name=model_name,
                 scope=scope,
+                suppress_reviews=suppress_reviews,
+                keep_trees=keep_trees,
             )
             or post_task
         )
@@ -690,11 +727,15 @@ _SETTLED_STATUSES = frozenset(
 )
 
 
-def _task_settled(tasks_file: pathlib.Path, task_id: str) -> bool:
-    """Reports whether a task has reached a terminal status."""
+def _settled_status(
+    tasks_file: pathlib.Path, task_id: str
+) -> models.TaskStatus | None:
+    """Returns a task's status once it has reached a terminal state."""
     data = persistence.load_tasks(tasks_file)
     task = next((t for t in data.tasks if t.id == task_id), None)
-    return task is not None and task.status in _SETTLED_STATUSES
+    if task is not None and task.status in _SETTLED_STATUSES:
+        return task.status
+    return None
 
 
 def _count_pending(data: models.Roadmap) -> int:
@@ -709,23 +750,215 @@ def _report_task_limit(data: models.Roadmap, settled: int) -> None:
     )
 
 
-def _check_milestone(data: models.Roadmap, until: str) -> bool | None:
-    """Decides whether a milestone run should stop, reporting why.
+def _latest_completed_task(tasks: list[models.Task]) -> models.Task | None:
+    """Returns the most recently started completed task, matching rollback."""
+    started = [
+        t
+        for t in tasks
+        if t.status == models.TaskStatus.COMPLETED
+        and (
+            t.started_at
+            or t.last_started_at
+            or t.attempts > 0
+            or t.pre_tree
+            or t.post_tree
+        )
+    ]
+    pool = started or [
+        t for t in tasks if t.status == models.TaskStatus.COMPLETED
+    ]
+    best_key: tuple[float, int] | None = None
+    best_task: models.Task | None = None
+    for idx, task in enumerate(tasks):
+        if task not in pool:
+            continue
+        marker = task.started_at or task.last_started_at or task.completed_at
+        key = (marker if marker is not None else float("inf"), idx)
+        if best_key is None or key >= best_key:
+            best_key = key
+            best_task = task
+    return best_task
+
+
+def _new_review_task_id(
+    tasks_file: pathlib.Path, existing: list[models.Task]
+) -> str:
+    """Generates a task ID free of task and retained-log collisions."""
+    existing_ids = {t.id for t in existing}
+    project_dir = paths.get_project_dir(tasks_file)
+    task_id = lifecycle.generate_task_id()
+    while (
+        task_id in existing_ids
+        or (project_dir / f"{task_id}-runner.log").exists()
+    ):
+        task_id = lifecycle.generate_task_id()
+    return task_id
+
+
+def _transfer_batch_review_state(
+    tasks_file: pathlib.Path,
+    review_task_id: str,
+    final_tree: str | None,
+    failed_hooks: list[str],
+) -> tuple[models.Task | None, str | None]:
+    """Removes the ephemeral batch-review task and folds state into history."""
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        gate = next((t for t in data.tasks if t.id == review_task_id), None)
+        data.tasks = [t for t in data.tasks if t.id != review_task_id]
+        anchor = _latest_completed_task(data.tasks)
+        anchor_id = anchor.id if anchor is not None else None
+        if anchor is not None:
+            if gate is not None and gate.progress:
+                anchor.progress.extend(gate.progress)
+                anchor.last_progress_at = gate.last_progress_at or time.time()
+            if failed_hooks:
+                entry = f"Batch review hooks failed: {', '.join(failed_hooks)}."
+                anchor.progress.append(entry[: limits.MAX_PROGRESS_ENTRY_CHARS])
+                anchor.last_progress_at = time.time()
+            if gate is not None and gate.execution_times:
+                if anchor.execution_times is None:
+                    anchor.execution_times = {}
+                for comp, dur in gate.execution_times.items():
+                    anchor.execution_times[comp] = (
+                        anchor.execution_times.get(comp, 0.0) + dur
+                    )
+            if gate is not None and gate.hook_trees:
+                anchor.hook_trees = {
+                    **(anchor.hook_trees or {}),
+                    **gate.hook_trees,
+                }
+            if final_tree is not None:
+                anchor.post_tree = final_tree
+                anchor.diff_summary = (
+                    snapshots.summarize_diff(
+                        tasks_file, anchor.pre_tree, final_tree
+                    )
+                    if anchor.pre_tree
+                    else None
+                )
+        persistence.save_tasks(tasks_file, data)
+    return gate, anchor_id
+
+
+def _run_batch_reviews(
+    tasks_file: pathlib.Path,
+    reviews: list[str],
+    baseline_tree: str | None,
+    any_completed: bool,
+    yolo: bool,
+    no_defaults: bool,
+    runner_args: tuple,
+    verbose: bool,
+    working_dir: pathlib.Path,
+) -> bool:
+    """Runs batch review hooks over surviving cumulative changes at a boundary.
 
     Returns:
-        True to stop successfully, False to stop because the milestone task
-        vanished, None to keep running.
+        True when no changes survived or every review hook accepted them; False
+        when any hook failed, was cancelled, or rejected the batch.
     """
-    reached = queries.milestone_reached(data.tasks, until)
-    if reached is None:
-        click.echo(f"Milestone task {until} no longer exists; stopping.")
-        return False
-    if reached:
-        click.echo(
-            f"Reached milestone {until}; {_count_pending(data)} pending."
+    end_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+    diff_summary = None
+    if baseline_tree is not None and end_tree is not None:
+        changed = [
+            p
+            for p in snapshots.changed_files(
+                tasks_file, baseline_tree, end_tree
+            )
+            if (working_dir / p).exists()
+        ]
+        if not changed:
+            return True
+        batch_scope = scope_mod.describe(changed, working_dir)
+        diff_summary = snapshots.summarize_diff(
+            tasks_file, baseline_tree, end_tree
         )
-        return True
-    return None
+    else:
+        if not any_completed:
+            return True
+        batch_scope = scope_mod.describe([scope_mod.WHOLE_TREE], working_dir)
+
+    now = time.time()
+    with persistence.lock_tasks(tasks_file):
+        data = persistence.load_tasks(tasks_file)
+        review_task_id = _new_review_task_id(tasks_file, data.tasks)
+        runner_name = data.config.runner
+        model_name = data.config.model
+        time_limit = data.config.time_limit
+        review_task = models.Task(
+            id=review_task_id,
+            description=f"Review changes: {', '.join(reviews)}.",
+            status=models.TaskStatus.COMPLETING,
+            attempts=1,
+            pid=os.getpid(),
+            started_at=now,
+            last_started_at=now,
+            last_heartbeat=now,
+            runner_tree=end_tree,
+            diff_summary=diff_summary,
+        )
+        data.tasks.insert(0, review_task)
+        persistence.save_tasks(tasks_file, data)
+
+    gate: models.Task | None = None
+    exit_codes: dict[str, int] = {}
+    try:
+        if verbose:
+            click.echo(f"\n--- Batch Review ({', '.join(reviews)}) ---")
+        else:
+            click.echo(f"Running batch review: {', '.join(reviews)}...")
+        exit_codes = run_hooks(
+            tasks_file,
+            review_task_id,
+            runner_name,
+            yolo,
+            runner_args,
+            no_defaults,
+            verbose,
+            hooks=reviews,
+            working_dir=working_dir,
+            time_limit=time_limit,
+            model_name=model_name,
+            scope=batch_scope,
+            conclude_task=False,
+        )
+    finally:
+        with contextlib.suppress(persistence.CorruptedTasksError):
+            final_tree = snapshots.snapshot_tree(tasks_file, working_dir)
+            failed_hooks = [h for h, code in exit_codes.items() if code != 0]
+            gate, anchor_id = _transfer_batch_review_state(
+                tasks_file, review_task_id, final_tree, failed_hooks
+            )
+            review_log = paths.get_log_file(tasks_file, review_task_id)
+            if review_log.exists():
+                if anchor_id is not None:
+                    anchor_log = paths.get_log_file(tasks_file, anchor_id)
+                    with (
+                        review_log.open("rb") as src,
+                        anchor_log.open("ab") as dst,
+                    ):
+                        shutil.copyfileobj(src, dst)
+                review_log.unlink(missing_ok=True)
+            shutil.rmtree(
+                paths.get_artifacts_dir(tasks_file, review_task_id),
+                ignore_errors=True,
+            )
+
+    cancelled = gate is None or gate.status == models.TaskStatus.CANCELLED
+    failed_hooks = [h for h, code in exit_codes.items() if code != 0]
+    rejected = bool(gate and gate.rejection)
+    if cancelled or failed_hooks or rejected:
+        reasons = []
+        if cancelled:
+            reasons.append("was cancelled")
+        if failed_hooks:
+            reasons.append(f"hooks failed ({', '.join(failed_hooks)})")
+        if rejected:
+            reasons.append("was rejected")
+        click.echo(f"Batch review {'; '.join(reasons)}.")
+        return False
+    return True
 
 
 def _echo_runner_not_found(runner_name: str) -> None:
@@ -755,6 +988,7 @@ def run_loop(
     once: bool = False,
     max_tasks: int | None = None,
     until: str | None = None,
+    reviews: list[str] | None = None,
 ) -> bool:
     """Runs pending tasks, returning True only when the roadmap is complete.
 
@@ -780,18 +1014,41 @@ def run_loop(
         until: Exact ID of a milestone task. Stop between tasks once it, or
             every task that replaced it, has settled; stop unsuccessfully if
             it is deleted.
+        reviews: Review hooks to run once over cumulative changes when the loop
+            reaches a clean stop, suppressing per-task reviews during the run.
 
     Returns:
         True when the roadmap ran to completion, the task limit was reached,
-        or the milestone was reached.
+        or the milestone was reached (and any batch reviews passed).
     """
     working_dir = working_dir or paths.get_working_dir(tasks_file)
     recover_abandoned_tasks(tasks_file, working_dir)
+    suppress_reviews = bool(reviews)
+    baseline_captured = False
+    baseline_tree: str | None = None
+    keep_trees: set[str] | None = None
+    any_completed = False
     one_task_id = None
     one_task_config = None
     one_task_runner = None
     one_task_model = None
     settled_count = 0
+
+    def finish_boundary() -> bool:
+        if not reviews or not baseline_captured:
+            return True
+        return _run_batch_reviews(
+            tasks_file,
+            reviews,
+            baseline_tree,
+            any_completed,
+            yolo,
+            no_defaults,
+            runner_args,
+            verbose,
+            working_dir,
+        )
+
     while True:
         returncode = 0
 
@@ -808,12 +1065,28 @@ def run_loop(
         # Bounded runs stop between tasks, after hooks have settled the last
         # one, so the caller sees a consistent roadmap.
         if max_tasks is not None and settled_count >= max_tasks:
-            _report_task_limit(data, settled_count)
+            if not finish_boundary():
+                return False
+            _report_task_limit(
+                persistence.load_tasks(tasks_file), settled_count
+            )
             return True
         if until is not None:
-            milestone = _check_milestone(data, until)
-            if milestone is not None:
-                return milestone
+            reached = queries.milestone_reached(data.tasks, until)
+            if reached is None:
+                click.echo(
+                    f"Milestone task {until} no longer exists; stopping."
+                )
+                return False
+            if reached:
+                if not finish_boundary():
+                    return False
+                data = persistence.load_tasks(tasks_file)
+                click.echo(
+                    f"Reached milestone {until}; "
+                    f"{_count_pending(data)} pending."
+                )
+                return True
 
         retries = data.config.retries
         time_limit = data.config.time_limit
@@ -878,6 +1151,8 @@ def run_loop(
                     )
                 return False
 
+            if not finish_boundary():
+                return False
             click.echo("All tasks completed!")
             return True
 
@@ -905,6 +1180,17 @@ def run_loop(
             recover_abandoned_tasks(tasks_file, working_dir)
             continue
 
+        if suppress_reviews and not baseline_captured:
+            baseline_captured = True
+            baseline_tree = (
+                current_task.pre_tree
+                if current_task.status == models.TaskStatus.COMPLETING
+                and current_task.pre_tree
+                else snapshots.snapshot_tree(tasks_file, working_dir)
+            )
+            if baseline_tree is not None:
+                keep_trees = {baseline_tree}
+
         if current_task.attempts >= retries and current_task.status in (
             models.TaskStatus.PENDING,
             models.TaskStatus.FAILING,
@@ -923,10 +1209,16 @@ def run_loop(
                 working_dir=working_dir,
                 time_limit=time_limit,
                 scope=scope,
+                suppress_reviews=suppress_reviews,
+                keep_trees=keep_trees,
             )
             if should_abort:
                 return False
-            settled_count += _task_settled(tasks_file, task_id)
+            settled = _settled_status(tasks_file, task_id)
+            settled_count += settled is not None
+            any_completed = (
+                any_completed or settled == models.TaskStatus.COMPLETED
+            )
             continue
 
         # Add a small random jitter to avoid race conditions between
@@ -977,10 +1269,16 @@ def run_loop(
                 time_limit,
                 model_name=model_name,
                 scope=scope,
+                suppress_reviews=suppress_reviews,
+                keep_trees=keep_trees,
             )
             if once:
                 return bool(task and task.status == models.TaskStatus.COMPLETED)
-            settled_count += _task_settled(tasks_file, task_id)
+            settled = _settled_status(tasks_file, task_id)
+            settled_count += settled is not None
+            any_completed = (
+                any_completed or settled == models.TaskStatus.COMPLETED
+            )
             continue
 
         prompt = prompts.prepare_prompt(
@@ -1078,10 +1376,14 @@ def run_loop(
             retry_runner_failures=once,
             abort_failed_finalization=once,
             claimed=current_task,
+            suppress_reviews=suppress_reviews,
+            keep_trees=keep_trees,
         )
         if should_abort:
             return False
-        settled_count += _task_settled(tasks_file, task_id)
+        settled = _settled_status(tasks_file, task_id)
+        settled_count += settled is not None
+        any_completed = any_completed or settled == models.TaskStatus.COMPLETED
 
         if once:
             updated = persistence.load_tasks(tasks_file)

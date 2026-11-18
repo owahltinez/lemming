@@ -2796,3 +2796,526 @@ def test_migrated_cancel_request_is_not_run_again(
     _run_hookless(tasks_file, work, once=True)
 
     assert persistence.load_tasks(tasks_file).tasks[0].status == requested
+
+
+def test_run_loop_batch_reviews_suppress_per_task_and_run_once_at_drain(
+    loop_env, monkeypatch
+):
+    tasks_file, work = loop_env
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="First", hooks=["ux"]),
+                models.Task(id="t2", description="Second"),
+            ],
+            config=models.RoadmapConfig(
+                retries=1, runner="agy", hooks=["readability", "roadmap"]
+            ),
+        ),
+    )
+
+    events: list[tuple[str, str]] = []
+    batch_scopes: dict[str, str | None] = {}
+
+    def fake_prepare(hook_name, data, task, t_file, scope=None):
+        if hook_name != "roadmap":
+            batch_scopes[hook_name] = scope
+        return f"Prompt for {hook_name}"
+
+    def fake_run(cmd, t_file, t_id, *args, **kwargs):
+        header = kwargs.get("header") or ""
+        events.append((t_id, header))
+        with paths.get_log_file(t_file, t_id).open("a", encoding="utf-8") as f:
+            f.write(f"{header}\n")
+        if header == "Task Runner":
+            if t_id == "t1":
+                (work / "b.txt").write_text("from t1\n")
+                (work / "temp.txt").write_text("ephemeral\n")
+            elif t_id == "t2":
+                (work / "c.txt").write_text("from t2\n")
+                (work / "temp.txt").unlink()
+            progress.add_progress(t_file, t_id, f"finished {t_id}")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+            return 0, "", ""
+        if header == "Hook: readability":
+            progress.add_progress(t_file, t_id, "readability finding")
+        return 0, "", ""
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_run)
+    monkeypatch.setattr("lemming.prompts.prepare_hook_prompt", fake_prepare)
+
+    completed = run_loop(
+        tasks_file,
+        False,
+        0,
+        True,
+        True,
+        (),
+        working_dir=work,
+        reviews=["readability", "testing"],
+    )
+
+    assert completed is True
+    headers = [h for _, h in events]
+    assert headers == [
+        "Task Runner",
+        "Hook: roadmap",
+        "Task Runner",
+        "Hook: roadmap",
+        "Hook: readability",
+        "Hook: testing",
+    ]
+    for hook_name in ("readability", "testing"):
+        seen_scope = batch_scopes[hook_name]
+        assert seen_scope is not None
+        assert "- b.txt" in seen_scope
+        assert "- c.txt" in seen_scope
+        assert "temp.txt" not in seen_scope
+
+    tasks = persistence.load_tasks(tasks_file).tasks
+    assert [t.id for t in tasks] == ["t1", "t2"]
+    assert "readability finding" in tasks[1].progress
+    project_logs = sorted(
+        paths.get_project_dir(tasks_file).glob("*-runner.log")
+    )
+    assert [p.name for p in project_logs] == ["t1-runner.log", "t2-runner.log"]
+    assert "Hook: readability" in paths.get_log_file(
+        tasks_file, "t2"
+    ).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("boundary", ["max_tasks", "until"])
+def test_run_loop_batch_reviews_run_at_milestone_boundaries(
+    loop_env, monkeypatch, boundary
+):
+    tasks_file, work = loop_env
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="First"),
+                models.Task(id="t2", description="Milestone"),
+                models.Task(id="t3", description="Later"),
+            ],
+            config=models.RoadmapConfig(
+                retries=1, runner="agy", hooks=["testing", "roadmap"]
+            ),
+        ),
+    )
+
+    headers: list[str] = []
+    seen_scopes: list[str | None] = []
+
+    def fake_prepare(hook_name, data, task, t_file, scope=None):
+        if hook_name == "readability":
+            seen_scopes.append(scope)
+        return "Prompt"
+
+    def fake_run(cmd, t_file, t_id, *args, **kwargs):
+        header = kwargs.get("header") or ""
+        headers.append(header)
+        if header == "Task Runner":
+            (work / f"{t_id}.py").write_text(f"{t_id}\n")
+            progress.add_progress(t_file, t_id, "done")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+        return 0, "", ""
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_run)
+    monkeypatch.setattr("lemming.prompts.prepare_hook_prompt", fake_prepare)
+
+    completed = run_loop(
+        tasks_file,
+        False,
+        0,
+        True,
+        True,
+        (),
+        working_dir=work,
+        reviews=["readability"],
+        max_tasks=2 if boundary == "max_tasks" else None,
+        until="t2" if boundary == "until" else None,
+    )
+
+    assert completed is True
+    assert headers == [
+        "Task Runner",
+        "Hook: roadmap",
+        "Task Runner",
+        "Hook: roadmap",
+        "Hook: readability",
+    ]
+    assert len(seen_scopes) == 1 and seen_scopes[0] is not None
+    assert "- t1.py" in seen_scopes[0]
+    assert "- t2.py" in seen_scopes[0]
+    statuses = [t.status for t in persistence.load_tasks(tasks_file).tasks]
+    assert statuses == [
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.PENDING,
+    ]
+
+
+def test_run_loop_batch_reviews_skipped_when_no_surviving_changes(
+    loop_env, monkeypatch
+):
+    tasks_file, work = loop_env
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="Add and edit"),
+                models.Task(id="t2", description="Revert and delete"),
+            ],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
+
+    headers: list[str] = []
+
+    def fake_run(cmd, t_file, t_id, *args, **kwargs):
+        header = kwargs.get("header") or ""
+        headers.append(header)
+        if t_id == "t1":
+            (work / "a.txt").write_text("changed\n")
+            (work / "scratch.txt").write_text("temp\n")
+        elif t_id == "t2":
+            (work / "a.txt").write_text("base\n")
+            (work / "scratch.txt").unlink()
+        progress.add_progress(t_file, t_id, "done")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        return 0, "", ""
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_run)
+
+    completed = run_loop(
+        tasks_file,
+        False,
+        0,
+        True,
+        True,
+        (),
+        working_dir=work,
+        reviews=["readability"],
+    )
+
+    assert completed is True
+    assert headers == ["Task Runner", "Task Runner"]
+
+
+def test_run_loop_batch_review_edits_update_snapshots_for_clean_rollback(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr("lemming.orchestrator.time.sleep", lambda *_: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "a.py").write_text("v1\n")
+    (work / "b.py").write_text("b1\n")
+    tasks_file = tmp_path / "proj" / "tasks.yml"
+    tasks_file.parent.mkdir()
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="Edit a"),
+                models.Task(id="t2", description="Edit b"),
+            ],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
+
+    def fake_run(cmd, t_file, t_id, *args, **kwargs):
+        header = kwargs.get("header") or ""
+        if header == "Task Runner":
+            if t_id == "t1":
+                (work / "a.py").write_text("v2\n")
+            elif t_id == "t2":
+                (work / "b.py").write_text("b2\n")
+            progress.add_progress(t_file, t_id, "done")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+            return 0, "", ""
+        if header == "Hook: readability":
+            (work / "a.py").write_text("v2_formatted\n")
+            return 0, "", ""
+        return 0, "", ""
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_run)
+    monkeypatch.setattr(
+        "lemming.prompts.prepare_hook_prompt", lambda *a, **k: "Prompt"
+    )
+
+    persistence.acquire_loop_lock(tasks_file)
+    try:
+        completed = run_loop(
+            tasks_file,
+            False,
+            0,
+            True,
+            True,
+            (),
+            working_dir=work,
+            reviews=["readability"],
+        )
+    finally:
+        persistence.release_loop_lock(tasks_file)
+
+    assert completed is True
+    assert (work / "a.py").read_text() == "v2_formatted\n"
+    t2 = persistence.load_tasks(tasks_file).tasks[1]
+    assert t2.post_tree == snapshots.snapshot_tree(tasks_file, work)
+    assert "readability" in (t2.hook_trees or {})
+
+    reset = operations.rollback_task(tasks_file, "t1", working_dir=work)
+    assert [t.id for t in reset] == ["t1", "t2"]
+    assert (work / "a.py").read_text() == "v1\n"
+    assert (work / "b.py").read_text() == "b1\n"
+
+
+def test_run_loop_batch_review_reject_and_crash_keep_completed_work(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr("lemming.orchestrator.time.sleep", lambda *_: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "a.py").write_text("v1\n")
+    (work / "b.py").write_text("b1\n")
+    tasks_file = work / "tasks.yml"
+    local_hooks = work / ".lemming" / "hooks"
+    local_hooks.mkdir(parents=True)
+    (local_hooks / "80-lint.md").write_text("Custom lint hook\n")
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="Edit a"),
+                models.Task(id="t2", description="Edit b"),
+            ],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
+
+    def fake_run(cmd, t_file, t_id, *args, **kwargs):
+        header = kwargs.get("header") or ""
+        if header == "Task Runner":
+            if t_id == "t1":
+                (work / "a.py").write_text("v2\n")
+            elif t_id == "t2":
+                (work / "b.py").write_text("buggy\n")
+            progress.add_progress(t_file, t_id, "done")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+            return 0, "", ""
+        if header == "Hook: readability":
+            (work / "a.py").write_text("v2_fmt\n")
+            return 0, "", ""
+        if header == "Hook: testing":
+            lifecycle.reject_task(t_file, t_id, "test_b fails")
+            return 0, "", ""
+        if header == "Hook: lint":
+            (work / "crashed.txt").write_text("bad\n")
+            return 1, "", ""
+        return 0, "", ""
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_run)
+
+    persistence.acquire_loop_lock(tasks_file)
+    try:
+        completed = run_loop(
+            tasks_file,
+            False,
+            0,
+            True,
+            True,
+            (),
+            working_dir=work,
+            reviews=["readability", "testing", "lint"],
+        )
+    finally:
+        persistence.release_loop_lock(tasks_file)
+
+    assert completed is False
+    assert not (work / "crashed.txt").exists()
+    assert (work / "a.py").read_text() == "v2_fmt\n"
+    assert (work / "b.py").read_text() == "buggy\n"
+
+    tasks = persistence.load_tasks(tasks_file).tasks
+    assert [t.id for t in tasks] == ["t1", "t2"]
+    assert [t.status for t in tasks] == [
+        models.TaskStatus.COMPLETED,
+        models.TaskStatus.COMPLETED,
+    ]
+    assert any(
+        "Hook 'testing' rejected completion: test_b fails" in p
+        for p in tasks[1].progress
+    )
+
+    reset = operations.rollback_task(tasks_file, "t2", working_dir=work)
+    assert [t.id for t in reset] == ["t2"]
+    assert (work / "b.py").read_text() == "b1\n"
+
+
+def test_run_loop_batch_reviews_skipped_on_drain_signal_and_abort(
+    loop_env, monkeypatch
+):
+    tasks_file, work = loop_env
+    from lemming import shutdown  # noqa: PLC0415
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="First"),
+                models.Task(id="t2", description="Second"),
+            ],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
+
+    headers: list[str] = []
+
+    def fake_drain(cmd, t_file, t_id, *args, **kwargs):
+        headers.append(kwargs.get("header") or "")
+        (work / "a.txt").write_text("changed\n")
+        progress.add_progress(t_file, t_id, "done")
+        operations.update_task(t_file, t_id, status=models.TaskStatus.COMPLETED)
+        shutdown.request_drain()
+        return 0, "", ""
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_drain)
+    try:
+        completed = run_loop(
+            tasks_file,
+            False,
+            0,
+            True,
+            True,
+            (),
+            working_dir=work,
+            reviews=["readability"],
+        )
+    finally:
+        shutdown.clear_drain()
+
+    assert completed is False
+    assert headers == ["Task Runner"]
+
+    headers.clear()
+    monkeypatch.setattr(
+        "lemming.runner.run_with_heartbeat",
+        lambda *a, **kw: headers.append(kw.get("header") or "") or (1, "", ""),
+    )
+    assert (
+        run_loop(
+            tasks_file,
+            False,
+            0,
+            True,
+            True,
+            (),
+            working_dir=work,
+            reviews=["readability"],
+        )
+        is False
+    )
+    assert headers == ["Task Runner"]
+
+
+def test_run_loop_batch_reviews_fallback_when_snapshots_unavailable(
+    setup_env, monkeypatch
+):
+    test_tasks_file, _ = setup_env
+    seen_scopes: list[str | None] = []
+    headers: list[str] = []
+
+    def fake_run(cmd, t_file, t_id, *args, **kwargs):
+        header = kwargs.get("header") or ""
+        headers.append(header)
+        if header == "Task Runner":
+            progress.add_progress(t_file, t_id, "done")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+        return 0, "", ""
+
+    monkeypatch.setattr("lemming.runner.run_with_heartbeat", fake_run)
+    monkeypatch.setattr(
+        "lemming.prompts.prepare_hook_prompt",
+        lambda h, d, t, tf, scope=None: seen_scopes.append(scope) or "Prompt",
+    )
+
+    assert run_loop(
+        test_tasks_file,
+        False,
+        0,
+        True,
+        True,
+        (),
+        hooks=[],
+        reviews=["readability"],
+    )
+    assert headers == ["Task Runner", "Hook: readability"]
+    assert len(seen_scopes) == 1 and seen_scopes[0] is not None
+    assert "- ." in seen_scopes[0]
+
+
+def test_run_loop_batch_reviews_include_resumed_completing_task_changes(
+    loop_env, monkeypatch
+):
+    tasks_file, work = loop_env
+    pre_tree = snapshots.snapshot_tree(tasks_file, work)
+    (work / "a.txt").write_text("resumed edit\n")
+    runner_tree = snapshots.snapshot_tree(tasks_file, work)
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(
+                    id="t1",
+                    description="Resumed",
+                    status=models.TaskStatus.COMPLETING,
+                    attempts=1,
+                    pre_tree=pre_tree,
+                    runner_tree=runner_tree,
+                )
+            ],
+            config=models.RoadmapConfig(retries=1, runner="agy", hooks=[]),
+        ),
+    )
+
+    seen_scopes: list[str | None] = []
+    monkeypatch.setattr(
+        "lemming.runner.run_with_heartbeat", lambda *a, **kw: (0, "", "")
+    )
+    monkeypatch.setattr(
+        "lemming.prompts.prepare_hook_prompt",
+        lambda h, d, t, tf, scope=None: seen_scopes.append(scope) or "Prompt",
+    )
+
+    assert run_loop(
+        tasks_file,
+        False,
+        0,
+        True,
+        True,
+        (),
+        working_dir=work,
+        reviews=["readability"],
+    )
+    assert len(seen_scopes) == 1 and seen_scopes[0] is not None
+    assert "- a.txt" in seen_scopes[0]

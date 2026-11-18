@@ -12,7 +12,15 @@ import time
 
 import click
 
-from .. import models, orchestrator, paths, persistence, providers, shutdown
+from .. import (
+    hooks,
+    models,
+    orchestrator,
+    paths,
+    persistence,
+    providers,
+    shutdown,
+)
 from ..orchestrator import parse_timeout, run_loop
 from ..tasks import lifecycle, queries
 from .main import PassthroughCommand, cli
@@ -85,6 +93,15 @@ def quiet_poll_log_config() -> dict:
     ),
 )
 @click.option(
+    "--review",
+    "review_values",
+    multiple=True,
+    help=(
+        "Reviews to run once over cumulative changes when the run stops "
+        "cleanly, comma-separated or repeated ('*' for every review)."
+    ),
+)
+@click.option(
     "--detach",
     is_flag=True,
     help=(
@@ -101,6 +118,7 @@ def run(
     no_defaults: bool,
     max_tasks: int | None,
     until_id: str | None,
+    review_values: tuple[str, ...],
     detach: bool,
 ) -> None:
     """Starts the orchestrator loop to autonomously execute pending tasks."""
@@ -132,6 +150,13 @@ def run(
     # After the overrides, which may move LEMMING_HOME; an explicit -C wins.
     working_dir = ctx.obj["PROJECT_DIR"] or paths.get_working_dir(tasks_file)
 
+    reviews = None
+    if review_values:
+        try:
+            reviews = hooks.parse_reviews(review_values, tasks_file)
+        except ValueError as e:
+            raise click.UsageError(str(e)) from e
+
     if detach:
         _detach_loop(
             ctx,
@@ -141,6 +166,7 @@ def run(
             no_defaults=no_defaults,
             max_tasks=max_tasks,
             until=until,
+            reviews=reviews,
             runner_args=ctx.meta["runner_args"],
         )
         return
@@ -167,6 +193,7 @@ def run(
             working_dir=working_dir,
             max_tasks=max_tasks,
             until=until,
+            reviews=reviews,
         )
     except BaseException:
         # An unreadable roadmap cannot be recovered; the next run will retry.
@@ -189,6 +216,7 @@ def _detach_loop(
     no_defaults: bool,
     max_tasks: int | None,
     until: str | None,
+    reviews: list[str] | None,
     runner_args: tuple,
 ) -> None:
     """Starts the loop in its own session, logging to the project state dir.
@@ -215,6 +243,8 @@ def _detach_loop(
         run_args.append(f"--max-tasks={max_tasks}")
     if until is not None:
         run_args.append(f"--until={until}")
+    if reviews:
+        run_args.extend(f"--review={name}" for name in reviews)
     if runner_args:
         run_args.extend(["--", *runner_args])
 

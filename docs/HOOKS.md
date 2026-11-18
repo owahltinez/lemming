@@ -110,7 +110,9 @@ completed task, you can inspect or undo a single hook's edits with
 Under `lemming exec` there is no second attempt: the run ends on the first
 rejection, and under `lemming run` a rejection on the task's final attempt sends
 it straight to the exhausted-retries path, where the failure hooks get their
-chance to repair it.
+chance to repair it. Under `lemming run --review`, reviews run after all tasks
+in the batch have settled, so a rejection fails the run (exit 1) and records the
+reason on the last completed task without rewinding completed work.
 
 Reject only for an objective, reproducible failure the hook could not repair
 itself, such as a failing test suite or a `lemming readability check` that still
@@ -119,10 +121,10 @@ fails. Advisory findings, and anything the hook already fixed, belong in
 
 ### Reviews Are Not Read-Only
 
-When selected with `lemming exec --review`, the hooks above may edit the working
-directory. Prompt instructions and `--no-yolo` do not enforce filesystem
-isolation. When isolation is required, create a separate VCS-managed working
-copy and pass it through the global option:
+When selected with `lemming exec --review` or `lemming run --review`, the hooks
+above may edit the working directory. Prompt instructions and `--no-yolo` do not
+enforce filesystem isolation. When isolation is required, create a separate
+VCS-managed working copy and pass it through the global option:
 
 ```bash
 lemming -C <working-copy> exec --review <name>
@@ -220,6 +222,20 @@ masked or missing hook never runs whatever the lists say.
 The selection is re-read every time hooks run, so changes are picked up
 dynamically by a running orchestrator loop.
 
+To pay for reviews once per milestone or queue drain instead of after every
+task, pass `--review` to `lemming run`:
+
+```bash
+lemming run --review readability,testing
+lemming run --until <id> --review '*'
+```
+
+`--review` suppresses per-task review hooks (below priority 90) during the run,
+leaves `9x` hooks such as `roadmap` active after each task, and runs the
+requested reviews once over the surviving files changed across the batch when
+the loop stops cleanly (queue drain, `--until`, or `--max-tasks`). If nothing
+changed, the batch review is skipped.
+
 ### Available Variables
 
 Your hook template can use the following placeholders:
@@ -230,7 +246,8 @@ Your hook template can use the following placeholders:
   KiB).
 - `{{finished_task_id}}`: The ID of the task that just finished.
 - `{{scope}}`: What the hook should look at, and how broadly. Under
-  `lemming run` this names the work the finished task left behind; under
+  `lemming run` this names the work the finished task left behind (or, with
+  `--review`, the surviving files changed across the batch); under
   `lemming exec --review` with no description it is the `--scope` paths, or the
   uncommitted work; with a description, the work the task left behind.
 - `{{tasks_file_name}}`: The filename of the tasks YAML file.
