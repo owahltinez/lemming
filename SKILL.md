@@ -92,10 +92,13 @@ EOF
 
 ## Isolate concurrent writing runs
 
-Concurrent writing runs must use separate working copies. Detect and use the
-repository's existing version control system, then pass each copy with the
-global `-C` option. The caller owns creation, result recovery, and cleanup;
-Lemming remains independent of Git, Mercurial, and other VCSs.
+Concurrent writing runs must use separate working copies and touch disjoint
+files. Never parallelize tasks that edit the same files, shared schemas or
+types, central router or CLI registrations, or lockfiles — commit shared
+foundations on the base branch before branching. Detect and use the repository's
+existing version control system, then pass each copy with the global `-C`
+option. The caller owns creation, result recovery, and cleanup; Lemming remains
+independent of Git, Mercurial, and other VCSs.
 
 For Git, refuse modified or untracked input rather than silently excluding it,
 then create a worktree from committed `HEAD`:
@@ -257,6 +260,74 @@ Adjust the queue while it runs — new tasks are picked up automatically:
 lemming add "Add a retry backoff to the sync queue" --index 0  # jump the queue
 lemming stop --after-current-task                             # drain, then stop
 ```
+
+### Fan out parallel streams
+
+When a project splits into file-disjoint streams, land and commit any shared
+foundation on the base branch first (schemas, types, central router or CLI
+registrations, lockfiles), then create one worktree and `lemming/<slug>` branch
+per stream from clean `HEAD`:
+
+```sh
+repo=$(git rev-parse --show-toplevel) || exit 1
+test -z "$(git -C "$repo" status --porcelain)" || exit 1
+wt_root=$(mktemp -d "${TMPDIR:-/tmp}/lemming-fanout.XXXXXX") || exit 1
+
+wts=""
+for slug in auth-events billing-csv; do
+  wt="$wt_root/$slug"
+  git -C "$repo" worktree add -b "lemming/$slug" "$wt" HEAD || exit 1
+  wts="${wts:+$wts }$wt"
+done
+
+# Seed each roadmap and detach (for a single-shot stream, either queue one
+# --oneshot task here or run `lemming -C "$wt" -v exec ...` in a subagent).
+lemming -C "$wt_root/auth-events" goal "Emit audit events in src/auth/"
+lemming -C "$wt_root/auth-events" add "Record login and token refresh events"
+lemming -C "$wt_root/auth-events" run --detach
+
+lemming -C "$wt_root/billing-csv" goal "Export invoices in src/billing/"
+lemming -C "$wt_root/billing-csv" add "Stream CSV rows with RFC 4180 quoting"
+lemming -C "$wt_root/billing-csv" run --detach
+```
+
+When `tasks.yml` is untracked, Lemming keys each roadmap by its resolved
+worktree path automatically. If the repository tracks `tasks.yml`, each loop
+mutates the copy in its worktree — untrack `tasks.yml` first, or discard or
+reconcile those edits before merging so branches do not conflict on it.
+
+Watch all detached streams from **one** waiter instead of holding `N` background
+shells or polling loops in your context. It returns as soon as _any_ worktree's
+brief status changes (a task settles, turns `Stale`, or fails, or a loop becomes
+`Idle`):
+
+```sh
+before=$(for wt in $wts; do lemming -C "$wt" status --brief; done)
+timeout 60m sh -c '
+  wts=$2
+  while [ "$(
+    for wt in $wts; do lemming -C "$wt" status --brief; done
+  )" = "$1" ]; do
+    sleep 60
+  done
+' _ "$before" "$wts"
+```
+
+Land finished streams **one at a time** so semantic cross-branch regressions are
+caught on the merge that introduced them:
+
+1. Inspect `lemming -C "$wt" diff --stat` (or `diff <id> --stat`) and
+   `git -C "$wt" status --short`. Verify any runner commits, and commit
+   remaining intended changes on `lemming/<slug>` while excluding untracked
+   throwaway state (and restoring or reconciling a tracked `tasks.yml`).
+2. Merge into the integration branch with
+   `git -C "$repo" merge --no-ff "lemming/$slug"`, then run the test suite on
+   `$repo` (and optionally
+   `git -C "$repo" diff -z --name-only --diff-filter=d HEAD~1..HEAD | lemming -C "$repo" exec --review testing --scope -`)
+   before merging the next branch.
+3. Clean up non-forcibly (`git -C "$repo" worktree remove "$wt"` and
+   `git -C "$repo" branch -d "lemming/$slug"`), drop `$wt` from `$wts` (`-C`
+   requires an existing directory), and re-arm the waiter for remaining streams.
 
 ### Report tersely
 

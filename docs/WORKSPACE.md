@@ -70,6 +70,93 @@ keep working in meanwhile. Either way the roadmap travels with the workspace: a
 tracked `tasks.yml` is copied into the worktree and the loop's edits stay there,
 and without one Lemming keeps isolated state keyed on the worktree path.
 
+## Fanning Out Parallel Worktrees
+
+Worktree isolation stops concurrent runners from interleaving edits on disk, not
+from colliding when their branches merge. Only fan out genuinely file-disjoint
+streams: never parallelize tasks that touch the same files, shared schemas or
+types, central router or CLI registrations, or lockfiles. Land shared
+foundations on the base branch and commit them before branching any worktrees.
+
+From a clean checkout, create one worktree and `lemming/<slug>` branch per
+stream from committed `HEAD`, seed each roadmap, and start detached loops (for a
+single-shot stream, either queue one `--oneshot` task under `run --detach` so
+the combined waiter below tracks it, or run `lemming -C "$wt" -v exec ...` when
+a dedicated caller or subagent owns that stream):
+
+```bash
+repo=$(git rev-parse --show-toplevel) || exit 1
+test -z "$(git -C "$repo" status --porcelain)" || exit 1
+wt_root=$(mktemp -d "${TMPDIR:-/tmp}/lemming-fanout.XXXXXX") || exit 1
+
+wts=""
+for slug in auth-events billing-csv; do
+  wt="$wt_root/$slug"
+  git -C "$repo" worktree add -b "lemming/$slug" "$wt" HEAD || exit 1
+  wts="${wts:+$wts }$wt"
+done
+
+lemming -C "$wt_root/auth-events" goal "Emit audit events in src/auth/"
+lemming -C "$wt_root/auth-events" add "Record login and token refresh events"
+lemming -C "$wt_root/auth-events" run --detach
+
+lemming -C "$wt_root/billing-csv" goal "Export invoices in src/billing/"
+lemming -C "$wt_root/billing-csv" add "Stream CSV rows with RFC 4180 quoting"
+lemming -C "$wt_root/billing-csv" run --detach
+```
+
+When `tasks.yml` is untracked, Lemming keys each roadmap by its resolved
+worktree path under `~/.local/lemming/`, so parallel loops share no state and
+dirty no tracked files. If the repository tracks `tasks.yml`, every loop mutates
+its worktree's copy and the branches will conflict on merge — untrack
+`tasks.yml` before branching, or discard or reconcile those edits in each
+worktree before committing.
+
+Supervise all detached loops with **one** combined waiter instead of holding `N`
+open background shells or polling loops that fill a supervising agent's context
+window. The waiter snapshots `status --brief` across `$wts` and sleeps until
+_any_ worktree changes (a task settles, turns `Stale`, or fails, or a loop
+becomes `Idle`):
+
+```sh
+before=$(for wt in $wts; do lemming -C "$wt" status --brief; done)
+timeout 60m sh -c '
+  wts=$2
+  while [ "$(
+    for wt in $wts; do lemming -C "$wt" status --brief; done
+  )" = "$1" ]; do
+    sleep 60
+  done
+' _ "$before" "$wts"
+```
+
+Clean merges do not guarantee semantic compatibility across streams. As streams
+finish, land and verify them **one branch at a time**:
+
+1. Inspect `lemming -C "$wt" diff --stat` (or `diff <id> --stat` per task) and
+   `git -C "$wt" status --short`. Verify any commits the runner made, and commit
+   remaining intended edits on `lemming/<slug>` while excluding untracked
+   throwaway state (and restoring or reconciling any tracked `tasks.yml`).
+2. Merge into the integration branch one stream at a time and run the test suite
+   (plus an optional scoped review) on the integrated tree before landing the
+   next stream, so cross-branch interactions are caught immediately:
+
+   ```bash
+   git -C "$repo" merge --no-ff "lemming/$slug"
+   # Run the project's test suite on $repo, and optionally review the merge:
+   git -C "$repo" diff -z --name-only --diff-filter=d HEAD~1..HEAD |
+     lemming -C "$repo" exec --review testing --scope -
+   ```
+
+3. Remove the landed worktree and branch non-forcibly, drop `$wt` from `$wts`
+   (`-C` requires an existing directory), and re-arm the waiter until every
+   stream has merged:
+
+   ```bash
+   git -C "$repo" worktree remove "$wt"
+   git -C "$repo" branch -d "lemming/$slug"
+   ```
+
 ## Inspecting Diffs and Rolling Back Tasks
 
 Every snapshotted task records its `pre_tree`, `runner_tree`, `post_tree`, and
