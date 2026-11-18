@@ -90,18 +90,25 @@ inherit untracked state from `$repo`:
   `~/.local/lemming/hooks` still apply automatically).
 - **Dependencies**: untracked environments (`.venv`, `node_modules`) are absent
   until installed or linked in `$wt`.
-- **Roadmaps (`tasks.yml`)**: when untracked, Lemming hashes each resolved
-  worktree path to `~/.local/lemming/<hash>/tasks.yml` automatically (remove
-  that state directory afterward if discarding a throwaway run). If the
-  repository tracks `tasks.yml`, every loop mutates its worktree's copy and must
-  be restored before committing so branches do not conflict on merge.
+- **Roadmaps and state (`tasks.yml`)**: when `tasks.yml` is untracked, every
+  `mktemp` worktree hashes its resolved path to a dedicated
+  `~/.local/lemming/<hash>/` directory holding `tasks.yml`, runner logs, and
+  `snapshots.git` (remove that directory after landing once logs are no longer
+  needed, or when discarding a run). If the repository tracks `tasks.yml`, every
+  loop mutates its worktree's copy and must be restored before staging so
+  branches do not conflict on merge.
+
+Keep `$wt_root` strictly for detached roadmap worktrees. Do not place
+`lemming exec` worktrees inside `$wt_root`: `exec` keeps its ephemeral state in
+`~/.local/lemming/exec-*`, so `lemming -C "$wt" status --brief` always reads
+`Idle` and would short-circuit the waiter below. For a single-shot stream,
+either queue one `--oneshot` task under `run --detach` inside `$wt_root`, or
+create a standalone `mktemp -d` worktree outside `$wt_root` when a dedicated
+caller or subagent runs `lemming -C "$wt" -v exec ...`.
 
 Record `base` from a clean checkout, create one worktree and `lemming/<slug>`
-branch per stream under `$wt_root`, seed each roadmap, and start detached loops
-(for a single-shot stream, either queue one `--oneshot` task under
-`run --detach` so the waiter below tracks it, or run
-`lemming -C "$wt" -v exec ...` when a dedicated caller or subagent owns that
-stream):
+branch per detached stream under `$wt_root`, seed each roadmap, and start every
+loop before invoking the waiter:
 
 ```sh
 repo=$(git rev-parse --show-toplevel) || exit 1
@@ -125,9 +132,10 @@ lemming -C "$wt_root/billing-csv" run --detach
 Supervise all detached loops from **one** combined waiter instead of holding `N`
 background shells or polling loops in context. Iterating `"$wt_root"/*/` handles
 spaces in `$TMPDIR` and shrinks automatically as landed worktrees are removed;
-the waiter exits `0` immediately if any remaining stream is already `Idle` or
-`Stale`, propagates CLI errors, and waits out initial task claiming (`[ ]` to
-`[*]`) before comparing snapshots:
+the waiter exits `0` immediately if any remaining stream is already `Idle`,
+propagates CLI errors, settles initial task claiming (`[ ]` to `[*]`), and wakes
+once when `Stale:` or task rows change without spinning if re-armed on a running
+`Stale` task:
 
 ```sh
 timeout 60m sh -c '
@@ -138,7 +146,7 @@ timeout 60m sh -c '
       [ -d "$wt" ] || continue
       out=$(lemming -C "$wt" status --brief) || exit 1
       case "$out" in
-        *"Loop Status: Idle"* | *"    Stale: "*) exit 0 ;;
+        *"Loop Status: Idle"*) exit 0 ;;
         *"[*] "*) ;; *) claiming=1 ;;
       esac
       snap="$snap$wt:$out
@@ -152,25 +160,34 @@ timeout 60m sh -c '
 ' _ "$wt_root"
 ```
 
-Clean merges do not guarantee semantic compatibility across streams. As streams
-finish, land and verify them **one branch at a time**, running mutating reviews
-only once after all merges so `$repo` stays clean between merges:
+Clean merges do not guarantee semantic compatibility across streams. On each
+waiter wakeup, skip still-`Running` siblings, refuse incomplete or `[!]` failed
+streams so their worktrees stay intact for inspection, and land completed
+branches **one at a time** — running `rmdir "$wt_root"` and mutating reviews
+only once every stream has landed:
 
 ```sh
-for slug in auth-events billing-csv; do
-  wt="$wt_root/$slug"
-  branch="lemming/$slug"
+for wt in "$wt_root"/*/; do
   [ -d "$wt" ] || continue
+  wt=${wt%/}
+  slug=${wt##*/}
+  branch="lemming/$slug"
 
-  # Inspect every task (`lemming diff` alone shows only the latest) plus $base diff.
+  # Skip running siblings; retain incomplete or failed worktrees for inspection.
+  st=$(lemming -C "$wt" status --brief) || exit 1
+  case "$st" in *"Loop Status: Running"*) continue ;; esac
+  case "$st" in *"No active tasks."*) ;; *) exit 1 ;; esac
+  case "$st" in *"[!] "*) exit 1 ;; esac
+
+  # Inspect all tasks before restoring any tracked tasks.yml.
   lemming -C "$wt" -v status
-  git -C "$wt" status --short
-  git -C "$wt" diff --stat "$base"
-
-  # Restore a tracked tasks.yml and drop its lockfile so branches do not conflict.
   if git -C "$wt" ls-files --error-unmatch tasks.yml >/dev/null 2>&1; then
     git -C "$wt" checkout -- tasks.yml && rm -f "$wt/tasks.lock"
   fi
+
+  # status --short shows untracked files; diff --stat covers tracked files until staged.
+  git -C "$wt" status --short
+  git -C "$wt" diff --stat "$base"
 
   # Remove throwaway files first; commit uncommitted edits and reject no-op branches.
   if [ -n "$(git -C "$wt" status --porcelain)" ]; then
@@ -184,12 +201,16 @@ for slug in auth-events billing-csv; do
   git -C "$repo" worktree remove "$wt" || exit 1
   git -C "$repo" branch -d "$branch" || exit 1
 done
-rmdir "$wt_root"
 
-# Guard against pure-deletion diffs where --scope - would receive no paths.
-if [ -n "$(git -C "$repo" diff --name-only --diff-filter=d "$base"..HEAD)" ]; then
-  git -C "$repo" diff -z --name-only --diff-filter=d "$base"..HEAD |
-    lemming -C "$repo" exec --review testing --scope -
+remaining=0
+for wt in "$wt_root"/*/; do [ -d "$wt" ] && remaining=1; done
+if [ "$remaining" -eq 0 ]; then
+  rmdir "$wt_root" || exit 1
+  # Guard against pure-deletion diffs where --scope - would receive no paths.
+  if [ -n "$(git -C "$repo" diff --name-only --diff-filter=d "$base"..HEAD)" ]; then
+    git -C "$repo" diff -z --name-only --diff-filter=d "$base"..HEAD |
+      lemming -C "$repo" exec --review testing --scope -
+  fi
 fi
 ```
 

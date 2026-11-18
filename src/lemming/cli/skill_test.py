@@ -12,6 +12,7 @@ import time
 import pytest
 from click.testing import CliRunner
 
+from lemming import models, persistence
 from lemming.cli import main
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -27,7 +28,7 @@ def _extract_sh_block(markdown: str, prefix: str) -> str:
 
 
 def _install_fake_codex(bin_dir: pathlib.Path) -> None:
-    """Writes a fake ``codex`` runner that edits its worktree and completes."""
+    """Writes a fake ``codex`` runner with per-worktree staggered durations."""
     script = bin_dir / "codex"
     script.write_text(
         f"#!{sys.executable}\n"
@@ -39,7 +40,8 @@ def _install_fake_codex(bin_dir: pathlib.Path) -> None:
         "    running = [t for t in tasks if t['status'] == 'running']\n"
         "    if running:\n"
         "        tid = running[0]['id']\n"
-        "        delay = float(os.environ.get('FAKE_RUNNER_SLEEP', '1.5'))\n"
+        "        key = 'FAKE_SLEEP_' + cwd.name.upper().replace('-', '_')\n"
+        "        delay = float(os.environ.get(key, '1.5'))\n"
         "        time.sleep(delay)\n"
         "        (cwd / f'{cwd.name}.txt').write_text(f'done {cwd.name}\\n')\n"
         "        subprocess.run(\n"
@@ -111,24 +113,25 @@ def test_shared_manager_exposes_structured_status(home):
     assert payload["data"]["skill"] == "lemming"
 
 
-def test_documented_worktree_fanout_shell_idioms(tmp_path):
+def test_documented_worktree_fanout_shell_idioms(tmp_path, monkeypatch):
     """Runs the SKILL.md and WORKSPACE.md shell blocks under /bin/sh."""
     skill_md = (REPO_ROOT / "SKILL.md").read_text(encoding="utf-8")
     workspace_md = (REPO_ROOT / "docs" / "WORKSPACE.md").read_text(
         encoding="utf-8"
     )
 
-    waiter = _extract_sh_block(skill_md, "timeout 60m sh -c '")
-    assert waiter == _extract_sh_block(workspace_md, "timeout 60m sh -c '")
-    setup = _extract_sh_block(
-        workspace_md,
+    setup_prefix = (
         "repo=$(git rev-parse --show-toplevel) || exit 1\n"
         'test -z "$(git -C "$repo" status --porcelain)" || exit 1\n'
-        "base=",
+        "base="
     )
-    landing = _extract_sh_block(
-        workspace_md, "for slug in auth-events billing-csv; do"
-    )
+    setup = _extract_sh_block(skill_md, setup_prefix)
+    assert setup == _extract_sh_block(workspace_md, setup_prefix)
+
+    waiter = _extract_sh_block(skill_md, "timeout 60m sh -c '")
+    assert waiter == _extract_sh_block(workspace_md, "timeout 60m sh -c '")
+
+    landing = _extract_sh_block(workspace_md, 'for wt in "$wt_root"/*/; do')
 
     # Spaces in TMPDIR, LEMMING_HOME, and the repo path exercise quoting.
     space_root = tmp_path / "space dir"
@@ -138,6 +141,7 @@ def test_documented_worktree_fanout_shell_idioms(tmp_path):
     repo = space_root / "repo root"
     for directory in (tmpdir, lemming_home, bin_dir, repo):
         directory.mkdir(parents=True)
+    monkeypatch.setenv("LEMMING_HOME", str(lemming_home))
     _install_fake_codex(bin_dir)
 
     venv_bin = pathlib.Path(sys.executable).parent
@@ -156,7 +160,7 @@ def test_documented_worktree_fanout_shell_idioms(tmp_path):
             env={**env, **extra_env},
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=45,
             check=False,
         )
 
@@ -186,7 +190,36 @@ def test_documented_worktree_fanout_shell_idioms(tmp_path):
     err_res = run_sh(f'wt_root="{idle_wt_root}"\n{waiter}\n')
     assert err_res.returncode == 1
 
-    # Run documented setup, waiter, re-arm, and sequential landing end-to-end.
+    # Re-arming on a left-running Stale task waits instead of spinning.
+    stale_wt_root = tmpdir / "stale root"
+    stale_wt = stale_wt_root / "stale stream"
+    stale_wt.mkdir(parents=True)
+    stale_tasks = stale_wt / "tasks.yml"
+    persistence.save_tasks(
+        stale_tasks,
+        models.Roadmap(
+            goal="Long step",
+            tasks=[
+                models.Task(
+                    id="stale001",
+                    description="Long computation",
+                    status=models.TaskStatus.RUNNING,
+                    last_started_at=time.time() - 1200,
+                )
+            ],
+        ),
+    )
+    persistence.acquire_loop_lock(stale_tasks)
+    try:
+        stale_brief = run_sh(f'lemming -C "{stale_wt}" status --brief').stdout
+        assert "Stale:" in stale_brief
+        bounded_waiter = waiter.replace("timeout 60m", "timeout 1")
+        stale_res = run_sh(f'wt_root="{stale_wt_root}"\n{bounded_waiter}\n')
+        assert stale_res.returncode == 124
+    finally:
+        persistence.release_loop_lock(stale_tasks)
+
+    # Staggered streams test partial wakeup: auth-events lands first.
     py = f'"{sys.executable}"'
     fast_waiter = waiter.replace('_ "$wt_root"', '_ "$wt_root" 1')
     fanout_res = run_sh(
@@ -195,19 +228,18 @@ def test_documented_worktree_fanout_shell_idioms(tmp_path):
         f"t0=$({py} -c 'import time; print(time.monotonic())')\n"
         f"{fast_waiter}\n"
         f"t1=$({py} -c 'import time; print(time.monotonic())')\n"
-        # Re-arm until both streams are Idle before running sequential landing.
-        "while :; do\n"
-        "  busy=0\n"
-        '  for wt in "$wt_root"/*/; do\n'
-        '    out=$(lemming -C "$wt" status --brief)\n'
-        '    case "$out" in *"Loop Status: Running"*) busy=1 ;; esac\n'
-        "  done\n"
-        '  [ "$busy" -eq 0 ] && break\n'
-        f"  {fast_waiter}\n"
-        "done\n"
+        # Pass 1 merges auth-events and skips still-running billing-csv.
         f"{landing}\n"
+        '[ ! -d "$wt_root/auth-events" ]\n'
+        '[ -d "$wt_root/billing-csv" ]\n'
+        '[ -d "$wt_root" ]\n'
+        # Re-arm waiter for billing-csv, then run second landing pass to finish.
+        f"{fast_waiter}\n"
+        f"{landing}\n"
+        '[ ! -d "$wt_root" ]\n'
         f'printf "ELAPSED=%s\\n" "$({py} -c "print($t1 - $t0)")"\n',
-        FAKE_RUNNER_SLEEP="1.5",
+        FAKE_SLEEP_AUTH_EVENTS="1.5",
+        FAKE_SLEEP_BILLING_CSV="4.5",
     )
     assert fanout_res.returncode == 0, fanout_res.stdout + fanout_res.stderr
     elapsed_line = [
@@ -216,26 +248,61 @@ def test_documented_worktree_fanout_shell_idioms(tmp_path):
         if line.startswith("ELAPSED=")
     ][-1]
     first_wait = float(elapsed_line.removeprefix("ELAPSED="))
-    # Must settle initial `[ ]` -> `[*]` claiming rather than waking on tick 1.
     assert first_wait >= 1.2
 
     assert (repo / "auth-events.txt").read_text() == "done auth-events\n"
     assert (repo / "billing-csv.txt").read_text() == "done billing-csv\n"
     assert (repo / "tasks.yml").read_text() == "goal: base\ntasks: []\n"
     assert not (repo / "tasks.lock").exists()
-    status = run_sh("git status --porcelain")
-    assert status.stdout == ""
+    assert run_sh("git status --porcelain").stdout == ""
     merges = run_sh("git log --merges --oneline")
     assert len(merges.stdout.strip().splitlines()) == 2
 
+    # Landing refuses a stream with a failed `[!]` task and keeps its worktree.
+    fail_res = run_sh(
+        "set -e\n"
+        "repo=$(pwd)\n"
+        "base=$(git rev-parse HEAD)\n"
+        'wt_root=$(mktemp -d "${TMPDIR:-/tmp}/lemming.XXXXXX")\n'
+        'git worktree add -b lemming/broken "$wt_root/broken" "$base"\n'
+        'printf "partial\\n" > "$wt_root/broken/partial.txt"\n'
+        'lemming -C "$wt_root/broken" add "Step 1"\n'
+        't1=$(lemming -C "$wt_root/broken" add "Step 2")\n'
+        'lemming -C "$wt_root/broken" progress "$t1" "hit blocker"\n'
+        'lemming -C "$wt_root/broken" fail "$t1"\n'
+        'printf "WT_ROOT=%s\\n" "$wt_root"\n'
+    )
+    assert fail_res.returncode == 0, fail_res.stderr
+    broken_root = pathlib.Path(
+        fail_res.stdout.strip().splitlines()[-1].removeprefix("WT_ROOT=")
+    )
+    # Complete Step 1 too so `No active tasks.` holds while `[!]` is in History.
+    broken_tasks = broken_root / "broken" / "tasks.yml"
+    broken_data = persistence.load_tasks(broken_tasks)
+    broken_data.tasks[0].status = models.TaskStatus.COMPLETED
+    persistence.save_tasks(broken_tasks, broken_data)
+
+    land_fail = run_sh(
+        f'repo=$(pwd)\nbase=$(git rev-parse HEAD)\nwt_root="{broken_root}"\n'
+        f"{landing}\n"
+    )
+    assert land_fail.returncode == 1
+    assert (broken_root / "broken").is_dir()
+    assert not (repo / "partial.txt").exists()
+    run_sh(
+        f'git worktree remove --force "{broken_root / "broken"}" && '
+        "git branch -D lemming/broken"
+    )
+
     # Pure-deletion range skips `--scope -` instead of failing on empty stdin.
-    review_guard = landing[landing.index("# Guard against") :]
+    post_landing = landing[landing.index("remaining=0") :]
     pure_del = run_sh(
         "set -e\n"
+        "repo=$(pwd)\n"
         "base=$(git rev-parse HEAD)\n"
+        'wt_root=$(mktemp -d "${TMPDIR:-/tmp}/lemming.XXXXXX")\n'
         "git rm -q legacy.txt\n"
         "git commit -qm 'Remove legacy'\n"
-        "repo=$(pwd)\n"
-        f"{review_guard}\n"
+        f"{post_landing}\n"
     )
     assert pure_del.returncode == 0, pure_del.stdout + pure_del.stderr

@@ -96,8 +96,12 @@ Concurrent writing runs need separate VCS working copies (`-C`) and disjoint
 files: commit shared schemas, types, central router/CLI registrations, and
 lockfiles on the base branch first (`docs/WORKSPACE.md`). Fresh worktrees omit
 untracked `$repo` state (`lemming config`, `.env`, `.lemming/hooks`,
-`.venv`/`node_modules`, and an untracked `tasks.yml`, keyed per worktree under
-`~/.local/lemming/<hash>` — delete that dir too if discarding a throwaway run).
+`.venv`/`node_modules`) and each `mktemp` worktree gets its own
+`~/.local/lemming/<hash>/` state (`tasks.yml`, logs, `snapshots.git` — delete it
+after landing once logs are unneeded, or when discarding a run). Keep `$wt_root`
+for detached roadmaps only; for one-off `exec` runs (whose state lives in
+`exec-*`, leaving `status --brief` `Idle`), create a standalone `mktemp -d`
+worktree outside `$wt_root` or queue one `--oneshot` task under `run --detach`:
 
 ```sh
 repo=$(git rev-parse --show-toplevel) || exit 1
@@ -108,14 +112,19 @@ wt_root=$(mktemp -d "${TMPDIR:-/tmp}/lemming.XXXXXX") || exit 1
 for slug in auth-events billing-csv; do
   git -C "$repo" worktree add -b "lemming/$slug" "$wt_root/$slug" "$base" || exit 1
 done
-# One-off subagent stream: lemming -C "$wt_root/auth-events" -v exec "..." --runner codex
+
 lemming -C "$wt_root/auth-events" goal "Emit audit events in src/auth/"
 lemming -C "$wt_root/auth-events" add "Record login and refresh events" --runner codex
 lemming -C "$wt_root/auth-events" run --detach
+
+lemming -C "$wt_root/billing-csv" goal "Export invoices in src/billing/"
+lemming -C "$wt_root/billing-csv" add "Stream CSV rows with RFC 4180 quoting" --runner codex
+lemming -C "$wt_root/billing-csv" run --detach
 ```
 
-Wait on all detached worktrees from **one** shell (exits `0` at once on `Idle`
-or `Stale`, fails fast on CLI errors, and settles startup claiming first):
+Wait on all detached worktrees from **one** shell (exits `0` at once if any
+stream is `Idle`, fails fast on CLI errors, settles startup claiming first, and
+wakes once when `Stale` or task rows change without spinning on re-arm):
 
 ```sh
 timeout 60m sh -c '
@@ -126,7 +135,7 @@ timeout 60m sh -c '
       [ -d "$wt" ] || continue
       out=$(lemming -C "$wt" status --brief) || exit 1
       case "$out" in
-        *"Loop Status: Idle"* | *"    Stale: "*) exit 0 ;;
+        *"Loop Status: Idle"*) exit 0 ;;
         *"[*] "*) ;; *) claiming=1 ;;
       esac
       snap="$snap$wt:$out
@@ -140,18 +149,21 @@ timeout 60m sh -c '
 ' _ "$wt_root"
 ```
 
-Retain each worktree until recovered. Land finished streams **one at a time**:
-inspect `lemming -C "$wt" -v status`, `git -C "$wt" status --short`, and
-`git -C "$wt" diff --stat "$base"`; restore any tracked `tasks.yml`
-(`git -C "$wt" checkout -- tasks.yml && rm -f "$wt/tasks.lock"`); drop throwaway
-files, commit uncommitted edits
-(`git -C "$wt" add -A && git -C "$wt" commit -m "..."`), and verify
-`[ "$(git -C "$wt" rev-parse HEAD)" != "$base" ]`; merge
+Retain unfinished or failed worktrees. On each wakeup, iterate `"$wt_root"/*/`:
+skip `Loop Status: Running` siblings (`continue`), and refuse streams lacking
+`No active tasks.` or containing `[!] ` so broken work is kept for inspection.
+For each cleanly completed stream: inspect `lemming -C "$wt" -v status`; restore
+any tracked `tasks.yml`
+(`git -C "$wt" checkout -- tasks.yml && rm -f "$wt/tasks.lock"`); check
+`git -C "$wt" status --short` (shows new untracked files) and
+`git -C "$wt" diff --stat "$base"` (tracked diff until staged); drop throwaway
+files, commit (`git -C "$wt" add -A && git -C "$wt" commit -m "..."`), and
+verify `[ "$(git -C "$wt" rev-parse HEAD)" != "$base" ]`; merge
 (`git -C "$repo" merge --no-ff "lemming/$slug"`), run non-mutating tests on
 `$repo`, and clean up (`git -C "$repo" worktree remove "$wt"` and
-`git -C "$repo" branch -d "lemming/$slug"`). After all merges,
-`rmdir "$wt_root"` and run mutating `lemming -C "$repo" exec --review ...` once
-on `"$base"..HEAD` when
+`git -C "$repo" branch -d "lemming/$slug"`). Re-arm the waiter while worktrees
+remain; once `"$wt_root"` is empty, `rmdir "$wt_root"` and run mutating
+`lemming -C "$repo" exec --review ...` once on `"$base"..HEAD` when
 `[ -n "$(git -C "$repo" diff --name-only --diff-filter=d "$base"..HEAD)" ]`.
 
 ## Run a review
