@@ -11,10 +11,7 @@ import typing
 
 from . import paths, persistence
 
-# Hook files follow a udev-style naming convention: "NN-name.md" where the
-# numeric prefix orders execution and the remainder is the hook's logical
-# name. Unprefixed files default to DEFAULT_HOOK_PRIORITY. Hooks at or above
-# FAILURE_HOOK_PRIORITY also run when a task fails.
+# "NN-name.md" prefixes order hooks; >= 90 runs only when a task fails.
 DEFAULT_HOOK_PRIORITY = 50
 FAILURE_HOOK_PRIORITY = 90
 

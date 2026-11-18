@@ -680,9 +680,12 @@ def test_run_hooks_success(mock_prepare, mock_run, hooks_env):
     mock_run.return_value = (0, "stdout", "")
     working_dir = hooks_env.parent / "project with spaces"
 
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = ["readability", "roadmap"]
+    persistence.save_tasks(hooks_env, data)
     _finalizing(hooks_env)
 
-    run_hooks(
+    exit_codes = run_hooks(
         hooks_env,
         "12345678",
         "agy",
@@ -693,7 +696,7 @@ def test_run_hooks_success(mock_prepare, mock_run, hooks_env):
         working_dir=working_dir,
     )
 
-    assert mock_run.called
+    assert exit_codes == {"readability": 0}
     cmd = mock_run.call_args.args[0]
     assert cmd[cmd.index("--add-dir") + 1] == str(working_dir)
     data = persistence.load_tasks(hooks_env)
@@ -701,26 +704,47 @@ def test_run_hooks_success(mock_prepare, mock_run, hooks_env):
 
 
 @pytest.mark.parametrize(
-    ("config_hooks", "task_hooks", "expected"),
+    ("status", "config_hooks", "task_hooks", "expected"),
     [
-        (["roadmap"], None, ["roadmap"]),
-        (["ux", "roadmap"], None, ["ux", "roadmap"]),
-        (["ux", "roadmap"], ["testing"], ["testing", "roadmap"]),
-        (["ux", "roadmap"], [], ["roadmap"]),
-        ([], ["testing"], ["testing"]),
+        (models.TaskStatus.COMPLETING, ["roadmap"], None, []),
+        (models.TaskStatus.COMPLETING, ["ux", "roadmap"], None, ["ux"]),
+        (
+            models.TaskStatus.COMPLETING,
+            ["ux", "roadmap"],
+            ["testing"],
+            ["testing"],
+        ),
+        (models.TaskStatus.COMPLETING, ["ux", "roadmap"], [], []),
+        (models.TaskStatus.COMPLETING, [], ["testing"], ["testing"]),
+        (models.TaskStatus.FAILING, ["roadmap"], None, ["roadmap"]),
+        (
+            models.TaskStatus.FAILING,
+            ["ux", "roadmap"],
+            ["testing"],
+            ["roadmap"],
+        ),
+        (models.TaskStatus.FAILING, ["ux", "roadmap"], [], ["roadmap"]),
+        (models.TaskStatus.FAILING, [], ["testing"], []),
     ],
 )
 @mock.patch("lemming.runner.run_with_heartbeat")
 @mock.patch("lemming.prompts.prepare_hook_prompt")
 def test_run_hooks_selects_hooks_per_task(
-    mock_prepare, mock_run, hooks_env, config_hooks, task_hooks, expected
+    mock_prepare,
+    mock_run,
+    hooks_env,
+    status,
+    config_hooks,
+    task_hooks,
+    expected,
 ):
-    """Reviews are opt-in per project or task; the 9x band is project-wide."""
+    """Reviews run on completion; 9x hooks are project-wide and failure-only."""
     mock_prepare.return_value = "Hook Prompt"
     mock_run.return_value = (0, "stdout", "")
     data = persistence.load_tasks(hooks_env)
     data.config.hooks = config_hooks
     data.tasks[0].hooks = task_hooks
+    data.tasks[0].status = status
     persistence.save_tasks(hooks_env, data)
 
     exit_codes = run_hooks(
@@ -1027,7 +1051,10 @@ def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
         hooks_env, "12345678", status=models.TaskStatus.COMPLETED
     )
 
-    # The first hook rejects; the rest must still run and see the rejection.
+    # Remaining review hooks see the rejection; 9x hooks do not run on success.
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = ["testing", "ux", "roadmap"]
+    persistence.save_tasks(hooks_env, data)
     seen_prompts = []
 
     def run_hook(*args, **kwargs):
@@ -1050,10 +1077,9 @@ def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
         runner_args=(),
         no_defaults=False,
         verbose=False,
-        hooks=["testing", "roadmap"],
     )
 
-    assert seen_prompts == [("testing", None), ("roadmap", "suite fails")]
+    assert seen_prompts == [("testing", None), ("ux", "suite fails")]
 
     task = persistence.load_tasks(hooks_env).tasks[0]
     assert task.status == models.TaskStatus.PENDING
@@ -1678,7 +1704,7 @@ def test_hooks_revert_nonzero_exit_and_rejection_saves_attempt_patch(
             goal="Goal",
             tasks=[models.Task(id="t1", description="Task")],
             config=models.RoadmapConfig(
-                retries=1, runner="agy", hooks=["testing", "roadmap"]
+                retries=1, runner="agy", hooks=["testing", "ux", "roadmap"]
             ),
         ),
     )
@@ -1695,20 +1721,14 @@ def test_hooks_revert_nonzero_exit_and_rejection_saves_attempt_patch(
             )
             return 0, "", ""
         if header == "Hook: testing":
-            # Rejects completion and exits 0; the attempt is rewound once
-            # every hook has run.
             lifecycle.reject_task(t_file, t_id, "tests failed")
             return 0, "", ""
+        if header == "Hook: ux":
+            (work / "crashed_hook.txt").write_text("bad\n", encoding="utf-8")
+            return 1, "", ""
         if header == "Hook: roadmap":
-            data = persistence.load_tasks(t_file)
-            t = data.tasks[0]
-            if t.status == models.TaskStatus.COMPLETING:
-                # Simulate a crashing hook mutating the tree; must be reverted
-                # to hook_pre_tree (which still has rejected_v2).
-                (work / "crashed_hook.txt").write_text(
-                    "bad\n", encoding="utf-8"
-                )
-                return 1, "", ""
+            t = persistence.load_tasks(t_file).tasks[0]
+            assert t.status == models.TaskStatus.FAILING
             failure_hook_saw_app.append(
                 (work / "app.py").read_text(encoding="utf-8")
             )
@@ -2796,3 +2816,70 @@ def test_migrated_cancel_request_is_not_run_again(
     _run_hookless(tasks_file, work, once=True)
 
     assert persistence.load_tasks(tasks_file).tasks[0].status == requested
+
+
+def test_run_loop_runs_9x_hooks_only_on_failure(loop_env):
+    tasks_file, work = loop_env
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="Completes"),
+                models.Task(id="t2", description="Fails"),
+            ],
+            config=models.RoadmapConfig(
+                retries=1, runner="agy", hooks=["testing", "roadmap"]
+            ),
+        ),
+    )
+    events: list[tuple[str, str]] = []
+
+    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
+        header = kwargs.get("header") or ""
+        events.append((t_id, header))
+        if header == "Task Runner":
+            progress.add_progress(t_file, t_id, "attempted")
+            status = (
+                models.TaskStatus.COMPLETED
+                if t_id == "t1"
+                else models.TaskStatus.FAILED
+            )
+            operations.update_task(t_file, t_id, status=status)
+        elif header == "Hook: testing":
+            progress.add_progress(t_file, t_id, "review note")
+        return 0, "", ""
+
+    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
+        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
+
+    assert events == [
+        ("t1", "Task Runner"),
+        ("t1", "Hook: testing"),
+        ("t2", "Task Runner"),
+        ("t2", "Hook: roadmap"),
+    ]
+    tasks = {t.id: t for t in persistence.load_tasks(tasks_file).tasks}
+    assert tasks["t1"].status == models.TaskStatus.COMPLETED
+    assert tasks["t2"].status == models.TaskStatus.FAILED
+
+
+@mock.patch("lemming.runner.run_with_heartbeat", return_value=(0, "", ""))
+@mock.patch("lemming.prompts.prepare_hook_prompt", return_value="Prompt")
+def test_run_hooks_honors_explicit_9x_hook_on_completion(
+    _mock_prepare, _mock_run, hooks_env
+):
+    _finalizing(hooks_env)
+
+    codes = run_hooks(
+        hooks_env,
+        "12345678",
+        "agy",
+        yolo=True,
+        runner_args=(),
+        no_defaults=False,
+        verbose=False,
+        hooks=["roadmap"],
+    )
+
+    assert codes == {"roadmap": 0}

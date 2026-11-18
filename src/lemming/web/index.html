@@ -290,7 +290,7 @@
                 :for="hook in availableHooks"
                 :key="hook.name"
                 class="flex items-center gap-2 cursor-pointer shrink-0"
-                :attr:title="'Run the ' + hook.name + ' orchestrator hook after each task' + (hook.runs_on_failure ? ' (also runs on failure)' : '')"
+                :attr:title="hook.runs_on_failure ? 'Run the ' + hook.name + ' hook when a task fails' : 'Run the ' + hook.name + ' review hook after each completed task'"
               >
                 <input
                   type="checkbox"

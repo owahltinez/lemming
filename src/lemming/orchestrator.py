@@ -80,8 +80,9 @@ def run_hooks(
         verbose: Whether to echo prompts and hook diagnostics.
         hooks: Explicit list of hooks to run. If None, runs the project's
             enabled hooks, with the task's own reviews replacing the
-            project's (see hooks.select_hooks). A oneshot task runs none of
-            them on success.
+            project's (see hooks.select_hooks): reviews (< 90) run on
+            completion and failure hooks (>= 90) run only on failure. A
+            oneshot task runs none of them on success.
         working_dir: Working directory for the hook runner processes.
         time_limit: Task time limit in minutes; each hook run gets at most
             HOOK_TIME_LIMIT of it (0 disables it).
@@ -116,12 +117,18 @@ def run_hooks(
     if task.oneshot and task.status == models.TaskStatus.COMPLETING:
         active_hooks = []
 
-    # On failure, only failure hooks (9x priority prefix) run
+    # 9x hooks run only on failure; below-90 reviews run only on completion.
     if task.status == models.TaskStatus.FAILING:
         active_hooks = [
             h
             for h in active_hooks
             if get_hook_priority(h, tasks_file) >= FAILURE_HOOK_PRIORITY
+        ]
+    elif task.status == models.TaskStatus.COMPLETING and hooks is None:
+        active_hooks = [
+            h
+            for h in active_hooks
+            if get_hook_priority(h, tasks_file) < FAILURE_HOOK_PRIORITY
         ]
 
     if not active_hooks:
@@ -246,10 +253,7 @@ def run_hooks(
         elif exit_codes[hook_name] == 0 and hook_pre_tree is not None:
             hook_post_tree = snapshots.snapshot_tree(tasks_file, working_dir)
 
-        # A hook that finds a defect it cannot fix rejects the completion
-        # rather than failing its own process. Attribute it here, while it is
-        # still known which hook ran, but keep going: the later hooks (the
-        # roadmap hook above all) need to see the rejection too.
+        # Attribute rejections while remaining review hooks still see them.
         rejection = _record_hook_tree_and_read_rejection(
             tasks_file, task_id, hook_name, hook_pre_tree, hook_post_tree
         )
