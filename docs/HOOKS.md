@@ -1,8 +1,9 @@
 # Orchestrator Hooks ⚓️
 
 Orchestrator hooks are a powerful way to extend the Lemming workflow. They allow
-you to execute custom agents or scripts after each task, enabling automated
-roadmap revision, code quality checks, or any other post-task validation.
+you to execute custom agents or scripts around task execution, enabling
+automated roadmap revision, code quality checks, or any other post-task
+validation.
 
 ## How it Works
 
@@ -31,9 +32,13 @@ conventions control their behavior:
   before `90-roadmap.md`. Files without a prefix default to priority 50. The
   prefix is **not** part of the hook's name: `90-roadmap.md` defines the hook
   `roadmap`.
-- **Failure hooks**: Hooks at priority 90 and above also run when a task fails.
-  All other hooks only run after successful tasks. The built-in `roadmap` hook
-  ships as `90-roadmap.md` so it can react to failures.
+- **Orchestration and failure hooks**: Hooks at priority 90 and above (such as
+  `90-roadmap.md`) run when a task fails, when an earlier review hook records a
+  finding in `progress`, or when `lemming run` reaches a run boundary (no
+  `pending` tasks remain, or `--max-tasks` / `--until` stops the run). Clean
+  mid-queue completions and rejected completions skip them. Hooks below priority
+  90 are review hooks and run after every non-oneshot completion, never on
+  failure.
 - **Oneshot tasks**: No hook runs after a task marked `--oneshot` completes,
   keeping mechanical changes cheap. A oneshot task that fails still gets its
   failure hooks, so recovery is never skipped. Note that `roadmap` is skipped
@@ -55,10 +60,10 @@ Only `roadmap` runs by default; the review hooks are opt-in per project or task
 
 ### `roadmap` (Default)
 
-The primary mechanism for autonomous project management. It analyzes the results
-of the finished task and decides if the remaining roadmap needs to be adjusted
-(e.g., adding a missing prerequisite, skipping obsolete tasks, or breaking down
-a broad task).
+The primary mechanism for autonomous project management. During `lemming run` it
+runs on failures, when a review hook records a finding, and at run boundaries
+(queue drain or `--max-tasks` / `--until` stops) to repair blocked work, triage
+findings, and audit the workspace against the goal.
 
 ### `readability`
 
@@ -93,13 +98,13 @@ lemming --tasks-file <path> reject <taskid> '<reason>'
 ```
 
 A rejection only applies to a task that is finalizing as completed, and it does
-not change the task's status on the spot. The remaining hooks still run and see
-the task as `REJECTED` with the reason, so the roadmap hook can tell a rejected
-task from a finished one. Once every hook has run, Lemming saves the rejected
-attempt's diff as an `attempt-<N>.patch` artifact, restores the workspace to the
-task's `pre_tree`, and reverts the task to pending with its attempt count intact
-— just as it does when a hook process fails. The rejection reason stays in
-`progress` so the next attempt starts with the diagnosis.
+not change the task's status on the spot. Any remaining review hooks (below
+priority 90) still run and see the task as `REJECTED` with the reason, while
+`90+` orchestration hooks are skipped. Once the hooks finish, Lemming saves the
+rejected attempt's diff as an `attempt-<N>.patch` artifact, restores the
+workspace to the task's `pre_tree`, and reverts the task to pending with its
+attempt count intact — just as it does when a hook process fails. The rejection
+reason stays in `progress` so the next attempt starts with the diagnosis.
 
 Each hook that runs is also bracketed by its own shadow Git snapshot pair in
 `hook_trees`. If an individual hook process crashes or exits non-zero, its own

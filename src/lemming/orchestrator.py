@@ -64,6 +64,7 @@ def run_hooks(
     time_limit: int = 0,
     model_name: str | None = None,
     scope: str | None = None,
+    at_boundary: bool = True,
 ) -> dict[str, int]:
     """Executes orchestrator hooks for a finished task.
 
@@ -88,6 +89,8 @@ def run_hooks(
         model_name: Model to request from the hook runner, if any.
         scope: What the hooks should look at. Defaults to the work the
             finished task left behind.
+        at_boundary: Whether the loop is stopping after this task settles;
+            standalone callers default to True.
 
     Returns:
         Mapping of each executed hook name to its runner exit code (-1 when
@@ -99,6 +102,7 @@ def run_hooks(
     task = next((t for t in data.tasks if t.id == task_id), None)
     if not task:
         return exit_codes
+    initial_progress_len = len(task.progress)
     finalizing = task.status in (
         models.TaskStatus.COMPLETING,
         models.TaskStatus.FAILING,
@@ -147,6 +151,20 @@ def run_hooks(
             and task.status not in models.ACTIVE_STATUSES
         ):
             break
+        if (
+            task.status == models.TaskStatus.COMPLETING
+            and get_hook_priority(hook_name, tasks_file)
+            >= FAILURE_HOOK_PRIORITY
+        ):
+            if task.rejection or any(code != 0 for code in exit_codes.values()):
+                continue
+            if (
+                hooks is None
+                and not at_boundary
+                and _has_other_pending(data, task_id)
+                and len(task.progress) == initial_progress_len
+            ):
+                continue
 
         try:
             prompt = prompts.prepare_hook_prompt(
@@ -246,10 +264,7 @@ def run_hooks(
         elif exit_codes[hook_name] == 0 and hook_pre_tree is not None:
             hook_post_tree = snapshots.snapshot_tree(tasks_file, working_dir)
 
-        # A hook that finds a defect it cannot fix rejects the completion
-        # rather than failing its own process. Attribute it here, while it is
-        # still known which hook ran, but keep going: the later hooks (the
-        # roadmap hook above all) need to see the rejection too.
+        # Attribute a rejection to its hook while remaining review hooks run.
         rejection = _record_hook_tree_and_read_rejection(
             tasks_file, task_id, hook_name, hook_pre_tree, hook_post_tree
         )
@@ -371,6 +386,7 @@ def _review(
     time_limit: int,
     model_name: str | None = None,
     scope: str | None = None,
+    at_boundary: bool = True,
 ) -> models.Task | None:
     """Runs the hooks over a settled completing or failing task.
 
@@ -410,6 +426,7 @@ def _review(
         time_limit=time_limit,
         model_name=model_name,
         scope=scope,
+        at_boundary=at_boundary,
     )
 
     refreshed = persistence.load_tasks(tasks_file)
@@ -508,6 +525,7 @@ def _handle_runner_exit(
     retry_runner_failures: bool = False,
     abort_failed_finalization: bool = False,
     claimed: models.Task | None = None,
+    at_boundary: bool = True,
 ) -> bool:
     """Handles the aftermath of a task runner exiting.
 
@@ -596,6 +614,7 @@ def _handle_runner_exit(
                 time_limit,
                 model_name=model_name,
                 scope=scope,
+                at_boundary=at_boundary,
             )
             or post_task
         )
@@ -699,6 +718,39 @@ def _task_settled(tasks_file: pathlib.Path, task_id: str) -> bool:
 
 def _count_pending(data: models.Roadmap) -> int:
     return sum(t.status == models.TaskStatus.PENDING for t in data.tasks)
+
+
+def _has_other_pending(data: models.Roadmap, task_id: str) -> bool:
+    return any(
+        t.id != task_id and t.status == models.TaskStatus.PENDING
+        for t in data.tasks
+    )
+
+
+def _stops_at_boundary(
+    tasks_file: pathlib.Path,
+    task_id: str,
+    settled_count: int,
+    *,
+    once: bool = False,
+    max_tasks: int | None = None,
+    until: str | None = None,
+) -> bool:
+    """Reports whether settling task_id as completed stops run_loop."""
+    if once:
+        return True
+    if max_tasks is not None and settled_count + 1 >= max_tasks:
+        return True
+    if until is not None:
+        data = persistence.load_tasks(tasks_file)
+        projected = [
+            t.model_copy(update={"status": models.TaskStatus.COMPLETED})
+            if t.id == task_id
+            else t
+            for t in data.tasks
+        ]
+        return queries.milestone_reached(projected, until) is not False
+    return False
 
 
 def _report_task_limit(data: models.Roadmap, settled: int) -> None:
@@ -977,6 +1029,14 @@ def run_loop(
                 time_limit,
                 model_name=model_name,
                 scope=scope,
+                at_boundary=_stops_at_boundary(
+                    tasks_file,
+                    task_id,
+                    settled_count,
+                    once=once,
+                    max_tasks=max_tasks,
+                    until=until,
+                ),
             )
             if once:
                 return bool(task and task.status == models.TaskStatus.COMPLETED)
@@ -1078,6 +1138,14 @@ def run_loop(
             retry_runner_failures=once,
             abort_failed_finalization=once,
             claimed=current_task,
+            at_boundary=_stops_at_boundary(
+                tasks_file,
+                task_id,
+                settled_count,
+                once=once,
+                max_tasks=max_tasks,
+                until=until,
+            ),
         )
         if should_abort:
             return False

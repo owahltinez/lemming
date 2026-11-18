@@ -1027,7 +1027,7 @@ def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
         hooks_env, "12345678", status=models.TaskStatus.COMPLETED
     )
 
-    # The first hook rejects; the rest must still run and see the rejection.
+    # Remaining review hooks see the rejection; 9x hooks are skipped.
     seen_prompts = []
 
     def run_hook(*args, **kwargs):
@@ -1050,10 +1050,10 @@ def test_run_hooks_reverts_to_pending_when_a_hook_rejects(
         runner_args=(),
         no_defaults=False,
         verbose=False,
-        hooks=["testing", "roadmap"],
+        hooks=["testing", "ux", "roadmap"],
     )
 
-    assert seen_prompts == [("testing", None), ("roadmap", "suite fails")]
+    assert seen_prompts == [("testing", None), ("ux", "suite fails")]
 
     task = persistence.load_tasks(hooks_env).tasks[0]
     assert task.status == models.TaskStatus.PENDING
@@ -1678,7 +1678,7 @@ def test_hooks_revert_nonzero_exit_and_rejection_saves_attempt_patch(
             goal="Goal",
             tasks=[models.Task(id="t1", description="Task")],
             config=models.RoadmapConfig(
-                retries=1, runner="agy", hooks=["testing", "roadmap"]
+                retries=1, runner="agy", hooks=["testing", "ux", "roadmap"]
             ),
         ),
     )
@@ -1695,20 +1695,14 @@ def test_hooks_revert_nonzero_exit_and_rejection_saves_attempt_patch(
             )
             return 0, "", ""
         if header == "Hook: testing":
-            # Rejects completion and exits 0; the attempt is rewound once
-            # every hook has run.
             lifecycle.reject_task(t_file, t_id, "tests failed")
             return 0, "", ""
+        if header == "Hook: ux":
+            (work / "crashed_hook.txt").write_text("bad\n", encoding="utf-8")
+            return 1, "", ""
         if header == "Hook: roadmap":
-            data = persistence.load_tasks(t_file)
-            t = data.tasks[0]
-            if t.status == models.TaskStatus.COMPLETING:
-                # Simulate a crashing hook mutating the tree; must be reverted
-                # to hook_pre_tree (which still has rejected_v2).
-                (work / "crashed_hook.txt").write_text(
-                    "bad\n", encoding="utf-8"
-                )
-                return 1, "", ""
+            t = persistence.load_tasks(t_file).tasks[0]
+            assert t.status == models.TaskStatus.FAILING
             failure_hook_saw_app.append(
                 (work / "app.py").read_text(encoding="utf-8")
             )
@@ -2796,3 +2790,240 @@ def test_migrated_cancel_request_is_not_run_again(
     _run_hookless(tasks_file, work, once=True)
 
     assert persistence.load_tasks(tasks_file).tasks[0].status == requested
+
+
+def test_run_loop_skips_roadmap_mid_queue_and_runs_at_drain(loop_env):
+    tasks_file, work = loop_env
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="First"),
+                models.Task(id="t2", description="Second"),
+                models.Task(id="t3", description="Third"),
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["roadmap"]
+            ),
+        ),
+    )
+    events: list[tuple[str, str]] = []
+
+    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
+        header = kwargs.get("header") or ""
+        events.append((t_id, header))
+        if header == "Task Runner":
+            progress.add_progress(t_file, t_id, "done")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+        return 0, "", ""
+
+    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
+        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
+
+    assert events == [
+        ("t1", "Task Runner"),
+        ("t2", "Task Runner"),
+        ("t3", "Task Runner"),
+        ("t3", "Hook: roadmap"),
+    ]
+
+
+def test_run_loop_runs_roadmap_mid_queue_on_review_finding(loop_env):
+    tasks_file, work = loop_env
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="Has finding"),
+                models.Task(id="t2", description="Clean mid-queue"),
+                models.Task(id="t3", description="Final"),
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["testing", "roadmap"]
+            ),
+        ),
+    )
+    events: list[tuple[str, str]] = []
+
+    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
+        header = kwargs.get("header") or ""
+        events.append((t_id, header))
+        if header == "Task Runner":
+            progress.add_progress(t_file, t_id, "done")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+        elif header == "Hook: testing" and t_id == "t1":
+            progress.add_progress(t_file, t_id, "missing regression test")
+        return 0, "", ""
+
+    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
+        assert run_loop(tasks_file, False, 0, True, False, (), working_dir=work)
+
+    assert events == [
+        ("t1", "Task Runner"),
+        ("t1", "Hook: testing"),
+        ("t1", "Hook: roadmap"),
+        ("t2", "Task Runner"),
+        ("t2", "Hook: testing"),
+        ("t3", "Task Runner"),
+        ("t3", "Hook: testing"),
+        ("t3", "Hook: roadmap"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "stop_kwargs",
+    [{"max_tasks": 2}, {"until": "t2"}],
+    ids=["max_tasks", "until"],
+)
+def test_run_loop_runs_roadmap_at_bounded_stop(loop_env, stop_kwargs):
+    tasks_file, work = loop_env
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            goal="Goal",
+            tasks=[
+                models.Task(id="t1", description="Before boundary"),
+                models.Task(id="t2", description="At boundary"),
+                models.Task(id="t3", description="Still pending"),
+            ],
+            config=models.RoadmapConfig(
+                retries=2, runner="agy", hooks=["roadmap"]
+            ),
+        ),
+    )
+    events: list[tuple[str, str]] = []
+
+    def fake_run(cmd, t_file, t_id, *_args, **kwargs):
+        header = kwargs.get("header") or ""
+        events.append((t_id, header))
+        if header == "Task Runner":
+            progress.add_progress(t_file, t_id, "done")
+            operations.update_task(
+                t_file, t_id, status=models.TaskStatus.COMPLETED
+            )
+        return 0, "", ""
+
+    with mock.patch("lemming.runner.run_with_heartbeat", side_effect=fake_run):
+        assert run_loop(
+            tasks_file,
+            False,
+            0,
+            True,
+            False,
+            (),
+            working_dir=work,
+            **stop_kwargs,
+        )
+
+    assert events == [
+        ("t1", "Task Runner"),
+        ("t2", "Task Runner"),
+        ("t2", "Hook: roadmap"),
+    ]
+
+
+def test_run_hooks_rechecks_pending_queue_dynamically(hooks_env):
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = ["testing", "roadmap"]
+    data.tasks[0].status = models.TaskStatus.COMPLETING
+    data.tasks[0].progress = ["done"]
+    data.tasks.append(models.Task(id="t2", description="Pending"))
+    persistence.save_tasks(hooks_env, data)
+
+    def empty_queue(cmd, t_file, t_id, *_args, **kwargs):
+        if kwargs.get("header") == "Hook: testing":
+            operations.delete_tasks(t_file, "t2")
+        return 0, "", ""
+
+    with mock.patch(
+        "lemming.runner.run_with_heartbeat", side_effect=empty_queue
+    ):
+        codes = run_hooks(
+            hooks_env,
+            "12345678",
+            "agy",
+            True,
+            (),
+            False,
+            False,
+            at_boundary=False,
+        )
+    assert list(codes) == ["testing", "roadmap"]
+
+    # Conversely, populating an empty queue mid-review skips roadmap.
+    data = persistence.load_tasks(hooks_env)
+    data.tasks = [
+        models.Task(
+            id="12345678",
+            description="Initial",
+            status=models.TaskStatus.COMPLETING,
+            progress=["done"],
+        )
+    ]
+    persistence.save_tasks(hooks_env, data)
+
+    def populate_queue(cmd, t_file, t_id, *_args, **kwargs):
+        if kwargs.get("header") == "Hook: testing":
+            operations.add_task(t_file, "Newly queued")
+        return 0, "", ""
+
+    with mock.patch(
+        "lemming.runner.run_with_heartbeat", side_effect=populate_queue
+    ):
+        codes = run_hooks(
+            hooks_env,
+            "12345678",
+            "agy",
+            True,
+            (),
+            False,
+            False,
+            at_boundary=False,
+        )
+    assert list(codes) == ["testing"]
+
+
+def test_run_hooks_skips_roadmap_on_failed_review_but_honors_explicit_hooks(
+    hooks_env,
+):
+    data = persistence.load_tasks(hooks_env)
+    data.config.hooks = ["testing", "roadmap"]
+    data.tasks[0].status = models.TaskStatus.COMPLETING
+    data.tasks[0].attempts = 1
+    data.tasks[0].progress = ["done"]
+    data.tasks.append(models.Task(id="t2", description="Pending"))
+    persistence.save_tasks(hooks_env, data)
+
+    with mock.patch(
+        "lemming.runner.run_with_heartbeat", return_value=(1, "", "")
+    ):
+        codes = run_hooks(hooks_env, "12345678", "agy", True, (), False, False)
+    assert codes == {"testing": 1}
+    assert (
+        persistence.load_tasks(hooks_env).tasks[0].status
+        == models.TaskStatus.PENDING
+    )
+
+    # Explicit hooks=[...] still runs roadmap mid-queue when clean.
+    _finalizing(hooks_env)
+    with mock.patch(
+        "lemming.runner.run_with_heartbeat", return_value=(0, "", "")
+    ):
+        codes = run_hooks(
+            hooks_env,
+            "12345678",
+            "agy",
+            True,
+            (),
+            False,
+            False,
+            hooks=["roadmap"],
+            at_boundary=False,
+        )
+    assert codes == {"roadmap": 0}

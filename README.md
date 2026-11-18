@@ -241,10 +241,11 @@ loops through each pending task:
     with accumulated progress as context. A timeout also keeps the tail of the
     agent's output as `attempt-<N>-timeout.log`, so the retry starts from what
     the killed attempt found. On success, it moves to the next task.
-5.  **Orchestration**: After each task, Lemming can run one or more
-    **Orchestrator Hooks** (like the built-in `roadmap` hook) to evaluate the
-    results and adapt the roadmap if needed. Only `roadmap` runs by default;
-    reviews are opt-in.
+5.  **Orchestration**: Lemming runs enabled **Orchestrator Hooks** to review
+    work and adapt the plan. Opt-in review hooks run after each completed task;
+    the default `roadmap` hook (`90+`) runs on failures, when a review hook
+    records a finding, or at run boundaries (queue drain or `--max-tasks` /
+    `--until` stops).
 
 ---
 
@@ -253,8 +254,8 @@ loops through each pending task:
 For longer, multi-stage projects, the initial task list often can't anticipate
 everything. Tasks may fail in ways that retrying won't fix, or completing all
 tasks may not fully achieve the stated goal. **Orchestrator Hooks** address this
-by running custom agents or scripts after each task execution to evaluate
-results and adapt the roadmap.
+by running custom agents or scripts to review completed work and adapt the
+roadmap.
 
 Lemming runs the hooks enabled for the project, which by default is only the
 built-in `roadmap` hook; review hooks are opt-in. Hooks are plain Markdown
@@ -262,8 +263,11 @@ files, and udev-style filename conventions control their behavior:
 
 - **Ordering**: A numeric prefix sets the execution order (e.g. `10-lint.md`
   runs before `90-roadmap.md`); files without a prefix default to priority 50.
-- **Failure hooks**: Hooks at priority 90 and above also run when a task fails;
-  all others only run on success.
+- **Orchestration & failure hooks**: Hooks at priority 90 and above run when a
+  task fails, when an earlier review hook records a finding, or when
+  `lemming run` reaches a boundary (no pending tasks remain, or `--max-tasks` /
+  `--until` stops the run), skipping clean mid-queue and rejected completions;
+  hooks below 90 run after every non-oneshot completion.
 - **Oneshot tasks**: A task added with `--oneshot` skips all hooks once it
   completes, so mechanical work (a typo fix, a version bump) does not pay for
   the full review lifecycle. Failure hooks still run if it fails.
@@ -414,8 +418,8 @@ These come before the subcommand and apply to all of them.
     model without touching the runner.
 - **`hooks`**: Manage orchestrator hooks.
   - `list`: View available hooks and the ones enabled for the project.
-  - `enable <name>...`: Run one or more hooks after every task.
-  - `disable <name>...`: Stop running one or more hooks by default.
+  - `enable <name>...`: Enable one or more hooks for the project.
+  - `disable <name>...`: Disable one or more hooks for the project.
 - **`readability`**: Code quality tool for style guide adherence, wrapping the
   [readability](https://github.com/owahltinez/readability) package. Ruff and
   Pyrefly run with bundled Google-style defaults unless the target project
