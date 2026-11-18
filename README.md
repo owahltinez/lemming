@@ -261,8 +261,7 @@ built-in `roadmap` hook; review hooks are opt-in. Hooks are plain Markdown
 files, and udev-style filename conventions control their behavior:
 
 - **Ordering**: A numeric prefix sets the execution order (e.g. `10-lint.md`
-  runs before `50-readability.md`); files without a prefix default to priority
-  50.
+  runs before `50-readability.md`); files without a prefix default to priority 50.
 - **Failure hooks**: Hooks at priority 90 and above (such as `90-roadmap.md`)
   run only when a task fails; hooks below 90 are review hooks and run only on
   success.
