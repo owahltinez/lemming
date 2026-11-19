@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from click.testing import CliRunner
 
@@ -59,3 +61,37 @@ def test_progress_reports_actionable_size_error(setup_env):
     assert "lemming artifact <id> <name> --file -" in result.output
     assert str(tasks_file.parent) not in result.output
     assert persistence.load_tasks(tasks_file).tasks[0].progress == []
+
+
+@pytest.mark.parametrize(
+    ("component", "time_limit", "elapsed_s", "expected"),
+    [
+        ("runner", 30, 20, "(<1m/30m elapsed, 29m remaining)."),
+        ("runner", 30, 22 * 60, "(22m/30m elapsed, 8m remaining)."),
+        ("runner", 30, 29 * 60 + 30, "(29m/30m elapsed, <1m remaining)."),
+        ("runner", 30, 31 * 60, "(31m/30m elapsed, time limit reached)."),
+        ("hook:testing", 60, 5 * 60, "(5m/15m elapsed, 10m remaining)."),
+        ("hook:testing", 10, 5 * 60, "(5m/10m elapsed, 5m remaining)."),
+        ("runner", 0, 10 * 60, "Progress added to task 12345678."),
+    ],
+)
+def test_progress_reports_elapsed_time_budget(
+    setup_env, monkeypatch, component, time_limit, elapsed_s, expected
+):
+    runner, base_args, tasks_file = setup_env
+    now = 1_700_000_000.0
+    monkeypatch.setattr(time, "time", lambda: now)
+
+    data = persistence.load_tasks(tasks_file)
+    data.config.time_limit = time_limit
+    data.tasks[0].status = models.TaskStatus.RUNNING
+    data.tasks[0].active_execution_component = component
+    data.tasks[0].active_execution_started_at = now - elapsed_s
+    persistence.save_tasks(tasks_file, data)
+
+    result = runner.invoke(
+        cli.cli, base_args + ["progress", "12345678", "checkpoint"]
+    )
+
+    assert result.exit_code == 0
+    assert result.output.strip().endswith(expected)
