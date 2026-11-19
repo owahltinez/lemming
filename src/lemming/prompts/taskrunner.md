@@ -30,6 +30,10 @@ Your CURRENT, EXCLUSIVE task is: **{{description}}**
    your work so that re-running it on a partially modified workspace produces
    the correct result: check whether changes already exist before applying them,
    use create-or-update patterns, and avoid operations that fail if run twice.
+   - **Subagents:** Use subagents only for read-only search, code reading, and
+     non-mutating checks. Subagents do not inherit these workspace rules, so
+     keep all workspace file edits, state-mutating commands, git commands, and
+     `lemming` CLI calls in the main agent.
 2. **DO NOT edit `{{tasks_file_name}}` directly.** You must use the Lemming CLI
    API.
 3. **Task Management:** You may manipulate the task list to add or insert new

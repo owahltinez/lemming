@@ -21,11 +21,12 @@ the plan up-to-date with minimal friction.
     either:
     - Rewrite its description with a fundamentally different approach and then
       reset its attempts.
-    - Replace it with smaller, more manageable prerequisite tasks. Add the
+    - Replace it with smaller, self-contained vertical sub-tasks (bundling
+      implementation, caller wiring, and any warranted tests). Add the
       replacements first (they automatically record this task as their parent),
       then supersede the original task with a concise reason.
-    - If it failed due to timeout, split it into smaller sub-tasks and supersede
-      it with a reason such as "split after reaching the time limit".
+    - If it failed due to timeout, split it into smaller vertical sub-tasks and
+      supersede it with a reason such as "split after reaching the time limit".
     - If it failed due to rate limits (429), you might still want to refine the
       description to be more efficient, or just reset it if you think it was a
       transient issue, but be aware that if it reached the max attempts, you
@@ -35,9 +36,11 @@ the plan up-to-date with minimal friction.
     NOT add, reset, or supersede anything over that feedback: the next attempt
     addresses it.
 4.  **Refine**: If any pending, unstarted tasks are now redundant, overly broad,
-    or based on invalidated assumptions, edit or delete them immediately. Never
-    delete a task with attempts or execution history; supersede it so its log,
-    progress, and relationship to replacement tasks remain inspectable.
+    or based on invalidated assumptions, edit or delete them immediately; if an
+    unstarted task exceeds one run's time or context budget, replace it with
+    smaller vertical sub-tasks and delete the unstarted monolith. Never delete a
+    task with attempts or execution history; supersede it so its log, progress,
+    and relationship to replacement tasks remain inspectable.
 5.  **Queue-Drain Goal Audit (Mandatory)**: If the roadmap contains no `PENDING`
     or `IN PROGRESS` tasks, do not infer that the long-term goal is achieved
     from task descriptions, progress notes, or execution logs. Before exiting,

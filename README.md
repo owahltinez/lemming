@@ -45,10 +45,10 @@ Set the long-term goal and define the first tasks.
 # Set the long-term goal that every task works toward
 lemming goal "Build a habit-tracking web app with auth, offline support, and tests"
 
-# Add tasks to the queue
-lemming add "Initialize the project with Vite"
-lemming add "Create the Button component"
-lemming add "Implement the authentication flow"
+# Add self-contained vertical slices to the queue
+lemming add "Scaffold the Vite app, routing shell, and test setup"
+lemming add "Add user sign-in and session persistence with auth tests"
+lemming add "Add habit check-ins with offline IndexedDB sync and tests"
 ```
 
 The goal is the one piece of state every task sees, no matter how far into the

@@ -408,6 +408,21 @@ def prepare_hook_prompt(
     finished_str += (
         f"Attempts: {finished_task.attempts}/{data.config.retries}\n"
     )
+    time_limit_str = (
+        f"{data.config.time_limit}m" if data.config.time_limit > 0 else "none"
+    )
+    finished_str += f"Time Limit: {time_limit_str}\n"
+    runner_time = (finished_task.execution_times or {}).get(
+        "runner", 0.0
+    ) or finished_task.run_time
+    if runner_time > 0:
+        if finished_task.attempts > 1:
+            finished_str += (
+                f"Total Run Time: {runner_time:.0f}s"
+                f" (across {finished_task.attempts} attempts)\n"
+            )
+        else:
+            finished_str += f"Run Time: {runner_time:.0f}s\n"
     diff_summary = finished_task.diff_summary
     post_tree = finished_task.post_tree or finished_task.runner_tree
     if not diff_summary and finished_task.pre_tree and post_tree:
@@ -586,13 +601,10 @@ def prepare_prompt(
             f"  are killed, your recorded progress will be passed to the"
             f" next attempt.\n"
             f"- **If the work is too large** for {time_limit} minutes,"
-            f" break it into smaller\n"
-            f"  sub-tasks using `lemming` and complete what you can.\n"
-            f"- **Leverage background tasks and subagents** if your runner"
-            f" supports\n"
-            f"  them. Long-running operations (builds, test suites, large"
-            f" refactors)\n"
-            f"  are good candidates for parallel execution."
+            f" split the remainder into\n"
+            f"  self-contained vertical sub-tasks using `lemming` and"
+            f" complete a coherent\n"
+            f"  slice now."
         )
 
     tasks_file_str = runner._pretty_quote(str(tasks_file))
