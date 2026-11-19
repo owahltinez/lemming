@@ -155,14 +155,19 @@ copy and pass it with the global `-C` option, as in the example above.
 ## Drive a roadmap
 
 For work that outlasts one agent run — a migration, a multi-step feature — break
-it into tasks. Each runs with a fresh context seeded only by the goal and
-recorded progress, so the project survives context limits.
+it into self-contained vertical slices that each fit comfortably in one run.
+Bundle implementation, caller wiring, and warranted tests into one task rather
+than splitting production code from tests or layers from callers; keep each
+slice small enough to finish well within the time limit. Each task runs with a
+fresh context seeded only by the goal and recorded progress, so the project
+survives context limits.
 
 ```sh
 lemming goal "Add offline support with a service worker and a sync queue"
-lemming add "Register the service worker and cache the app shell"
-lemming add "Queue writes in IndexedDB while offline"
-lemming add "Bump the service worker cache version" --oneshot
+lemming add "Ignore dist/ and coverage/ in .gitignore" --oneshot
+lemming add "Add the service worker, register it on boot, and test shell caching"
+lemming add "Queue offline writes in IndexedDB and replay on reconnect, with tests"
+lemming add "Verify end-to-end offline caching and reconnect replay against every goal clause"
 lemming run --detach                         # runs until the queue drains
 lemming run --detach --until <task-id>       # or stops once that task settles
 ```
@@ -173,6 +178,10 @@ The loop shares one workspace across all its tasks, so isolate the **whole run**
 without a `.gitignore`, create one (or queue it as the first `--oneshot` task)
 before tasks install dependencies or run builds so workspace snapshots skip
 `node_modules/`, `.venv/`, and build outputs.
+
+**End multi-task roadmaps with a verification task.** Because `roadmap` runs
+only on failures, queue a final task that verifies every clause of the goal
+end-to-end against the built workspace.
 
 **Mark mechanical tasks `--oneshot`.** When review hooks are enabled, each hook
 is a full agent run after every non-oneshot completion, so a typo fix, rename,

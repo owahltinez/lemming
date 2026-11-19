@@ -4,6 +4,7 @@ import time
 import pytest
 
 from lemming import models, paths, persistence, prompts, snapshots
+from lemming.tasks import lifecycle, operations, state_machine
 
 
 def test_load_prompt():
@@ -407,15 +408,91 @@ def test_prepare_prompt_time_limit_section(tmp_path):
     # With time limit (60 minutes)
     prompt = prompts.prepare_prompt(data, task, tasks_file, time_limit=60)
     assert "## Time Limit" in prompt
-    assert "60 minutes" in prompt
-    assert "Record progress early" in prompt
-    assert "subagents" in prompt
+    _, time_section = prompt.split("## Time Limit", maxsplit=1)
+    assert "60 minutes" in time_section
+    assert "Record progress early" in time_section
+    assert "subagents" not in time_section.lower()
 
     # Without time limit
     prompt_no_limit = prompts.prepare_prompt(
         data, task, tasks_file, time_limit=0
     )
     assert "## Time Limit" not in prompt_no_limit
+
+
+def test_prepare_hook_prompt_renders_time_budget_and_run_time(
+    tmp_path, monkeypatch
+):
+    """Hook prompts expose budget and separate single vs cumulative time."""
+    monkeypatch.setenv("LEMMING_HOME", str(tmp_path / "lemming_home"))
+    work = tmp_path / "work"
+    work.mkdir()
+    tasks_file = work / "tasks.yml"
+    local_hooks_dir = work / ".lemming" / "hooks"
+    local_hooks_dir.mkdir(parents=True)
+    (local_hooks_dir / "test-hook.md").write_text("{{finished_task}}")
+
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[models.Task(id="t1", description="Task 1")],
+            config=models.RoadmapConfig(time_limit=45),
+        ),
+    )
+    lifecycle.claim_task(tasks_file, "t1", pid=100, working_dir=work)
+    operations.update_task(tasks_file, "t1", status=models.TaskStatus.COMPLETED)
+    unrecorded = state_machine.settle(tasks_file, "t1", work)
+    assert unrecorded is not None
+    bounded = persistence.load_tasks(tasks_file)
+    bounded_prompt = prompts.prepare_hook_prompt(
+        "test-hook", bounded, unrecorded, tasks_file
+    )
+    assert "Time Limit: 45m\n" in bounded_prompt
+    assert "Run Time:" not in bounded_prompt
+
+    # Single-attempt recorded runner duration.
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[models.Task(id="t2", description="Task 2")],
+            config=models.RoadmapConfig(time_limit=0),
+        ),
+    )
+    lifecycle.claim_task(tasks_file, "t2", pid=100, working_dir=work)
+    operations.update_task(tasks_file, "t2", status=models.TaskStatus.COMPLETED)
+    lifecycle.record_execution_time(tasks_file, "t2", "runner", 812.6)
+    settled = state_machine.settle(tasks_file, "t2", work)
+    assert settled is not None
+    lifecycle.record_execution_time(tasks_file, "t2", "hook:readability", 120.0)
+    unbounded = persistence.load_tasks(tasks_file)
+    unbounded_prompt = prompts.prepare_hook_prompt(
+        "test-hook", unbounded, unbounded.tasks[0], tasks_file
+    )
+    assert "Time Limit: none\n" in unbounded_prompt
+    assert "Run Time: 813s\n" in unbounded_prompt
+
+    # Multi-attempt cumulative runner duration must not look like one attempt.
+    persistence.save_tasks(
+        tasks_file,
+        models.Roadmap(
+            tasks=[
+                models.Task(
+                    id="t3",
+                    description="Task 3",
+                    status=models.TaskStatus.FAILING,
+                    attempts=3,
+                    execution_times={"runner": 2160.0},
+                )
+            ],
+            config=models.RoadmapConfig(retries=3, time_limit=30),
+        ),
+    )
+    multi = persistence.load_tasks(tasks_file)
+    multi_prompt = prompts.prepare_hook_prompt(
+        "test-hook", multi, multi.tasks[0], tasks_file
+    )
+    assert "Time Limit: 30m\n" in multi_prompt
+    assert "Total Run Time: 2160s (across 3 attempts)\n" in multi_prompt
 
 
 def test_prepare_prompt_time_limit_custom(tmp_path):
